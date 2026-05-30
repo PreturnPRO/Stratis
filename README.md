@@ -60,8 +60,6 @@ Stratis-app/
 ### Installation
 
 ```bash
-# Clone or copy this project
-cd Stratis-app
 
 # Install dependencies
 npm install
