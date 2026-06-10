@@ -54,28 +54,79 @@ Stratis-app/
 
 ### Prerequisites
 
-- Node.js 18+
+- **Node.js 22.5+** — the backend uses the built-in `node:sqlite` driver, available from 22.5.
 - npm 9+ (or pnpm / yarn)
 
 ### Installation
 
 ```bash
-
-# Install dependencies
+# Frontend (root) deps
 npm install
 
-# Start the development server
+# Backend deps
+npm --prefix backend install
+```
+
+### Environment setup
+
+```bash
+# Create your local dev env from the template, then fill in values
+cp .env.example .env
+```
+
+The same template covers every environment — copy it to `.env.staging` or
+`.env.production` and override the values per environment. The backend loads
+`.env.<NODE_ENV>` first, then falls back to `.env`. Real values are **never**
+committed: `.gitignore` ignores all `.env*` files except `.env.example`.
+
+### Run
+
+```bash
+# Backend API (http://localhost:3001)
+npm --prefix backend run dev
+
+# Frontend dev server (http://localhost:5173) — proxies /api to the backend
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173) in your browser.
+First run only — create and seed the local database:
+
+```bash
+npm --prefix backend run db:migrate
+npm --prefix backend run db:seed
+```
 
 ### Build for production
 
 ```bash
-npm run build
-# Output is in dist/
+npm run build   # frontend → dist/
 ```
+
+---
+
+## Environment Variables
+
+All keys are defined in [`.env.example`](./.env.example). The app runs with **no
+keys set** — AI falls back to a deterministic offline mock and voice falls back
+to the browser Web Speech API.
+
+| Variable | Used by | Description |
+|---|---|---|
+| `NODE_ENV` | all | `development` \| `staging` \| `production`. Selects which `.env.<NODE_ENV>` loads. |
+| `PORT` | backend | Express port (default `3001`). |
+| `CLIENT_ORIGIN` | backend | Allowed CORS origin (default `http://localhost:5173`). |
+| `DATABASE_URL` | backend | SQLite file path (default `file:./data/stratis.db`). |
+| `JWT_SECRET` | backend | Secret for signing JWTs. **Set a long random value in staging/prod.** |
+| `JWT_EXPIRES_IN` | backend | Token lifetime (default `7d`). |
+| `AI_PROVIDER` | ai-service | `groq` \| `ollama` \| `mock`. Falls back to `mock` if `groq` has no key. |
+| `GROQ_API_KEY` | ai-service | Key for hosted Llama 3.3 70B (free at console.groq.com). |
+| `GROQ_MODEL` | ai-service | Groq model id (default `llama-3.3-70b-versatile`). |
+| `OLLAMA_BASE_URL` | ai-service | Local Ollama endpoint (default `http://localhost:11434`). |
+| `OLLAMA_MODEL` | ai-service | Local model name (default `llama3.1`). |
+| `AI_TIMEOUT_MS` | ai-service | Provider request timeout (default `10000`). |
+
+> Never commit real secrets. Only `.env.example` is tracked; every other
+> `.env*` file is gitignored.
 
 ---
 
