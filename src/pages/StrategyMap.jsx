@@ -31,7 +31,7 @@ export default function StrategyMap() {
   const canvasH = 900;
 
   return (
-    <div style={{ position: "relative", flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+    <div style={{ position: "relative", flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", height: "100%" }}>
 
       {/* Top bar */}
       <div style={{

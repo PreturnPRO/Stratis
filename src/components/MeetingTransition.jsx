@@ -17,7 +17,7 @@ export default function MeetingTransition({ onDone }) {
       position: "absolute", inset: 0,
       background: COLORS.bg,
       display: "flex", alignItems: "center", justifyContent: "center",
-      gap: "8vw", overflow: "hidden",
+      gap: "8vw",
       opacity: phase === "exit" ? 0 : 1,
       transition: phase === "exit" ? "opacity 0.5s ease" : "none",
       zIndex: 10,

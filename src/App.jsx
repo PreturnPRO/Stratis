@@ -22,7 +22,7 @@ function renderPage(active) {
 }
 
 export default function App() {
-  const [active, setActive]           = useState("projects");
+  const [active, setActive] = useState("projects");
   const [showTransition, setShowTransition] = useState(false);
 
   const handleNav = (id) => {
@@ -32,7 +32,7 @@ export default function App() {
     setActive(id);
   };
 
-  return (
+return (
     <div style={{
       display: "flex",
       height: "100vh",
@@ -41,13 +41,52 @@ export default function App() {
       overflow: "hidden",
       color: COLORS.text,
     }}>
+      {showTransition && (
+        <MeetingTransition onDone={() => setShowTransition(false)} />
+      )}
       <Sidebar active={active} onNav={handleNav} />
 
       <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", position: "relative" }}>
-        {showTransition && (
-          <MeetingTransition onDone={() => setShowTransition(false)} />
-        )}
-        {renderPage(active)}
+
+        {/* Top bar */}
+        <div style={{
+          height: 48,
+          borderBottom: `1px solid ${COLORS.border}`,
+          display: "flex",
+          alignItems: "center",
+          padding: "0 20px",
+          flexShrink: 0,
+          color: COLORS.textMuted,
+          fontSize: 13,
+        }}>
+          Top bar
+        </div>
+
+        {/* Content row */}
+        <div style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}>
+
+          {/* Main content */}
+          <div style={{ flex: 1, overflow: "hidden", height: "100%" }}>
+            {renderPage(active)}
+          </div>
+
+          {/* Transcript panel — meeting only */}
+          {active === "meeting" && (
+            <div style={{
+              width: 300,
+              borderLeft: `1px solid ${COLORS.border}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+              color: COLORS.textMuted,
+              fontSize: 13,
+            }}>
+              Transcript panel
+            </div>
+          )}
+
+        </div>
       </div>
     </div>
   );
