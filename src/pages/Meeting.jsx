@@ -1,9 +1,18 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { COLORS, MEETING_MESSAGES } from "../constants";
 import { btnAccent, Avatar } from "../components/ui";
+import BlockRenderer from "../components/BlockRenderer";
+
+const TEST_NODES = [
+  { id: "1", type: "TextBlock",    title: "Test text",     content: "Some content",    timestamp: "10:00" },
+  { id: "2", type: "DecisionNode", title: "Test decision", content: "Decided to ship", timestamp: "10:05" },
+  { id: "3", type: "EmptyPlaceholder" },
+  { id: "4", type: "UnknownType",  title: "Bad block" },
+];
 
 export default function Meeting() {
   const scrollRef = useRef(null);
+  const [blocksOpen, setBlocksOpen] = useState(false);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -12,34 +21,102 @@ export default function Meeting() {
   }, []);
 
   return (
-    <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+    <div style={{ display: "flex", flex: 1, overflow: "hidden", minHeight: 0 }}>
+
       {/* Transcript */}
-      <div style={{ flex: 1, overflow: "auto", padding: "24px 32px" }} ref={scrollRef}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: COLORS.textMuted }}>
-            <span style={{ fontSize: 12 }}>⊞</span> Strategy map
+      <div style={{
+        flex: 1,
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        minHeight: 0,
+      }}>
+        {/* Transcript header */}
+        <div style={{
+          padding: "12px 32px",
+          borderBottom: `1px solid ${COLORS.border}`,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexShrink: 0,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: COLORS.textMuted }}>
+              <span style={{ fontSize: 12 }}>⊞</span> Strategy map
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: COLORS.red }} />
+              <span style={{ color: COLORS.red, fontSize: 13, fontFamily: "monospace" }}>04:85</span>
+            </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ width: 8, height: 8, borderRadius: "50%", background: COLORS.red }} />
-            <span style={{ color: COLORS.red, fontSize: 13, fontFamily: "monospace" }}>04:85</span>
-          </div>
+          {/* Blocks toggle button */}
+          <button
+            onClick={() => setBlocksOpen(o => !o)}
+            style={{
+              background: blocksOpen ? COLORS.surfaceHover : "transparent",
+              border: `1px solid ${COLORS.border}`,
+              borderRadius: 4,
+              color: COLORS.textMuted,
+              fontSize: 11,
+              padding: "3px 10px",
+              cursor: "pointer",
+            }}
+          >
+            {blocksOpen ? "hide blocks" : "blocks"}
+          </button>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-          {MEETING_MESSAGES.map((m, i) => (
-            <div key={i} style={{ display: "flex", gap: 14 }}>
-              <Avatar initials={m.initials} color={m.color} />
-              <div>
-                <div style={{ display: "flex", gap: 10, marginBottom: 4 }}>
-                  <span style={{ color: COLORS.text, fontSize: 13, fontWeight: 500 }}>{m.user}</span>
-                  <span style={{ color: COLORS.textDim, fontSize: 12, fontFamily: "monospace" }}>{m.time}</span>
+        {/* Messages — flex-col-reverse pushes to bottom */}
+        <div
+          ref={scrollRef}
+          style={{
+            flex: 1,
+            overflow: "auto",
+            padding: "24px 32px",
+            display: "flex",
+            flexDirection: "column",
+            minHeight: 0,
+          }}
+        >
+          <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 24 }}>
+            {MEETING_MESSAGES.map((m, i) => (
+              <div key={i} style={{ display: "flex", gap: 14 }}>
+                <Avatar initials={m.initials} color={m.color} />
+                <div>
+                  <div style={{ display: "flex", gap: 10, marginBottom: 4 }}>
+                    <span style={{ color: COLORS.text, fontSize: 13, fontWeight: 500 }}>{m.user}</span>
+                    <span style={{ color: COLORS.textDim, fontSize: 12, fontFamily: "monospace" }}>{m.time}</span>
+                  </div>
+                  <p style={{ color: COLORS.textMuted, fontSize: 14, lineHeight: 1.6, margin: 0 }}>{m.text}</p>
                 </div>
-                <p style={{ color: COLORS.textMuted, fontSize: 14, lineHeight: 1.6, margin: 0 }}>{m.text}</p>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
+
+      {/* Blocks column — shown only when open */}
+      {blocksOpen && (
+        <div style={{
+          width: 280,
+          borderLeft: `1px solid ${COLORS.border}`,
+          display: "flex",
+          flexDirection: "column",
+          flexShrink: 0,
+          alignSelf: "stretch",
+        }}>
+          <div style={{
+            padding: "12px 16px",
+            borderBottom: `1px solid ${COLORS.border}`,
+            flexShrink: 0,
+          }}>
+            <span style={{ fontSize: 12, color: COLORS.textMuted, letterSpacing: 0.5 }}>BLOCKS</span>
+          </div>
+          <div style={{ flex: 1, overflow: "auto", padding: 12, display: "flex", flexDirection: "column", gap: 8, minHeight: 0 }}>
+            <BlockRenderer nodes={TEST_NODES} />
+          </div>
+        </div>
+      )}
 
       {/* Sidebar */}
       <div style={{
@@ -51,6 +128,7 @@ export default function Meeting() {
         gap: 24,
         overflow: "auto",
         flexShrink: 0,
+        alignSelf: "stretch",
       }}>
         <div>
           <div style={{ color: COLORS.textDim, fontSize: 11, letterSpacing: 1, marginBottom: 12 }}>PARTICIPANTS</div>
@@ -84,9 +162,10 @@ export default function Meeting() {
         </div>
 
         <button style={{ ...btnAccent(), background: COLORS.red, borderColor: COLORS.red, marginTop: "auto", fontSize: 12 }}>
-          ⏹ End &amp; summarise
+          ⹎ End &amp; summarise
         </button>
       </div>
+
     </div>
   );
 }

@@ -70,21 +70,21 @@ return (
             {renderPage(active)}
           </div>
 
-          {/* Transcript panel — meeting only */}
-          {active === "meeting" && (
-            <div style={{
-              width: 300,
-              borderLeft: `1px solid ${COLORS.border}`,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-              color: COLORS.textMuted,
-              fontSize: 13,
-            }}>
-              Transcript panel
-            </div>
-          )}
+          {/* Transcript panel — meeting only, hidden since Meeting manages its own panels */}
+         {false && (
+          <div style={{
+            width: 300,
+           borderLeft: `1px solid ${COLORS.border}`,
+           display: "flex",
+           alignItems: "center",
+           justifyContent: "center",
+           flexShrink: 0,
+           color: COLORS.textMuted,
+            fontSize: 13,
+         }}>
+           Transcript panel
+         </div>
+         )}
 
         </div>
       </div>
