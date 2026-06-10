@@ -11,10 +11,32 @@ const TEST_NODES = [
   { id: "4", type: "UnknownType",  title: "Bad block" },
 ];
 
+const MOCK_SUMMARY = [
+  {
+    time: "00:00–01:48",
+    speaker: "Sarah K.",
+    color: "#c0392b",
+    note: "Q2 revenue missed by 12%. Root cause: enterprise pricing misaligned with value delivery. 8 of 12 churned customers cited pricing as top-3 reason.",
+  },
+  {
+    time: "02:05–03:38",
+    speaker: "Mike R. + Alex T.",
+    color: "#2e86c1",
+    note: "Option A (seat-based) feels safest — closest to current model. Option B (usage-based) flagged by AI with 78% confidence. Intercom 2022 saw 23% uplift on same switch.",
+  },
+  {
+    time: "04:00–04:21",
+    speaker: "Sarah K. + Mike R.",
+    color: "#c0392b",
+    note: "Key assumption: SMB segment accepts metered billing — unvalidated. Engineering capacity risk flagged — mobile launch consuming more than planned.",
+  },
+];
+
 export default function Meeting() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [blocksOpen, setBlocksOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
 
   useEffect(() => {
     if (!isLoading && scrollRef.current) {
@@ -140,52 +162,145 @@ export default function Meeting() {
         </div>
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar + transcript panel */}
       <div style={{
         width: 220,
         borderLeft: `1px solid ${COLORS.border}`,
-        padding: "24px 16px",
         display: "flex",
         flexDirection: "column",
-        gap: 24,
-        overflow: "auto",
         flexShrink: 0,
         alignSelf: "stretch",
+        position: "relative",
       }}>
-        <div>
-          <div style={{ color: COLORS.textDim, fontSize: 11, letterSpacing: 1, marginBottom: 12 }}>PARTICIPANTS</div>
-          {[
-            { name: "Sarah K.", color: "#c0392b", initials: "SK" },
-            { name: "Mike R.",  color: "#2e86c1", initials: "MR" },
-            { name: "Alex T.",  color: "#1a7a4a", initials: "AT" },
-          ].map((p) => (
-            <div key={p.name} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <Avatar initials={p.initials} color={p.color} size={26} />
-              <span style={{ fontSize: 13, color: COLORS.text }}>{p.name}</span>
-            </div>
-          ))}
-        </div>
 
-        <div>
-          <div style={{ color: COLORS.textDim, fontSize: 11, letterSpacing: 1, marginBottom: 12 }}>CAPTURED</div>
-          {[
-            { type: "DECISION", label: "Restructure pricing tiers", color: COLORS.red },
-            { type: "RISK",     label: "Engineering capacity",      color: COLORS.red },
-            { type: "SIGNAL",   label: "Pure usage-based",          color: COLORS.teal },
-          ].map((c) => (
-            <div key={c.label} style={{ marginBottom: 12 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                <div style={{ width: 6, height: 6, borderRadius: "50%", background: c.color }} />
-                <span style={{ fontSize: 10, color: c.color, fontWeight: 600, letterSpacing: 0.5 }}>{c.type}</span>
+        {/* Sidebar content */}
+        <div style={{
+          flex: 1,
+          padding: "24px 16px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 24,
+          overflow: "auto",
+        }}>
+          {/* Transcript toggle button */}
+          <button
+            onClick={() => setTranscriptOpen(o => !o)}
+            style={{
+              background: transcriptOpen ? COLORS.tealBg : "transparent",
+              border: `1px solid ${transcriptOpen ? COLORS.teal : COLORS.border}`,
+              borderRadius: 4,
+              color: transcriptOpen ? COLORS.teal : COLORS.textMuted,
+              fontSize: 11,
+              padding: "3px 10px",
+              cursor: "pointer",
+              alignSelf: "flex-start",
+            }}
+          >
+            {transcriptOpen ? "hide notes" : "AI notes"}
+          </button>
+
+          <div>
+            <div style={{ color: COLORS.textDim, fontSize: 11, letterSpacing: 1, marginBottom: 12 }}>PARTICIPANTS</div>
+            {[
+              { name: "Sarah K.", color: "#c0392b", initials: "SK" },
+              { name: "Mike R.",  color: "#2e86c1", initials: "MR" },
+              { name: "Alex T.",  color: "#1a7a4a", initials: "AT" },
+            ].map((p) => (
+              <div key={p.name} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <Avatar initials={p.initials} color={p.color} size={26} />
+                <span style={{ fontSize: 13, color: COLORS.text }}>{p.name}</span>
               </div>
-              <div style={{ fontSize: 12, color: COLORS.textMuted, paddingLeft: 12 }}>{c.label}</div>
-            </div>
-          ))}
+            ))}
+          </div>
+
+          <div>
+            <div style={{ color: COLORS.textDim, fontSize: 11, letterSpacing: 1, marginBottom: 12 }}>CAPTURED</div>
+            {[
+              { type: "DECISION", label: "Restructure pricing tiers", color: COLORS.red },
+              { type: "RISK",     label: "Engineering capacity",      color: COLORS.red },
+              { type: "SIGNAL",   label: "Pure usage-based",          color: COLORS.teal },
+            ].map((c) => (
+              <div key={c.label} style={{ marginBottom: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                  <div style={{ width: 6, height: 6, borderRadius: "50%", background: c.color }} />
+                  <span style={{ fontSize: 10, color: c.color, fontWeight: 600, letterSpacing: 0.5 }}>{c.type}</span>
+                </div>
+                <div style={{ fontSize: 12, color: COLORS.textMuted, paddingLeft: 12 }}>{c.label}</div>
+              </div>
+            ))}
+          </div>
+
+          <button style={{ ...btnAccent(), background: COLORS.red, borderColor: COLORS.red, marginTop: "auto", fontSize: 12 }}>
+            ⹎ End &amp; summarise
+          </button>
         </div>
 
-        <button style={{ ...btnAccent(), background: COLORS.red, borderColor: COLORS.red, marginTop: "auto", fontSize: 12 }}>
-          ⹎ End &amp; summarise
-        </button>
+        {/* Transcript panel overlay */}
+        {transcriptOpen && (
+          <div style={{
+            position: "absolute",
+            inset: 0,
+            background: COLORS.bg,
+            display: "flex",
+            flexDirection: "column",
+            zIndex: 10,
+            animation: "fadeIn 0.2s ease forwards",
+          }}>
+            {/* Panel header */}
+            <div style={{
+              padding: "12px 16px",
+              borderBottom: `1px solid ${COLORS.border}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexShrink: 0,
+            }}>
+              <span style={{ fontSize: 12, color: COLORS.teal, letterSpacing: 0.5 }}>AI NOTES</span>
+              <button
+                onClick={() => setTranscriptOpen(false)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: COLORS.textMuted,
+                  fontSize: 11,
+                  cursor: "pointer",
+                  padding: 0,
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Summary entries */}
+            <div style={{ flex: 1, overflow: "auto", padding: "12px 16px", display: "flex", flexDirection: "column", gap: 16 }}>
+              {MOCK_SUMMARY.map((entry, i) => (
+                <div key={i} style={{
+                  borderLeft: `2px solid ${entry.color}`,
+                  paddingLeft: 10,
+                }}>
+                  <div style={{ fontSize: 10, color: COLORS.textDim, marginBottom: 3, fontFamily: "monospace" }}>
+                    {entry.time}
+                  </div>
+                  <div style={{ fontSize: 11, color: entry.color, fontWeight: 600, marginBottom: 4 }}>
+                    {entry.speaker}
+                  </div>
+                  <div style={{ fontSize: 12, color: COLORS.textMuted, lineHeight: 1.6 }}>
+                    {entry.note}
+                  </div>
+                </div>
+              ))}
+              <div style={{
+                fontSize: 11,
+                color: COLORS.textDim,
+                borderTop: `1px solid ${COLORS.border}`,
+                paddingTop: 12,
+                fontStyle: "italic",
+              }}>
+                AI summary updates in real-time as the meeting progresses.
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
     </div>
