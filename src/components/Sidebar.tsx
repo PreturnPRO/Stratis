@@ -1,6 +1,6 @@
 import { COLORS, NAV_ITEMS } from "../constants";
 
-export default function Sidebar({ active, onNav }) {
+export default function Sidebar({ active, onNav }: { active: string; onNav: (id: string) => void }) {
   return (
     <div style={{
       width: 48,
@@ -22,7 +22,7 @@ export default function Sidebar({ active, onNav }) {
         ⌃
       </div>
 
-      {NAV_ITEMS.map((item) => {
+      {NAV_ITEMS.map((item: { id: string; icon: string; label: string }) => {
         const isActive = active === item.id;
         const badge = item.id === "decisions" ? 2 : item.id === "inbox" ? 4 : null;
         const dot = item.id === "meeting";

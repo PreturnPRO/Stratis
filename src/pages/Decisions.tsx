@@ -2,10 +2,10 @@ import { useState } from "react";
 import { COLORS, DECISIONS } from "../constants";
 import { btnAccent, btnGhost } from "../components/ui";
 
-const statusColor = (s) => (s === "Blocked" ? COLORS.red : COLORS.orange);
+const statusColor = (s: string) => (s === "Blocked" ? COLORS.red : COLORS.orange);
 
 export default function Decisions() {
-  const [openId, setOpenId] = useState("RO-14");
+  const [openId, setOpenId] = useState<string | null>(null);
   const [filter, setFilter] = useState("All");
 
   const filters = ["All", "Needs input", "Blocked", "Resolved"];

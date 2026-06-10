@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { COLORS, MEETING_MESSAGES } from "../constants";
 import { btnAccent, Avatar } from "../components/ui";
 import BlockRenderer from "../components/BlockRenderer";
+import { LoadingState } from "../components/states";
 
 const TEST_NODES = [
   { id: "1", type: "TextBlock",    title: "Test text",     content: "Some content",    timestamp: "10:00" },
@@ -11,19 +12,20 @@ const TEST_NODES = [
 ];
 
 export default function Meeting() {
-  const scrollRef = useRef(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [blocksOpen, setBlocksOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (scrollRef.current) {
+    if (!isLoading && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, []);
+  }, [isLoading]);
 
   return (
     <div style={{ display: "flex", flex: 1, overflow: "hidden", minHeight: 0 }}>
 
-      {/* Transcript */}
+      {/* Transcript column */}
       <div style={{
         flex: 1,
         display: "flex",
@@ -49,7 +51,6 @@ export default function Meeting() {
               <span style={{ color: COLORS.red, fontSize: 13, fontFamily: "monospace" }}>04:85</span>
             </div>
           </div>
-          {/* Blocks toggle button */}
           <button
             onClick={() => setBlocksOpen(o => !o)}
             style={{
@@ -66,7 +67,7 @@ export default function Meeting() {
           </button>
         </div>
 
-        {/* Messages — flex-col-reverse pushes to bottom */}
+        {/* Messages */}
         <div
           ref={scrollRef}
           style={{
@@ -76,22 +77,43 @@ export default function Meeting() {
             display: "flex",
             flexDirection: "column",
             minHeight: 0,
+            position: "relative",
           }}
         >
-          <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 24 }}>
-            {MEETING_MESSAGES.map((m, i) => (
-              <div key={i} style={{ display: "flex", gap: 14 }}>
-                <Avatar initials={m.initials} color={m.color} />
-                <div>
-                  <div style={{ display: "flex", gap: 10, marginBottom: 4 }}>
-                    <span style={{ color: COLORS.text, fontSize: 13, fontWeight: 500 }}>{m.user}</span>
-                    <span style={{ color: COLORS.textDim, fontSize: 12, fontFamily: "monospace" }}>{m.time}</span>
+          {isLoading ? (
+            <LoadingState
+              count={4}
+              delayMs={2000}
+              onDone={() => setIsLoading(false)}
+            />
+          ) : (
+            <div style={{
+              marginTop: "auto",
+              display: "flex",
+              flexDirection: "column",
+              gap: 24,
+              animation: "fadeIn 0.4s ease forwards",
+            }}>
+              {MEETING_MESSAGES.map((m, i) => (
+                <div key={i} style={{ display: "flex", gap: 14 }}>
+                  <Avatar initials={m.initials} color={m.color} />
+                  <div>
+                    <div style={{ display: "flex", gap: 10, marginBottom: 4 }}>
+                      <span style={{ color: COLORS.text, fontSize: 13, fontWeight: 500 }}>{m.user}</span>
+                      <span style={{ color: COLORS.textDim, fontSize: 12, fontFamily: "monospace" }}>{m.time}</span>
+                    </div>
+                    <p style={{ color: COLORS.textMuted, fontSize: 14, lineHeight: 1.6, margin: 0 }}>{m.text}</p>
                   </div>
-                  <p style={{ color: COLORS.textMuted, fontSize: 14, lineHeight: 1.6, margin: 0 }}>{m.text}</p>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
+          <style>{`
+            @keyframes fadeIn {
+              from { opacity: 0; transform: translateY(6px); }
+              to   { opacity: 1; transform: translateY(0); }
+            }
+          `}</style>
         </div>
       </div>
 

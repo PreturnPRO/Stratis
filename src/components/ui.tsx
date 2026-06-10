@@ -27,7 +27,7 @@ export function btnGhost(extra = {}) {
   };
 }
 
-export function tagStyle(color) {
+export function tagStyle(color: string) {
   return {
     display: "inline-block",
     fontSize: 11,
@@ -38,7 +38,7 @@ export function tagStyle(color) {
   };
 }
 
-export function Avatar({ initials, color, size = 36 }) {
+export function Avatar({ initials, color, size = 36 }: { initials: string; color: string; size?: number }) {
   return (
     <div style={{
       width: size, height: size, borderRadius: "50%",
@@ -51,13 +51,13 @@ export function Avatar({ initials, color, size = 36 }) {
   );
 }
 
-export function Badge({ label, color }) {
+export function Badge({ label, color }: { label: string; color: string }) {
   return (
     <span style={tagStyle(color)}>{label}</span>
   );
 }
 
-export function SectionLabel({ children }) {
+export function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ color: COLORS.textDim, fontSize: 11, letterSpacing: 1, marginBottom: 14 }}>
       {children}

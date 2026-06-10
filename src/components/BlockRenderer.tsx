@@ -1,6 +1,14 @@
 import { COLORS } from "../constants";
 
-function TextBlock({ node }) {
+type Block = {
+  id?: string;
+  type?: string;
+  title?: string;
+  content?: string;
+  timestamp?: string;
+};
+
+function TextBlock({ node }: { node: Block }) {
   return (
     <div style={{
       background: COLORS.surface,
@@ -21,7 +29,7 @@ function TextBlock({ node }) {
   );
 }
 
-function DecisionNode({ node }) {
+function DecisionNode({ node }: { node: Block }) {
   return (
     <div style={{
       background: COLORS.surface,
@@ -70,7 +78,7 @@ function EmptyPlaceholder() {
   );
 }
 
-function UnknownBlock({ node }) {
+function UnknownBlock({ node }: { node: Block }) {
   return (
     <div style={{
       background: COLORS.surface,
@@ -85,7 +93,7 @@ function UnknownBlock({ node }) {
   );
 }
 
-function BlockSwitch({ node }) {
+function BlockSwitch({ node }: { node: Block }) {
   if (!node || !node.type) return <UnknownBlock node={node} />;
   switch (node.type) {
     case "TextBlock":        return <TextBlock node={node} />;
@@ -95,7 +103,7 @@ function BlockSwitch({ node }) {
   }
 }
 
-export default function BlockRenderer({ nodes }) {
+export default function BlockRenderer({ nodes }: { nodes: Block[] }) {
   if (!Array.isArray(nodes) || nodes.length === 0) {
     return <EmptyPlaceholder />;
   }

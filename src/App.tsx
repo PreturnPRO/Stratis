@@ -9,7 +9,7 @@ import Decisions  from "./pages/Decisions";
 import Inbox      from "./pages/Inbox";
 import Settings   from "./pages/Settings";
 
-function renderPage(active) {
+function renderPage(active: string) {
   switch (active) {
     case "projects":  return <Projects />;
     case "map":       return <StrategyMap />;
@@ -25,7 +25,7 @@ export default function App() {
   const [active, setActive] = useState("projects");
   const [showTransition, setShowTransition] = useState(false);
 
-  const handleNav = (id) => {
+const handleNav = (id: string) => {
     if (id === "meeting" && active !== "meeting") {
       setShowTransition(true);
     }
