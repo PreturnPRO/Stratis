@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Stratis Block Types — v0 draft",
+  "description": "Agreed JSON shape for all block types rendered by BlockRenderer. All fields required unless marked optional. To be signed off with Windsurf before Sprint 2.",
+  "version": "0.1.0",
+  "status": "draft",
+
+  "definitions": {
+    "BaseBlock": {
+      "type": "object",
+      "required": ["id", "type", "title", "content", "timestamp"],
+      "properties": {
+        "id":        { "type": "string", "description": "Unique block identifier" },
+        "type":      { "type": "string", "enum": ["TextBlock", "DecisionNode", "EmptyPlaceholder"] },
+        "title":     { "type": "string" },
+        "content":   { "type": "string" },
+        "timestamp": { "type": "string", "description": "HH:MM display string" }
+      }
+    },
+
+    "TextBlock": {
+      "allOf": [{ "$ref": "#/definitions/BaseBlock" }],
+      "properties": {
+        "type": { "const": "TextBlock" }
+      }
+    },
+
+    "DecisionNode": {
+      "allOf": [{ "$ref": "#/definitions/BaseBlock" }],
+      "properties": {
+        "type": { "const": "DecisionNode" }
+      },
+      "description": "Visually distinct from TextBlock. Status field reserved for Sprint 2 schema revision pending Owen's S1-T06-A research."
+    },
+
+    "EmptyPlaceholder": {
+      "type": "object",
+      "required": ["id", "type"],
+      "properties": {
+        "id":        { "type": "string" },
+        "type":      { "const": "EmptyPlaceholder" },
+        "title":     { "type": "string" },
+        "content":   { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "description": "Renders when AI explicitly sends this type, or when blocks array is empty. title/content/timestamp optional."
+    }
+  },
+
+  "BlockArray": {
+    "type": "array",
+    "items": {
+      "oneOf": [
+        { "$ref": "#/definitions/TextBlock" },
+        { "$ref": "#/definitions/DecisionNode" },
+        { "$ref": "#/definitions/EmptyPlaceholder" }
+      ]
+    }
+  },
+
+  "notes": [
+    "Unknown types must not crash BlockRenderer — rendered as UnknownBlock fallback.",
+    "content field is plain string for all types in v0. Richer shapes (e.g. DecisionNode options/status) deferred to Sprint 2 after S1-T06-A research.",
+    "timestamp is a display string (HH:MM), not ISO 8601 — formatting owned by backend."
+  ]
+}
