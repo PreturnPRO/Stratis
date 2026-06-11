@@ -174,23 +174,24 @@ export default function Meeting() {
           gap: 24,
           overflow: "auto",
         }}>
-          {/* Transcript toggle button */}
-          <button
-            onClick={() => setTranscriptOpen(o => !o)}
-            style={{
-              background: transcriptOpen ? COLORS.tealBg : "transparent",
-              border: `1px solid ${transcriptOpen ? COLORS.teal : COLORS.border}`,
-              borderRadius: 4,
-              color: transcriptOpen ? COLORS.teal : COLORS.textMuted,
-              fontSize: 11,
-              padding: "3px 10px",
-              cursor: "pointer",
-              alignSelf: "flex-start",
-            }}
-          >
-            {transcriptOpen ? "hide notes" : "AI notes"}
-          </button>
-
+          {/* Transcript toggle button — shown only after transcript loads */}
+          {!isLoading && (
+            <button
+              onClick={() => setTranscriptOpen(o => !o)}
+              style={{
+                background: transcriptOpen ? COLORS.tealBg : "transparent",
+                border: `1px solid ${transcriptOpen ? COLORS.teal : COLORS.border}`,
+                borderRadius: 4,
+                color: transcriptOpen ? COLORS.teal : COLORS.textMuted,
+                fontSize: 11,
+                padding: "3px 10px",
+                cursor: "pointer",
+                alignSelf: "flex-start",
+              }}
+            >
+              {transcriptOpen ? "hide notes" : "AI notes"}
+            </button>
+          )}
           <div>
             <div style={{ color: COLORS.textDim, fontSize: 11, letterSpacing: 1, marginBottom: 12 }}>PARTICIPANTS</div>
             {[
@@ -295,12 +296,14 @@ export default function Meeting() {
         )}
       </div>
 
-      {/* S1-T02-F — AI suggestion display, mock data. Replace feed in S1-T03-E */}
-      <SuggestionCardStack
-        cards={cards}
-        onMarkAnswered={markAnswered}
-        onMarkActive={markActive}
-      />
+      {/* S1-T02-F — AI suggestion display. Shown only after transcript loads. */}
+      {!isLoading && (
+        <SuggestionCardStack
+          cards={cards}
+          onMarkAnswered={markAnswered}
+          onMarkActive={markActive}
+        />
+      )}
 
     </div>
   );

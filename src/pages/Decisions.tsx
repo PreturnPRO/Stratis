@@ -5,8 +5,14 @@ import { btnAccent, btnGhost } from "../components/ui";
 const statusColor = (s: string) => (s === "Blocked" ? COLORS.red : COLORS.orange);
 
 export default function Decisions() {
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [filter, setFilter] = useState("All");
+  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+
+  const toggleOpen = (id: string) =>
+    setOpenIds(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });  const [filter, setFilter] = useState("All");
 
   const filters = ["All", "Needs input", "Blocked", "Resolved"];
 
@@ -48,7 +54,7 @@ export default function Decisions() {
           }}>
             <div
               style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", cursor: "pointer" }}
-              onClick={() => setOpenId(openId === d.id ? null : d.id)}
+              onClick={() => toggleOpen(d.id)}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                 <span style={{ color: COLORS.textDim, fontSize: 12 }}>{d.id}</span>
@@ -61,23 +67,25 @@ export default function Decisions() {
                   {d.status}
                 </span>
               </div>
-              <span style={{ color: COLORS.textDim }}>{openId === d.id ? "∧" : "∨"}</span>
+              <span style={{ color: COLORS.textDim }}>{openIds.has(d.id) ? "∧" : "∨"}</span>
             </div>
 
-            {openId === d.id && d.desc && (
+            {openIds.has(d.id) && (
               <div style={{ padding: "0 18px 18px", borderTop: `1px solid ${COLORS.border}` }}>
-                <p style={{ color: COLORS.textMuted, fontSize: 13, margin: "14px 0" }}>{d.desc}</p>
+                <p style={{ color: COLORS.textMuted, fontSize: 13, margin: "14px 0" }}>
+                  {d.desc ?? "No description provided."}
+                </p>
                 <div style={{ display: "flex", gap: 32, marginBottom: 16 }}>
                   <div>
                     <div style={{ color: COLORS.textDim, fontSize: 11, marginBottom: 4 }}>OWNER</div>
-                    <div style={{ color: COLORS.text, fontSize: 13 }}>{d.owner}</div>
+                    <div style={{ color: COLORS.text, fontSize: 13 }}>{d.owner ?? "—"}</div>
                   </div>
                   <div>
                     <div style={{ color: COLORS.textDim, fontSize: 11, marginBottom: 4 }}>DUE</div>
-                    <div style={{ color: COLORS.text, fontSize: 13 }}>{d.due}</div>
+                    <div style={{ color: COLORS.text, fontSize: 13 }}>{d.due ?? "—"}</div>
                   </div>
                 </div>
-                {d.options && (
+                {d.options && d.options.length > 0 && (
                   <div>
                     <div style={{ color: COLORS.textDim, fontSize: 11, marginBottom: 8 }}>OPTIONS</div>
                     <div style={{ display: "flex", gap: 8 }}>
@@ -95,7 +103,7 @@ export default function Decisions() {
                   </div>
                 )}
               </div>
-            )}
+              )}
           </div>
         ))}
       </div>

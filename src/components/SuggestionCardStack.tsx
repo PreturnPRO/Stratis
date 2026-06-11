@@ -25,6 +25,7 @@ export function SuggestionCardStack({ cards, onMarkAnswered, onMarkActive }: Pro
 
   return (
     <div style={styles.stack}>
+       <style>{SLIDE_UP_STYLE}</style>
       {active.map(card => (
         <ActiveCard
           key={card.id}
@@ -106,6 +107,13 @@ function CollapsedCard({
   )
 }
 
+const SLIDE_UP_STYLE = `
+  @keyframes slideUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+`
+
 const styles: Record<string, React.CSSProperties> = {
   stack: {
     position: 'fixed',
@@ -116,6 +124,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     gap: 8,
     zIndex: 100,
+    animation: 'slideUp 0.3s ease forwards',
   },
   card: {
     borderRadius: 10,
