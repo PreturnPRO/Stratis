@@ -1,6 +1,6 @@
 import { COLORS, NAV_ITEMS } from "../constants";
 
-export default function Sidebar({ active, onNav }: { active: string; onNav: (id: string) => void }) {
+export default function Sidebar({ active, onNav, onLogout }: { active: string; onNav: (id: string) => void; onLogout?: () => void }) {
   return (
     <div style={{
       width: 48,
@@ -67,8 +67,8 @@ export default function Sidebar({ active, onNav }: { active: string; onNav: (id:
         );
       })}
 
-      {/* User avatar */}
-      <div style={{ marginTop: "auto" }}>
+      {/* User avatar + logout */}
+      <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
         <div style={{
           width: 30, height: 30, borderRadius: "50%",
           background: "#c0392b",
@@ -77,6 +77,21 @@ export default function Sidebar({ active, onNav }: { active: string; onNav: (id:
         }}>
           SK
         </div>
+        {onLogout && (
+          <button
+            title="Sign out"
+            onClick={onLogout}
+            style={{
+              width: 30, height: 30, borderRadius: 6,
+              background: "transparent", border: "none",
+              color: COLORS.textDim, fontSize: 14,
+              cursor: "pointer", display: "flex",
+              alignItems: "center", justifyContent: "center",
+            }}
+          >
+            ⇥
+          </button>
+        )}
       </div>
     </div>
   );
