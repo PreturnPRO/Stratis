@@ -8,6 +8,7 @@ import Meeting    from "./pages/Meeting";
 import Decisions  from "./pages/Decisions";
 import Inbox      from "./pages/Inbox";
 import Settings   from "./pages/Settings";
+import Dashboard from "./pages/Dashboard";
 
 function renderPage(active: string) {
   switch (active) {
@@ -17,6 +18,7 @@ function renderPage(active: string) {
     case "decisions": return <Decisions />;
     case "inbox":     return <Inbox />;
     case "settings":  return <Settings />;
+    case "dashboard": return <Dashboard />;
     default:          return <Projects />;
   }
 }

@@ -1,15 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { COLORS, MEETING_MESSAGES } from "../constants";
 import { btnAccent, Avatar } from "../components/ui";
-import BlockRenderer from "../components/BlockRenderer";
 import { LoadingState } from "../components/states";
-
-const TEST_NODES = [
-  { id: "1", type: "TextBlock",    title: "Test text",     content: "Some content",    timestamp: "10:00" },
-  { id: "2", type: "DecisionNode", title: "Test decision", content: "Decided to ship", timestamp: "10:05" },
-  { id: "3", type: "EmptyPlaceholder" },
-  { id: "4", type: "UnknownType",  title: "Bad block" },
-];
+import { SuggestionCardStack, type SuggestionCard } from "../components/SuggestionCardStack";
+import { MOCK_SUGGESTION_CARDS } from "../mocks/suggestionCards";
+import { useMediaRecorder } from '../hooks/useMediaRecorder'
 
 const MOCK_SUMMARY = [
   {
@@ -34,9 +29,23 @@ const MOCK_SUMMARY = [
 
 export default function Meeting() {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [blocksOpen, setBlocksOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [cards, setCards] = useState<SuggestionCard[]>(MOCK_SUGGESTION_CARDS);
+  const { status: micStatus, error: micError, start: startMic, stop: stopMic } =
+  useMediaRecorder({
+    chunkIntervalMs: 3000,
+    onChunk: (chunk) => {
+      // S1-T04-C: pipe chunk to STT endpoint here
+      console.log('[mic] chunk received', chunk.size, 'bytes')
+    },
+  })
+
+  const markAnswered = (id: string) =>
+  setCards(prev => prev.map(c => c.id === id ? { ...c, status: 'answered' as const } : c));
+
+  const markActive = (id: string) =>
+  setCards(prev => prev.map(c => c.id === id ? { ...c, status: 'active' as const } : c));
 
   useEffect(() => {
     if (!isLoading && scrollRef.current) {
@@ -71,22 +80,28 @@ export default function Meeting() {
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <div style={{ width: 8, height: 8, borderRadius: "50%", background: COLORS.red }} />
               <span style={{ color: COLORS.red, fontSize: 13, fontFamily: "monospace" }}>04:85</span>
+              <button
+              onClick={micStatus === 'recording' ? stopMic : startMic}
+              style={{
+                background: micStatus === 'recording' ? COLORS.redBg : 'transparent',
+                border: `1px solid ${micStatus === 'recording' ? COLORS.red : COLORS.border}`,
+                borderRadius: 4,
+                color: micStatus === 'recording' ? COLORS.red : COLORS.textMuted,
+                fontSize: 11,
+                padding: '3px 10px',
+               cursor: 'pointer',
+                }}
+                 >
+                  {micStatus === 'requesting' ? 'requesting...'
+                  : micStatus === 'recording' ? '⏹ stop mic'
+                  : micStatus === 'error'     ? '⚠ mic error'
+                  : '⏺ start mic'}
+                </button>
+                {micError && (
+                <span style={{ fontSize: 11, color: COLORS.red }}>{micError}</span>
+                )}
             </div>
           </div>
-          <button
-            onClick={() => setBlocksOpen(o => !o)}
-            style={{
-              background: blocksOpen ? COLORS.surfaceHover : "transparent",
-              border: `1px solid ${COLORS.border}`,
-              borderRadius: 4,
-              color: COLORS.textMuted,
-              fontSize: 11,
-              padding: "3px 10px",
-              cursor: "pointer",
-            }}
-          >
-            {blocksOpen ? "hide blocks" : "blocks"}
-          </button>
         </div>
 
         {/* Messages */}
@@ -138,29 +153,6 @@ export default function Meeting() {
           `}</style>
         </div>
       </div>
-
-      {/* Blocks column — shown only when open */}
-      {blocksOpen && (
-        <div style={{
-          width: 280,
-          borderLeft: `1px solid ${COLORS.border}`,
-          display: "flex",
-          flexDirection: "column",
-          flexShrink: 0,
-          alignSelf: "stretch",
-        }}>
-          <div style={{
-            padding: "12px 16px",
-            borderBottom: `1px solid ${COLORS.border}`,
-            flexShrink: 0,
-          }}>
-            <span style={{ fontSize: 12, color: COLORS.textMuted, letterSpacing: 0.5 }}>BLOCKS</span>
-          </div>
-          <div style={{ flex: 1, overflow: "auto", padding: 12, display: "flex", flexDirection: "column", gap: 8, minHeight: 0 }}>
-            <BlockRenderer nodes={TEST_NODES} />
-          </div>
-        </div>
-      )}
 
       {/* Sidebar + transcript panel */}
       <div style={{
@@ -302,6 +294,13 @@ export default function Meeting() {
           </div>
         )}
       </div>
+
+      {/* S1-T02-F — AI suggestion display, mock data. Replace feed in S1-T03-E */}
+      <SuggestionCardStack
+        cards={cards}
+        onMarkAnswered={markAnswered}
+        onMarkActive={markActive}
+      />
 
     </div>
   );

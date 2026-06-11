@@ -137,14 +137,13 @@ export default function StrategyMap() {
                   {node.age}
                 </span>
               </div>
-
               {node.tag && (
-                <div style={{ marginTop: 8 }}>
+                <div style={{ marginTop: 6 }}>
                   <span style={tagStyle(node.tag.color)}>{node.tag.label}</span>
                 </div>
               )}
               {node.tags && (
-                <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {node.tags!.map((t: { label: string; color: string }, i: number) => (
                     <span key={i} style={tagStyle(t.color)}>{t.label}</span>
                   ))}

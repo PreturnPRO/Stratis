@@ -21,6 +21,7 @@ export const COLORS = {
 };
 
 export const NAV_ITEMS = [
+  { id: "dashboard", icon: "⌂", label: "Dashboard" },
   { id: "projects", icon: "⊞", label: "Projects" },
   { id: "map",      icon: "⌥", label: "Map" },
   { id: "meeting",  icon: "⏺", label: "Meeting" },
