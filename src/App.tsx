@@ -15,7 +15,6 @@ import Settings   from './pages/Settings'
 import Dashboard  from './pages/Dashboard'
 import Documents  from './pages/Documents'
 import SummaryView from './pages/SummaryView';
-import NodeTypeTestPage from './pages/NodeTypeTestPage';
 
 type AuthPage = 'landing' | 'login' | 'register' | 'app'
 
@@ -29,7 +28,6 @@ function renderPage(active: string, navParams: Record<string, string>, handleNav
     case 'dashboard': return <Dashboard onNav={handleNav} />
     case 'documents': return <Documents />
     case 'summary':   return <SummaryView role="facilitator" sessionId={navParams?.sessionId} />
-    case 'nodetest':  return <NodeTypeTestPage />
     default:          return <Projects />
   }
 }
