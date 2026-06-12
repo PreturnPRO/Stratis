@@ -76,3 +76,27 @@ export interface AIBlock {
 export interface AIStructuredResponse {
   blocks: AIBlock[];
 }
+
+// ── Realtime suggestion cards (S1-T03-E) ──────────────────────────────────────
+// A QuestionSuggestion block becomes a card in the facilitator's suggestion
+// stack. Cards are pushed over WebSocket to the facilitator's session ONLY —
+// participants never receive suggestion events. A card is struck through when
+// answered, either auto-detected from the transcript or marked manually.
+
+export type AnsweredSource = "auto" | "manual";
+
+export interface SuggestionCard {
+  id: string;
+  sessionId: string;
+  question: string; // from QuestionSuggestion.title
+  reason: string; // from QuestionSuggestion.content
+  answered: boolean;
+  answeredBy?: AnsweredSource;
+  createdAt: string;
+}
+
+/** Events the server pushes to a connected facilitator over /ws. */
+export type WsServerEvent =
+  | { type: "connected"; sessionId: string; role: Role }
+  | { type: "suggestion:new"; card: SuggestionCard }
+  | { type: "suggestion:answered"; sessionId: string; cardId: string; source: AnsweredSource };

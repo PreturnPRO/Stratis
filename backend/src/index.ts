@@ -1,6 +1,8 @@
 // Backend entry point.
 // Foundation scope (S1-T01-A … S1-T00-B): health check + auth only.
 // Feature routes (sessions, transcript, AI, dashboard) are added from S1-T03 on.
+// WebSocket hub for facilitator suggestion routing: S1-T03-E.
+import { createServer } from "node:http";
 import express from "express";
 import cors from "cors";
 import { env } from "./config/env";
@@ -8,6 +10,7 @@ import { authRouter } from "./auth/routes";
 import { apiRouter } from "./routes";
 import { requireAuth } from "./auth/middleware";
 import { errorHandler, notFound } from "./middleware/errorHandler";
+import { attachHub } from "./realtime/hub";
 // Importing the db module ensures the SQLite file + WAL pragmas initialise on boot.
 import "./db/database";
 
@@ -33,6 +36,12 @@ app.get("/api/protected/ping", requireAuth, (req, res) => {
 app.use(notFound);
 app.use(errorHandler);
 
-app.listen(env.port, () => {
+// Wrap Express in an HTTP server so the WebSocket hub (S1-T03-E) can share the
+// same port and upgrade /ws connections.
+const server = createServer(app);
+attachHub(server);
+
+server.listen(env.port, () => {
   console.log(`[stratis] backend listening on http://localhost:${env.port} (${env.nodeEnv})`);
+  console.log(`[stratis] websocket hub on ws://localhost:${env.port}/ws`);
 });
