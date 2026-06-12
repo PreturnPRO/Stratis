@@ -1,49 +1,61 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Stratis Block Types — v0 draft",
-  "description": "Agreed JSON shape for all block types rendered by BlockRenderer. All fields required unless marked optional. To be signed off with Windsurf before Sprint 2.",
-  "version": "0.1.0",
-  "status": "draft",
+  "title": "Stratis AI Output Block Types — v1",
+  "description": "Formal contract between AI pipeline and BlockRenderer. All four AIBlockType values from shared/types.ts are defined here. Updated S1-T03-D to reconcile with shared/types.ts.",
+  "version": "1.0.0",
+  "status": "locked",
 
   "definitions": {
     "BaseBlock": {
       "type": "object",
-      "required": ["id", "type", "title", "content", "timestamp"],
+      "required": ["type", "title", "content"],
       "properties": {
-        "id":        { "type": "string", "description": "Unique block identifier" },
-        "type":      { "type": "string", "enum": ["TextBlock", "DecisionNode", "EmptyPlaceholder"] },
-        "title":     { "type": "string" },
+        "type":      { "type": "string" },
+        "title":     { "type": "string", "maxLength": 80 },
         "content":   { "type": "string" },
-        "timestamp": { "type": "string", "description": "HH:MM display string" }
+        "metadata":  { "type": "object", "description": "Optional per-type metadata" }
       }
     },
 
     "TextBlock": {
       "allOf": [{ "$ref": "#/definitions/BaseBlock" }],
-      "properties": {
-        "type": { "const": "TextBlock" }
-      }
+      "properties": { "type": { "const": "TextBlock" } },
+      "description": "Plain narrative or meeting note."
     },
 
     "DecisionNode": {
       "allOf": [{ "$ref": "#/definitions/BaseBlock" }],
       "properties": {
-        "type": { "const": "DecisionNode" }
+        "type": { "const": "DecisionNode" },
+        "metadata": {
+          "type": "object",
+          "properties": {
+            "status":  { "type": "string", "description": "VALIDATED | UNVALIDATED | STALLED | BLOCKED" },
+            "options": { "type": "array", "items": { "type": "string" }, "description": "Decision choices" }
+          }
+        }
       },
-      "description": "Visually distinct from TextBlock. Status field reserved for Sprint 2 schema revision pending Owen's S1-T06-A research."
+      "description": "A decision the team must make or has made. metadata.options lists choices."
     },
 
-    "EmptyPlaceholder": {
-      "type": "object",
-      "required": ["id", "type"],
+    "SummaryBlock": {
+      "allOf": [{ "$ref": "#/definitions/BaseBlock" }],
+      "properties": { "type": { "const": "SummaryBlock" } },
+      "description": "Condensed recap of a meeting segment."
+    },
+
+    "QuestionSuggestion": {
+      "allOf": [{ "$ref": "#/definitions/BaseBlock" }],
       "properties": {
-        "id":        { "type": "string" },
-        "type":      { "const": "EmptyPlaceholder" },
-        "title":     { "type": "string" },
-        "content":   { "type": "string" },
-        "timestamp": { "type": "string" }
+        "type": { "const": "QuestionSuggestion" },
+        "metadata": {
+          "type": "object",
+          "properties": {
+            "priority": { "type": "string", "enum": ["low", "med", "high"] }
+          }
+        }
       },
-      "description": "Renders when AI explicitly sends this type, or when blocks array is empty. title/content/timestamp optional."
+      "description": "AI-generated question for the facilitator. Routed to SuggestionCardStack, not BlockRenderer. BlockRenderer renders it as a fallback only."
     }
   },
 
@@ -53,14 +65,16 @@
       "oneOf": [
         { "$ref": "#/definitions/TextBlock" },
         { "$ref": "#/definitions/DecisionNode" },
-        { "$ref": "#/definitions/EmptyPlaceholder" }
+        { "$ref": "#/definitions/SummaryBlock" },
+        { "$ref": "#/definitions/QuestionSuggestion" }
       ]
     }
   },
 
   "notes": [
     "Unknown types must not crash BlockRenderer — rendered as UnknownBlock fallback.",
-    "content field is plain string for all types in v0. Richer shapes (e.g. DecisionNode options/status) deferred to Sprint 2 after S1-T06-A research.",
-    "timestamp is a display string (HH:MM), not ISO 8601 — formatting owned by backend."
+    "QuestionSuggestion is filtered out by useAiBlocks and sent to SuggestionCardStack. BlockRenderer only sees it if the caller bypasses the hook.",
+    "id and timestamp are frontend-added fields, not part of the AI output contract.",
+    "EmptyPlaceholder is a frontend-only sentinel, never emitted by the AI."
   ]
 }

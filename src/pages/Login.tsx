@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { COLORS } from '../constants'
-import { btnAccent, btnGhost } from '../components/ui'
+import { btnAccent } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 
 interface Props {

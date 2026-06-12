@@ -1,0 +1,33 @@
+# S1-T01-C — Basic CI: project must typecheck and build on every push. Runs on
+# the repo's active branches (main / beta / delta). Frontend lives at the repo
+# root; the backend is in ./backend.
+name: CI
+
+on:
+  push:
+    branches: [main, beta, delta]
+  pull_request:
+    branches: [main, beta, delta]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Backend uses the built-in node:sqlite driver (Node >= 22.5).
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          npm install
+          npm --prefix backend install
+
+      - name: Typecheck backend (lint gate — must not crash)
+        run: npm --prefix backend run typecheck
+
+      - name: Build frontend (root)
+        run: npm run build
