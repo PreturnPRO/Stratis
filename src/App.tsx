@@ -1,4 +1,3 @@
-// REPLACE entire App.tsx with:
 import { useState } from 'react'
 import { COLORS } from './constants'
 import { AuthProvider, useAuth } from './context/AuthContext'
@@ -15,19 +14,22 @@ import Inbox      from './pages/Inbox'
 import Settings   from './pages/Settings'
 import Dashboard  from './pages/Dashboard'
 import Documents  from './pages/Documents'
+import SummaryView from './pages/SummaryView';
+import NodeTypeTestPage from './pages/NodeTypeTestPage';
 
 type AuthPage = 'landing' | 'login' | 'register' | 'app'
 
-function renderPage(active: string) {
-  switch (active) {
+function renderPage(active: string, navParams: Record<string, string>, handleNav: (id: string, params?: Record<string, string>) => void) {  switch (active) {
     case 'projects':  return <Projects />
     case 'map':       return <StrategyMap />
     case 'meeting':   return <Meeting />
     case 'decisions': return <Decisions />
     case 'inbox':     return <Inbox />
     case 'settings':  return <Settings />
-    case 'dashboard': return <Dashboard />
+    case 'dashboard': return <Dashboard onNav={handleNav} />
     case 'documents': return <Documents />
+    case 'summary':   return <SummaryView role="facilitator" sessionId={navParams?.sessionId} />
+    case 'nodetest':  return <NodeTypeTestPage />
     default:          return <Projects />
   }
 }
@@ -36,11 +38,13 @@ function AppShell() {
   const { isAuthed, logout } = useAuth()
   const [authPage, setAuthPage] = useState<AuthPage>('landing')
   const [active, setActive] = useState('projects')
+  const [navParams, setNavParams] = useState<Record<string, string>>({})
   const [showTransition, setShowTransition] = useState(false)
 
-  const handleNav = (id: string) => {
+  const handleNav = (id: string, params?: Record<string, string>) => {
     if (id === 'meeting' && active !== 'meeting') setShowTransition(true)
     setActive(id)
+    setNavParams(params ?? {})
   }
 
   // Auth pages — no sidebar
@@ -74,7 +78,7 @@ function AppShell() {
         </div>
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
           <div style={{ flex: 1, overflow: 'hidden', height: '100%' }}>
-            {renderPage(active)}
+            {renderPage(active, navParams, handleNav)}
           </div>
         </div>
       </div>

@@ -15,8 +15,11 @@ const MOCK_SUMMARIES = [
   { id: "s3", title: "GTM Kickoff",              project: "Enterprise GTM", date: "Jun 7",  decisions: 3, openItems: 5 },
 ]
 
-export default function Dashboard() {
-  return (
+interface DashboardProps {
+  onNav?: (id: string, params?: Record<string, string>) => void;
+}
+
+export default function Dashboard({ onNav }: DashboardProps) {  return (
     <div style={{ padding: "40px 60px", overflowY: "auto", flex: 1 }}>
 
       {/* Header */}
@@ -98,6 +101,7 @@ export default function Dashboard() {
                 }}
                 onMouseEnter={(e) => (e.currentTarget.style.borderColor = COLORS.borderLight)}
                 onMouseLeave={(e) => (e.currentTarget.style.borderColor = COLORS.border)}
+                onClick={() => onNav?.('summary', { sessionId: s.id })}
               >
                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
                   <span style={{ color: COLORS.text, fontSize: 14, fontWeight: 500 }}>{s.title}</span>
