@@ -9,11 +9,18 @@ import * as suggestions from "../realtime/suggestions";
 import { detectAnswered } from "../realtime/autodetect";
 import { pushSuggestion, pushAnswered } from "../realtime/hub";
 import { placeholder } from "./_placeholder";
+import { validateAiOutput } from "../middleware/validateAiOutput";
 
 export const aiRouter = Router();
 
 // Info ping — confirms the namespace is mounted.
-aiRouter.get("/", placeholder("ai", "POST/GET /api/ai/test sends a hardcoded prompt (S1-T03-B)"));
+aiRouter.get(
+  "/",
+  placeholder(
+    "ai",
+    "POST/GET /api/ai/test sends a hardcoded prompt (S1-T03-B)",
+  ),
+);
 
 // S1-T03-B: trigger the first AI call.
 aiRouter.get("/test", async (_req, res, next) => {
@@ -35,7 +42,9 @@ aiRouter.post("/structure", async (req, res, next) => {
   try {
     const input = typeof req.body?.input === "string" ? req.body.input : "";
     if (input.trim() === "") {
-      return res.status(400).json({ ok: false, error: "body.input (string) is required" });
+      return res
+        .status(400)
+        .json({ ok: false, error: "body.input (string) is required" });
     }
 
     const result = await structuredCall(input);
@@ -46,7 +55,20 @@ aiRouter.post("/structure", async (req, res, next) => {
         data: { provider: result.provider, rawText: result.rawText },
       });
     }
-    res.json({ ok: true, data: { provider: result.provider, ...result.data } });
+
+    const checked = validateAiOutput(result.data);
+    if (!checked.ok) {
+      return res.status(422).json({
+        ok: false,
+        error: `AI output failed validation: ${checked.error}`,
+        data: { provider: result.provider },
+      });
+    }
+
+    res.json({
+      ok: true,
+      data: { provider: result.provider, ...checked.data },
+    });
   } catch (err) {
     next(err);
   }
@@ -57,15 +79,24 @@ aiRouter.post("/structure", async (req, res, next) => {
 // stack over WebSocket (newest on top). Facilitator-only.
 aiRouter.post("/suggest", requireAuth, async (req, res, next) => {
   try {
-    const sessionId = typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
+    const sessionId =
+      typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
     const input = typeof req.body?.input === "string" ? req.body.input : "";
     if (!sessionId || input.trim() === "") {
       return res
         .status(400)
-        .json({ ok: false, error: "body.sessionId and body.input (string) are required" });
+        .json({
+          ok: false,
+          error: "body.sessionId and body.input (string) are required",
+        });
     }
     if (req.auth!.role !== "facilitator") {
-      return res.status(403).json({ ok: false, error: "Only the facilitator can request suggestions" });
+      return res
+        .status(403)
+        .json({
+          ok: false,
+          error: "Only the facilitator can request suggestions",
+        });
     }
 
     const result = await structuredCall(input);
@@ -90,12 +121,17 @@ aiRouter.post("/suggest", requireAuth, async (req, res, next) => {
 // has now raised AND answered is struck through and the event pushed to the
 // facilitator. Returns the answered card ids.
 aiRouter.post("/suggest/scan", requireAuth, (req, res) => {
-  const sessionId = typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
-  const transcript = typeof req.body?.transcript === "string" ? req.body.transcript : "";
+  const sessionId =
+    typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
+  const transcript =
+    typeof req.body?.transcript === "string" ? req.body.transcript : "";
   if (!sessionId || transcript.trim() === "") {
     return res
       .status(400)
-      .json({ ok: false, error: "body.sessionId and body.transcript (string) are required" });
+      .json({
+        ok: false,
+        error: "body.sessionId and body.transcript (string) are required",
+      });
   }
 
   const open = suggestions.openCards(sessionId);
@@ -114,20 +150,31 @@ aiRouter.post("/suggest/scan", requireAuth, (req, res) => {
 // S1-T03-E: manual override. The facilitator taps a card to mark it answered,
 // regardless of the transcript.
 aiRouter.post("/suggest/answer", requireAuth, (req, res) => {
-  const sessionId = typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
+  const sessionId =
+    typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
   const cardId = typeof req.body?.cardId === "string" ? req.body.cardId : "";
   if (!sessionId || !cardId) {
     return res
       .status(400)
-      .json({ ok: false, error: "body.sessionId and body.cardId are required" });
+      .json({
+        ok: false,
+        error: "body.sessionId and body.cardId are required",
+      });
   }
   if (req.auth!.role !== "facilitator") {
-    return res.status(403).json({ ok: false, error: "Only the facilitator can mark cards answered" });
+    return res
+      .status(403)
+      .json({
+        ok: false,
+        error: "Only the facilitator can mark cards answered",
+      });
   }
 
   const card = suggestions.markAnswered(sessionId, cardId, "manual");
   if (!card) {
-    return res.status(404).json({ ok: false, error: "Card not found or already answered" });
+    return res
+      .status(404)
+      .json({ ok: false, error: "Card not found or already answered" });
   }
   pushAnswered(sessionId, cardId, "manual");
   res.json({ ok: true, data: { card } });

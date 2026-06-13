@@ -7,6 +7,7 @@ import { transcribeAudio } from "../lib/stt";
 import * as suggestions from "../realtime/suggestions";
 import { detectAnswered } from "../realtime/autodetect";
 import { pushSuggestion, pushAnswered } from "../realtime/hub";
+import { validateAiOutput } from "../middleware/validateAiOutput";
 
 export const transcriptRouter = Router();
 
@@ -30,7 +31,11 @@ function getSession(sessionId: string): SessionRow | undefined {
     .get<SessionRow>(sessionId);
 }
 
-function canUseSession(session: SessionRow, userId: string, role: string): boolean {
+function canUseSession(
+  session: SessionRow,
+  userId: string,
+  role: string,
+): boolean {
   if (role === "admin") return true;
   return session.facilitator_id === userId;
 }
@@ -48,7 +53,7 @@ function saveTranscriptChunk(input: {
     `
     INSERT INTO transcripts (id, session_id, speaker, text, timestamp)
     VALUES (?, ?, ?, ?, ?)
-    `
+    `,
   ).run(id, input.sessionId, input.speaker, input.text, timestamp);
 
   return {
@@ -87,9 +92,22 @@ async function routeTextToAi(sessionId: string, text: string, role: string) {
     };
   }
 
+  const checked = validateAiOutput(result.data);
+  if (!checked.ok) {
+    return {
+      ok: false as const,
+      status: 422,
+      error: `AI output failed validation: ${checked.error}`,
+      data: {
+        provider: result.provider,
+        answered,
+      },
+    };
+  }
+
   const cards =
     role === "facilitator"
-      ? suggestions.createFromBlocks(sessionId, result.data.blocks)
+      ? suggestions.createFromBlocks(sessionId, checked.data.blocks)
       : [];
 
   for (const card of cards) pushSuggestion(card);
@@ -99,7 +117,7 @@ async function routeTextToAi(sessionId: string, text: string, role: string) {
     data: {
       ai: {
         provider: result.provider,
-        blocks: result.data.blocks,
+        blocks: checked.data.blocks,
       },
       suggestions: {
         created: cards,
@@ -118,12 +136,16 @@ function validateSession(req: any, res: any, sessionId: string) {
   }
 
   if (session.status === "ended") {
-    res.status(409).json({ ok: false, error: "Cannot add transcript to an ended session" });
+    res
+      .status(409)
+      .json({ ok: false, error: "Cannot add transcript to an ended session" });
     return null;
   }
 
   if (!canUseSession(session, req.auth!.sub, req.auth!.role)) {
-    res.status(403).json({ ok: false, error: "You do not have access to this session" });
+    res
+      .status(403)
+      .json({ ok: false, error: "You do not have access to this session" });
     return null;
   }
 
@@ -158,7 +180,9 @@ transcriptRouter.get("/session/:sessionId", requireAuth, (req, res) => {
   }
 
   if (!canUseSession(session, req.auth!.sub, req.auth!.role)) {
-    return res.status(403).json({ ok: false, error: "You do not have access to this session" });
+    return res
+      .status(403)
+      .json({ ok: false, error: "You do not have access to this session" });
   }
 
   const rows = db
@@ -168,7 +192,7 @@ transcriptRouter.get("/session/:sessionId", requireAuth, (req, res) => {
       FROM transcripts
       WHERE session_id = ?
       ORDER BY timestamp ASC
-      `
+      `,
     )
     .all<TranscriptRow>(sessionId);
 
@@ -212,7 +236,10 @@ transcriptRouter.post("/chunk", requireAuth, async (req, res, next) => {
       sessionId,
       speaker,
       text,
-      timestamp: typeof req.body?.timestamp === "string" ? req.body.timestamp : undefined,
+      timestamp:
+        typeof req.body?.timestamp === "string"
+          ? req.body.timestamp
+          : undefined,
     });
 
     const routed = await routeTextToAi(sessionId, text, req.auth!.role);
@@ -274,7 +301,7 @@ transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
     if (!validateSession(req, res, sessionId)) return;
 
     const cleanBase64 = audioBase64.includes(",")
-      ? audioBase64.split(",").pop() ?? ""
+      ? (audioBase64.split(",").pop() ?? "")
       : audioBase64;
 
     const audio = Buffer.from(cleanBase64, "base64");
