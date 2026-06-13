@@ -1,7 +1,7 @@
 import { COLORS, SIGNALS } from "../constants";
 import { btnGhost } from "../components/ui";
 
-const tagColors = {
+const tagColors: Record<string, string> = {
   historical: "#1a9fc0",
   signal:     "#1a8c6e",
   risk:       "#c0392b",

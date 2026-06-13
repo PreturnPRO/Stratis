@@ -1,6 +1,6 @@
 import { COLORS, NAV_ITEMS } from "../constants";
 
-export default function Sidebar({ active, onNav }) {
+export default function Sidebar({ active, onNav, onLogout }: { active: string; onNav: (id: string) => void; onLogout?: () => void }) {
   return (
     <div style={{
       width: 48,
@@ -22,7 +22,7 @@ export default function Sidebar({ active, onNav }) {
         ⌃
       </div>
 
-      {NAV_ITEMS.map((item) => {
+      {NAV_ITEMS.map((item: { id: string; icon: string; label: string }) => {
         const isActive = active === item.id;
         const badge = item.id === "decisions" ? 2 : item.id === "inbox" ? 4 : null;
         const dot = item.id === "meeting";
@@ -67,8 +67,8 @@ export default function Sidebar({ active, onNav }) {
         );
       })}
 
-      {/* User avatar */}
-      <div style={{ marginTop: "auto" }}>
+      {/* User avatar + logout */}
+      <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
         <div style={{
           width: 30, height: 30, borderRadius: "50%",
           background: "#c0392b",
@@ -77,6 +77,21 @@ export default function Sidebar({ active, onNav }) {
         }}>
           SK
         </div>
+        {onLogout && (
+          <button
+            title="Sign out"
+            onClick={onLogout}
+            style={{
+              width: 30, height: 30, borderRadius: 6,
+              background: "transparent", border: "none",
+              color: COLORS.textDim, fontSize: 14,
+              cursor: "pointer", display: "flex",
+              alignItems: "center", justifyContent: "center",
+            }}
+          >
+            ⇥
+          </button>
+        )}
       </div>
     </div>
   );

@@ -1,11 +1,11 @@
 import { COLORS, INITIAL_NODES, ARROWS } from "../constants";
 import { btnAccent, btnGhost, tagStyle } from "../components/ui";
-import { useDraggableNodes } from "../hooks/useDraggableNodes";
+import { useDraggableNodes, NodePosition } from "../hooks/useDraggableNodes";
 
 // Compute arrow endpoints from node centers
-function getArrowPoints(nodes, arrow) {
-  const from = nodes.find((n) => n.id === arrow.from);
-  const to   = nodes.find((n) => n.id === arrow.to);
+function getArrowPoints(nodes: NodePosition[], arrow: { from: string; to: string; label?: string; dashed?: boolean }) {
+  const from = nodes.find((n: NodePosition) => n.id === arrow.from);
+  const to   = nodes.find((n: NodePosition) => n.id === arrow.to);
   if (!from || !to) return null;
 
   // Exit from right edge of source, enter left edge of target
@@ -82,7 +82,7 @@ export default function StrategyMap() {
               </marker>
             </defs>
 
-            {ARROWS.map((arrow, i) => {
+            {ARROWS.map((arrow: { from: string; to: string; label?: string; dashed?: boolean }, i: number) => {
               const pts = getArrowPoints(nodes, arrow);
               if (!pts) return null;
               const { x1, y1, x2, y2, cx1, cy1, cx2, cy2, midX, midY } = pts;
@@ -107,7 +107,7 @@ export default function StrategyMap() {
           </svg>
 
           {/* Draggable nodes */}
-          {nodes.map((node) => (
+          {nodes.map((node: NodePosition) => (
             <div
               key={node.id}
               style={{
@@ -137,15 +137,14 @@ export default function StrategyMap() {
                   {node.age}
                 </span>
               </div>
-
               {node.tag && (
-                <div style={{ marginTop: 8 }}>
+                <div style={{ marginTop: 6 }}>
                   <span style={tagStyle(node.tag.color)}>{node.tag.label}</span>
                 </div>
               )}
               {node.tags && (
-                <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {node.tags.map((t, i) => (
+                <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {node.tags!.map((t: { label: string; color: string }, i: number) => (
                     <span key={i} style={tagStyle(t.color)}>{t.label}</span>
                   ))}
                 </div>

@@ -1,0 +1,26 @@
+export const COLORS = {
+  bg:           "#0a0a0a",
+  surface:      "#111111",
+  surfaceHover: "#1a1a1a",
+  surfaceMuted: "#0d0d0d",
+  border:       "#222222",
+  borderLight:  "#2a2a2a",
+  textPrimary:  "#e8e8e8",
+  textMuted:    "#666666",
+  textDim:      "#444444",
+  accent:       "#e8a020",
+  accentDim:    "#7a4f08",
+  amber:        "#e8a020",
+  amberSubtle:  "#1a1200",
+  teal:         "#1a8c6e",
+  tealLight:    "#0d5c49",
+  tealBg:       "#0a2e26",
+  red:          "#c0392b",
+  redBg:        "#2a0f0d",
+  orange:       "#e8520a",
+  orangeBg:     "#2a1208",
+  cyan:         "#1a9fc0",
+  cyanBg:       "#0a2a33",
+} as const
+
+export type ColorToken = keyof typeof COLORS

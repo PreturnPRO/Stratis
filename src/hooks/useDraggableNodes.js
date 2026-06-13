@@ -27,12 +27,13 @@ export function useDraggableNodes(initialNodes) {
 
     const onMove = (me) => {
       if (!dragging.current) return;
-      const dx = me.clientX - dragging.current.startMouseX;
-      const dy = me.clientY - dragging.current.startMouseY;
+      const { id, startMouseX, startMouseY, startNodeX, startNodeY } = dragging.current;
+      const dx = me.clientX - startMouseX;
+      const dy = me.clientY - startMouseY;
       setNodes((prev) =>
         prev.map((n) =>
-          n.id === dragging.current.id
-            ? { ...n, x: dragging.current.startNodeX + dx, y: dragging.current.startNodeY + dy }
+          n.id === id
+            ? { ...n, x: startNodeX + dx, y: startNodeY + dy }
             : n
         )
       );

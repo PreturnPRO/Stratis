@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { COLORS } from "../constants";
 
-export default function MeetingTransition({ onDone }) {
+export default function MeetingTransition({ onDone }: { onDone: () => void }) {
   const [phase, setPhase] = useState("enter");
   const [color, setColor] = useState("#ffffff");
 

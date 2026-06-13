@@ -7,9 +7,13 @@ dist/
 build/
 **/dist/
 
-# Environment files — NEVER commit these
+# Environment files — NEVER commit real values (dev/staging/prod all ignored)
 .env
+.env.*
 **/.env
+**/.env.*
+# ...but keep the committed templates
+!.env.example
 !**/.env.example
 
 # Database (local dev only)
