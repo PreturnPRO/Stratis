@@ -21,11 +21,66 @@ const toUser = (r: UserRow): User => ({
 
 const VALID_ROLES: Role[] = ["facilitator", "participant", "admin"];
 
-authRouter.post("/signup", (req, res) => {
-  const { email, password, name, role, orgName } = (req.body ?? {}) as SignupRequest;
-  if (!email || !password || !name) {
-    return res.status(400).json({ ok: false, error: "email, password and name are required" });
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function cleanEmail(value: unknown): string {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function cleanString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function validatePassword(password: unknown): string | null {
+  if (typeof password !== "string" || password.length === 0) {
+    return "Password is required";
   }
+
+  if (password.length < 8) {
+    return "Password must be at least 8 characters";
+  }
+
+  if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
+    return "Password must include at least one letter and one number";
+  }
+
+  return null;
+}
+
+authRouter.post("/signup", (req, res) => {
+  const body = (req.body ?? {}) as SignupRequest;
+
+  const email = cleanEmail(body.email);
+  const name = cleanString(body.name);
+  const password = body.password;
+  const role = body.role;
+  const orgName = cleanString(body.orgName);
+
+  if (!name) {
+    return res.status(400).json({ ok: false, error: "Name is required" });
+  }
+
+  if (name.length < 2) {
+    return res.status(400).json({ ok: false, error: "Name must be at least 2 characters" });
+  }
+
+  if (name.length > 80) {
+    return res.status(400).json({ ok: false, error: "Name must be 80 characters or fewer" });
+  }
+
+  if (!email) {
+    return res.status(400).json({ ok: false, error: "Email is required" });
+  }
+
+  if (!EMAIL_RE.test(email)) {
+    return res.status(400).json({ ok: false, error: "Enter a valid email address" });
+  }
+
+  const passwordError = validatePassword(password);
+  if (passwordError) {
+    return res.status(400).json({ ok: false, error: passwordError });
+  }
+
   const chosenRole: Role = role && VALID_ROLES.includes(role) ? role : "facilitator";
 
   const existing = db.prepare(`SELECT id FROM users WHERE email = ?`).get(email);
@@ -34,7 +89,7 @@ authRouter.post("/signup", (req, res) => {
   const ts = now();
   const orgId = newId("org");
   db.prepare(`INSERT INTO organizations (id,name,created_at) VALUES (?,?,?)`)
-    .run(orgId, orgName?.trim() || `${name}'s workspace`, ts);
+    .run(orgId, orgName || `${name}'s workspace`, ts);
 
   const id = newId("usr");
   const hash = bcrypt.hashSync(password, 10);
@@ -52,9 +107,21 @@ authRouter.post("/signup", (req, res) => {
 });
 
 authRouter.post("/login", (req, res) => {
-  const { email, password } = (req.body ?? {}) as LoginRequest;
-  if (!email || !password) {
-    return res.status(400).json({ ok: false, error: "email and password are required" });
+  const body = (req.body ?? {}) as LoginRequest;
+
+  const email = cleanEmail(body.email);
+  const password = body.password;
+
+  if (!email) {
+    return res.status(400).json({ ok: false, error: "Email is required" });
+  }
+
+  if (!EMAIL_RE.test(email)) {
+    return res.status(400).json({ ok: false, error: "Enter a valid email address" });
+  }
+
+  if (typeof password !== "string" || password.length === 0) {
+    return res.status(400).json({ ok: false, error: "Password is required" });
   }
   const row = db.prepare(`SELECT * FROM users WHERE email = ?`).get(email) as UserRow | undefined;
   if (!row || !bcrypt.compareSync(password, row.password_hash)) {
