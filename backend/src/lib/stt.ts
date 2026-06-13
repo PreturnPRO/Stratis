@@ -14,7 +14,7 @@ export interface TranscribeResult {
 async function fetchWithTimeout(
   url: string,
   init: RequestInit,
-  timeoutMs: number
+  timeoutMs: number,
 ): Promise<Response> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -34,7 +34,9 @@ function mockTranscribe(input: TranscribeInput): TranscribeResult {
   };
 }
 
-async function deepgramTranscribe(input: TranscribeInput): Promise<TranscribeResult> {
+async function deepgramTranscribe(
+  input: TranscribeInput,
+): Promise<TranscribeResult> {
   const { apiKey, model, baseUrl } = env.stt.deepgram;
 
   if (!apiKey) {
@@ -53,17 +55,36 @@ async function deepgramTranscribe(input: TranscribeInput): Promise<TranscribeRes
       },
       body: input.audio,
     },
-    env.stt.timeoutMs
+    env.stt.timeoutMs,
   );
 
   const raw: any = await res.json();
 
   if (!res.ok) {
-    throw new Error(`Deepgram error ${res.status}: ${JSON.stringify(raw)}`);
+    const message = `Deepgram error ${res.status}: ${JSON.stringify(raw)}`;
+
+    // Browser MediaRecorder can occasionally emit a tiny/partial chunk,
+    // especially on stop. Deepgram may reject that as corrupt/unsupported.
+    // Treat 400 as "no transcript for this chunk" instead of crashing
+    // the live meeting pipeline.
+    if (res.status === 400) {
+      console.warn(`[stt] ${message}`);
+
+      return {
+        provider: "deepgram",
+        text: "",
+        raw: {
+          skipped: true,
+          reason: "deepgram_rejected_chunk",
+          error: raw,
+        },
+      };
+    }
+
+    throw new Error(message);
   }
 
-  const text =
-    raw?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? "";
+  const text = raw?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? "";
 
   return {
     provider: "deepgram",
@@ -72,7 +93,9 @@ async function deepgramTranscribe(input: TranscribeInput): Promise<TranscribeRes
   };
 }
 
-export async function transcribeAudio(input: TranscribeInput): Promise<TranscribeResult> {
+export async function transcribeAudio(
+  input: TranscribeInput,
+): Promise<TranscribeResult> {
   if (env.stt.provider === "deepgram") {
     return deepgramTranscribe(input);
   }

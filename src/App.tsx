@@ -16,9 +16,15 @@ import Dashboard  from './pages/Dashboard'
 import Documents  from './pages/Documents'
 import SummaryView from './pages/SummaryView';
 
+//For Ai testing
+import LiveVoicePipelineTest from './pages/LiveVoicePipelineTest'
+
 type AuthPage = 'landing' | 'login' | 'register' | 'app'
 
 function renderPage(active: string, navParams: Record<string, string>, handleNav: (id: string, params?: Record<string, string>) => void) {  switch (active) {
+    
+    case 'live-voice-test':return <LiveVoicePipelineTest /> // Temporary page for AI testing
+    
     case 'projects':  return <Projects />
     case 'map':       return <StrategyMap />
     case 'meeting':   return <Meeting />
