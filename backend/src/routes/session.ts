@@ -354,6 +354,82 @@ sessionRouter.post("/", requireAuth, (req, res) => {
 });
 
 /**
+ * GET /api/session/recover
+ *
+ * Recover latest non-ended session after browser/app crash.
+ * Must be before /:id route.
+ */
+sessionRouter.get("/recover", requireAuth, (req, res) => {
+  const role = req.auth!.role;
+  const userId = req.auth!.sub;
+  const orgId = req.auth!.orgId;
+
+  if (role === "participant") {
+    return res.json({
+      ok: true,
+      data: {
+        recovered: false,
+        session: null,
+        reason: "participants_do_not_recover_facilitator_sessions",
+      },
+    });
+  }
+
+  const row = db
+    .prepare(
+      `
+      SELECT
+        s.id,
+        s.meeting_id,
+        s.facilitator_id,
+        s.status,
+        s.started_at,
+        s.ended_at,
+        s.created_at,
+        m.org_id,
+        m.project_id,
+        m.title AS meeting_title
+      FROM sessions s
+      JOIN meetings m ON m.id = s.meeting_id
+      WHERE s.status IN ('active', 'created')
+        AND m.org_id = ?
+        AND (
+          ? = 'admin'
+          OR s.facilitator_id = ?
+        )
+      ORDER BY
+        CASE s.status
+          WHEN 'active' THEN 0
+          WHEN 'created' THEN 1
+          ELSE 2
+        END,
+        COALESCE(s.started_at, s.created_at) DESC
+      LIMIT 1
+      `
+    )
+    .get(orgId, role, userId);
+
+  if (!row) {
+    return res.json({
+      ok: true,
+      data: {
+        recovered: false,
+        session: null,
+        reason: "no_active_or_created_session",
+      },
+    });
+  }
+
+  res.json({
+    ok: true,
+    data: {
+      recovered: true,
+      session: row,
+    },
+  });
+});
+
+/**
  * GET /api/session/:id
  *
  * Get one session and basic linked counts.

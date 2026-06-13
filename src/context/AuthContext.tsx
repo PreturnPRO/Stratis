@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode } from 'react'
+import { createContext, useContext, useState, type ReactNode } from 'react'
 
 interface User {
   id: string
@@ -19,13 +19,46 @@ interface AuthContextValue extends AuthState {
   isAuthed: boolean
 }
 
+const STORAGE_KEY = 'stratis.auth.v1'
+
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [auth, setAuth] = useState<AuthState>({ user: null, token: null })
+function loadAuth(): AuthState {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+    if (!raw) return { user: null, token: null }
 
-  const login = (token: string, user: User) => setAuth({ token, user })
-  const logout = () => setAuth({ user: null, token: null })
+    const parsed = JSON.parse(raw) as AuthState
+    if (!parsed?.token || !parsed?.user) return { user: null, token: null }
+
+    return parsed
+  } catch {
+    return { user: null, token: null }
+  }
+}
+
+function saveAuth(auth: AuthState) {
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(auth))
+}
+
+function clearAuth() {
+  window.localStorage.removeItem(STORAGE_KEY)
+  window.localStorage.removeItem('stratis.activeSessionId.v1')
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [auth, setAuth] = useState<AuthState>(() => loadAuth())
+
+  const login = (token: string, user: User) => {
+    const next = { token, user }
+    setAuth(next)
+    saveAuth(next)
+  }
+
+  const logout = () => {
+    setAuth({ user: null, token: null })
+    clearAuth()
+  }
 
   return (
     <AuthContext.Provider value={{ ...auth, login, logout, isAuthed: !!auth.token }}>

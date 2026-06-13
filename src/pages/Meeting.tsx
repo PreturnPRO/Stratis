@@ -22,6 +22,7 @@ import { useSuggestionSocket } from "../hooks/useSuggestionSocket";
 import { useMediaRecorder } from "../hooks/useMediaRecorder";
 import { useAuth } from "../context/AuthContext";
 import { DEMO_SESSION_ID } from "../../shared/types";
+import { useSessionRecovery } from "../hooks/useSessionRecovery";
 
 const API_BASE = "http://localhost:3001";
 
@@ -60,6 +61,9 @@ export default function Meeting() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const { token } = useAuth();
 
+  const recovery = useSessionRecovery({ token });
+  const sessionId = recovery.sessionId ?? DEMO_SESSION_ID;
+
   const [isLoading, setIsLoading] = useState(true);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [blocksOpen, setBlocksOpen] = useState(false);
@@ -81,7 +85,7 @@ export default function Meeting() {
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          sessionId: DEMO_SESSION_ID,
+          sessionId,
           audioBase64,
           mimeType: chunk.type || "audio/webm",
         }),
@@ -95,7 +99,7 @@ export default function Meeting() {
 
       if (!blocksOpen) setBlocksOpen(true);
     },
-    [token, ai, blocksOpen],
+    [token, ai, sessionId, blocksOpen],
   );
 
   const recorder = useMediaRecorder({
@@ -107,7 +111,7 @@ export default function Meeting() {
   // Only the facilitator's connection is subscribed to suggestion events
   // server-side (see hub.ts); `role` reflects what the server confirmed.
   const { cards, role, markAnswered, markActive } =
-    useSuggestionSocket(DEMO_SESSION_ID);
+    useSuggestionSocket(sessionId);
   const isFacilitator = role === "facilitator";
 
   useEffect(() => {
@@ -134,7 +138,7 @@ export default function Meeting() {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ sessionId: DEMO_SESSION_ID, transcript: text }),
+      body: JSON.stringify({ sessionId, transcript: text }),
     }).catch(() => {
       /* non-fatal */
     });
@@ -149,12 +153,12 @@ export default function Meeting() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ sessionId: DEMO_SESSION_ID, input: text }),
+        body: JSON.stringify({ sessionId, input: text }),
       }).catch(() => {
         /* non-fatal */
       });
     }
-  }, [inputText, ai, token, blocksOpen, isFacilitator]);
+  }, [inputText, ai, token, blocksOpen, isFacilitator, sessionId]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
