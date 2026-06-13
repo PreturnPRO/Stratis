@@ -48,6 +48,15 @@ export const env = {
       model: process.env.OLLAMA_MODEL ?? "llama3.1",
     },
   },
+  stt: {
+    provider: (process.env.STT_PROVIDER ?? "mock") as "deepgram" | "mock",
+    timeoutMs: Number(process.env.STT_TIMEOUT_MS ?? 15000),
+    deepgram: {
+      apiKey: process.env.DEEPGRAM_API_KEY ?? "",
+      model: process.env.DEEPGRAM_MODEL ?? "nova-2",
+      baseUrl: "https://api.deepgram.com/v1/listen",
+    },
+  },
 
   // NOTE: speech-to-text config (S1-T04) is added later.
 
