@@ -100,3 +100,6 @@ export type WsServerEvent =
   | { type: "connected"; sessionId: string; role: Role }
   | { type: "suggestion:new"; card: SuggestionCard }
   | { type: "suggestion:answered"; sessionId: string; cardId: string; source: AnsweredSource };
+
+/** Placeholder until S1-T03-F provides real session IDs from the meeting lifecycle. */
+export const DEMO_SESSION_ID = "session_demo";

@@ -1,28 +1,30 @@
-// S1-T03-D: wires AI pipeline to BlockRenderer.
-// E2E: user types → POST /api/ai/structure → validated blocks → BlockRenderer
-// QuestionSuggestion blocks → SuggestionCardStack.
+// S1-T03-D/E: wires AI pipeline to BlockRenderer + suggestion card stack.
+//
+// E2E: user types → POST /api/ai/structure → validated blocks → BlockRenderer.
+//
+// S1-T03-E: a second call, POST /api/ai/suggest (facilitator-only), turns any
+// QuestionSuggestion blocks into cards on the server and pushes them over
+// /ws to the facilitator's stack — never to BlockRenderer / the transcript
+// panel, and never to participants. A third call, POST /api/ai/suggest/scan,
+// runs auto-detect: if this chunk answers an already-open card, the server
+// strikes it through over the same socket.
+//
 // S1-T04-C will replace manual input with live STT chunks (stub is here).
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { COLORS, MEETING_MESSAGES } from '../constants'
 import { btnAccent, Avatar } from '../components/ui'
 import { LoadingState } from '../components/states'
-import { SuggestionCardStack, type SuggestionCard } from '../components/SuggestionCardStack'
+import { SuggestionCardStack } from '../components/SuggestionCardStack'
 import BlockRenderer from '../components/BlockRenderer'
 import { useAiBlocks } from '../hooks/useAiBlocks'
+import { useSuggestionSocket } from '../hooks/useSuggestionSocket'
 import { useMediaRecorder } from '../hooks/useMediaRecorder'
 import { useAuth } from '../context/AuthContext'
-import type { AIBlock } from '../../shared/types'
+import { DEMO_SESSION_ID } from '../../shared/types'
 
-function blockToCard(block: AIBlock): SuggestionCard {
-  return {
-    id: `qs-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    question: block.title,
-    reason: block.content,
-    status: 'active',
-    type: 'suggestion',
-  }
-}
+const API_BASE = 'http://localhost:3001'
+
 
 const MOCK_SUMMARY = [
   { time: '00:00–01:48', speaker: 'Sarah K.', color: '#c0392b', note: 'Q2 revenue missed by 12%. Root cause: enterprise pricing misaligned with value delivery. 8 of 12 churned customers cited pricing as top-3 reason.' },
@@ -37,27 +39,24 @@ export default function Meeting() {
   const [isLoading, setIsLoading]           = useState(true)
   const [transcriptOpen, setTranscriptOpen] = useState(false)
   const [blocksOpen, setBlocksOpen]         = useState(false)
-  const [cards, setCards]                   = useState<SuggestionCard[]>([])
   const [inputText, setInputText]           = useState('')
 
   const ai = useAiBlocks()
+
+  // S1-T03-E: suggestion card stack — initial load via REST, live updates via /ws.
+  // Only the facilitator's connection is subscribed to suggestion events
+  // server-side (see hub.ts); `role` reflects what the server confirmed.
+  const { cards, role, markAnswered, markActive } = useSuggestionSocket(DEMO_SESSION_ID)
+  const isFacilitator = role === 'facilitator'
 
   const { status: micStatus, error: micError, start: startMic, stop: stopMic } =
     useMediaRecorder({
       chunkIntervalMs: 3000,
       onChunk: (chunk) => {
-        // S1-T04-C: convert blob → STT text → ai.send(transcript, token ?? undefined)
+        // S1-T04-C: convert blob → STT text → ai.send(transcript, { token, sessionId: DEMO_SESSION_ID })
         console.log('[mic] chunk received', chunk.size, 'bytes')
       },
     })
-
-  // Push incoming QuestionSuggestion blocks to card stack (newest on top)
-  useEffect(() => {
-    if (ai.suggestions.length === 0) return
-    const newCards = ai.suggestions.map(blockToCard)
-    setCards((prev: SuggestionCard[]) => [...newCards, ...prev])
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ai.suggestions.length])
 
   useEffect(() => {
     if (!isLoading && scrollRef.current) {
@@ -65,23 +64,35 @@ export default function Meeting() {
     }
   }, [isLoading])
 
-  const markAnswered = (id: string) =>
-    setCards((prev: SuggestionCard[]) =>
-      prev.map((c: SuggestionCard) => c.id === id ? { ...c, status: 'answered' as const } : c)
-    )
-
-  const markActive = (id: string) =>
-    setCards((prev: SuggestionCard[]) =>
-      prev.map((c: SuggestionCard) => c.id === id ? { ...c, status: 'active' as const } : c)
-    )
-
   const handleSend = useCallback(async () => {
     const text = inputText.trim()
     if (!text || ai.status === 'loading') return
     setInputText('')
-    await ai.send(text, token ?? undefined)
+
+    await ai.send(text, { token: token ?? undefined })
     if (!blocksOpen) setBlocksOpen(true)
-  }, [inputText, ai, token, blocksOpen])
+
+    if (!token) return
+
+    // S1-T03-E: auto-detect — does this chunk resolve any open card?
+    // Any authenticated role may call /scan (it's read-mostly bookkeeping).
+    fetch(`${API_BASE}/api/ai/suggest/scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ sessionId: DEMO_SESSION_ID, transcript: text }),
+    }).catch(() => { /* non-fatal */ })
+
+    // S1-T03-E: facilitator-only — ask the AI for new question suggestions
+    // for this chunk; results are pushed to the card stack over /ws, not
+    // returned here.
+    if (isFacilitator) {
+      fetch(`${API_BASE}/api/ai/suggest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ sessionId: DEMO_SESSION_ID, input: text }),
+      }).catch(() => { /* non-fatal */ })
+    }
+  }, [inputText, ai, token, blocksOpen, isFacilitator])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -278,7 +289,7 @@ export default function Meeting() {
       </div>
 
       {/* Suggestion card stack — receives live QuestionSuggestion blocks */}
-      {!isLoading && (
+      {!isLoading && isFacilitator && (
         <SuggestionCardStack cards={cards} onMarkAnswered={markAnswered} onMarkActive={markActive} />
       )}
     </div>

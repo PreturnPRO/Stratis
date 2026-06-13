@@ -1,3 +1,12 @@
+// S1-T03-D/E — calls POST /api/ai/structure and returns renderable blocks.
+// Handles async state, loading, and the 10s timeout.
+//
+// S1-T03-E: /api/ai/structure does NOT filter QuestionSuggestion blocks
+// server-side (that endpoint is generic). Suggestion cards are produced by
+// the separate /api/ai/suggest flow and delivered over /ws — see
+// useSuggestionSocket. QuestionSuggestion blocks are filtered out here so
+// they never reach BlockRenderer / the transcript panel.
+
 import { useState, useCallback } from 'react'
 import type { AIBlock } from '../../shared/types'
 
@@ -6,10 +15,9 @@ export type AiBlocksStatus = 'idle' | 'loading' | 'ok' | 'error' | 'timeout'
 export interface UseAiBlocksReturn {
   status: AiBlocksStatus
   blocks: AIBlock[]
-  suggestions: AIBlock[]
   error: string | null
   provider: string | null
-  send: (input: string, token?: string) => Promise<void>
+  send: (input: string, opts?: { token?: string }) => Promise<void>
   reset: () => void
 }
 
@@ -17,21 +25,19 @@ const API_BASE = 'http://localhost:3001'
 const TIMEOUT_MS = 10_000
 
 export function useAiBlocks(): UseAiBlocksReturn {
-  const [status, setStatus]           = useState<AiBlocksStatus>('idle')
-  const [blocks, setBlocks]           = useState<AIBlock[]>([])
-  const [suggestions, setSuggestions] = useState<AIBlock[]>([])
-  const [error, setError]             = useState<string | null>(null)
-  const [provider, setProvider]       = useState<string | null>(null)
+  const [status, setStatus]     = useState<AiBlocksStatus>('idle')
+  const [blocks, setBlocks]     = useState<AIBlock[]>([])
+  const [error, setError]       = useState<string | null>(null)
+  const [provider, setProvider] = useState<string | null>(null)
 
   const reset = useCallback(() => {
     setStatus('idle')
     setBlocks([])
-    setSuggestions([])
     setError(null)
     setProvider(null)
   }, [])
 
-  const send = useCallback(async (input: string, token?: string) => {
+  const send = useCallback(async (input: string, opts?: { token?: string }) => {
     if (!input.trim()) return
     setStatus('loading')
     setError(null)
@@ -41,7 +47,7 @@ export function useAiBlocks(): UseAiBlocksReturn {
 
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (token) headers['Authorization'] = `Bearer ${token}`
+      if (opts?.token) headers['Authorization'] = `Bearer ${opts.token}`
 
       const res = await fetch(`${API_BASE}/api/ai/structure`, {
         method: 'POST',
@@ -63,13 +69,11 @@ export function useAiBlocks(): UseAiBlocksReturn {
       }
 
       const allBlocks: AIBlock[] = data.data?.blocks ?? []
+      // QuestionSuggestion is delivered via /ws (S1-T03-E), not BlockRenderer.
+      const renderBlocks = allBlocks.filter((b) => b.type !== 'QuestionSuggestion')
+
       setProvider(data.data?.provider ?? null)
-
-      const renderBlocks = allBlocks.filter(b => b.type !== 'QuestionSuggestion')
-      const suggBlocks   = allBlocks.filter(b => b.type === 'QuestionSuggestion')
-
       setBlocks((prev: AIBlock[]) => [...prev, ...renderBlocks])
-      setSuggestions((prev: AIBlock[]) => [...prev, ...suggBlocks])
       setStatus('ok')
 
     } catch (err) {
@@ -85,5 +89,5 @@ export function useAiBlocks(): UseAiBlocksReturn {
     }
   }, [])
 
-  return { status, blocks, suggestions, error, provider, send, reset }
+  return { status, blocks, error, provider, send, reset }
 }
