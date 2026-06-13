@@ -1,12 +1,7 @@
-// /api/transcript — S1-T04-C
-//
-// Routes transcribed text into AI pipeline.
-// STT is S1-T04-A.
-// Saving transcript rows is S1-T04-D.
-
 import { Router } from "express";
 import { requireAuth } from "../auth/middleware";
 import { db } from "../db/database";
+import { newId, now } from "../lib/ids";
 import { structuredCall } from "@ai/index";
 import { transcribeAudio } from "../lib/stt";
 import * as suggestions from "../realtime/suggestions";
@@ -21,6 +16,14 @@ interface SessionRow {
   status: "created" | "active" | "ended";
 }
 
+interface TranscriptRow {
+  id: string;
+  session_id: string;
+  speaker: string;
+  text: string;
+  timestamp: string;
+}
+
 function getSession(sessionId: string): SessionRow | undefined {
   return db
     .prepare(`SELECT id, facilitator_id, status FROM sessions WHERE id = ?`)
@@ -30,6 +33,31 @@ function getSession(sessionId: string): SessionRow | undefined {
 function canUseSession(session: SessionRow, userId: string, role: string): boolean {
   if (role === "admin") return true;
   return session.facilitator_id === userId;
+}
+
+function saveTranscriptChunk(input: {
+  sessionId: string;
+  speaker: string;
+  text: string;
+  timestamp?: string;
+}): TranscriptRow {
+  const id = newId("tx");
+  const timestamp = input.timestamp ?? now();
+
+  db.prepare(
+    `
+    INSERT INTO transcripts (id, session_id, speaker, text, timestamp)
+    VALUES (?, ?, ?, ?, ?)
+    `
+  ).run(id, input.sessionId, input.speaker, input.text, timestamp);
+
+  return {
+    id,
+    session_id: input.sessionId,
+    speaker: input.speaker,
+    text: input.text,
+    timestamp,
+  };
 }
 
 async function routeTextToAi(sessionId: string, text: string, role: string) {
@@ -64,17 +92,11 @@ async function routeTextToAi(sessionId: string, text: string, role: string) {
       ? suggestions.createFromBlocks(sessionId, result.data.blocks)
       : [];
 
-  for (const card of cards) {
-    pushSuggestion(card);
-  }
+  for (const card of cards) pushSuggestion(card);
 
   return {
     ok: true as const,
     data: {
-      sessionId,
-      transcript: {
-        text,
-      },
       ai: {
         provider: result.provider,
         blocks: result.data.blocks,
@@ -87,6 +109,27 @@ async function routeTextToAi(sessionId: string, text: string, role: string) {
   };
 }
 
+function validateSession(req: any, res: any, sessionId: string) {
+  const session = getSession(sessionId);
+
+  if (!session) {
+    res.status(404).json({ ok: false, error: "Session not found" });
+    return null;
+  }
+
+  if (session.status === "ended") {
+    res.status(409).json({ ok: false, error: "Cannot add transcript to an ended session" });
+    return null;
+  }
+
+  if (!canUseSession(session, req.auth!.sub, req.auth!.role)) {
+    res.status(403).json({ ok: false, error: "You do not have access to this session" });
+    return null;
+  }
+
+  return session;
+}
+
 transcriptRouter.get("/", requireAuth, (_req, res) => {
   res.json({
     ok: true,
@@ -94,6 +137,7 @@ transcriptRouter.get("/", requireAuth, (_req, res) => {
       namespace: "transcript",
       status: "ready",
       routes: [
+        "GET /api/transcript/session/:sessionId",
         "POST /api/transcript/chunk",
         "POST /api/transcript/audio-chunk",
       ],
@@ -102,13 +146,43 @@ transcriptRouter.get("/", requireAuth, (_req, res) => {
 });
 
 /**
+ * GET /api/transcript/session/:sessionId
+ * Load saved transcript after refresh.
+ */
+transcriptRouter.get("/session/:sessionId", requireAuth, (req, res) => {
+  const sessionId = req.params.sessionId;
+  const session = getSession(sessionId);
+
+  if (!session) {
+    return res.status(404).json({ ok: false, error: "Session not found" });
+  }
+
+  if (!canUseSession(session, req.auth!.sub, req.auth!.role)) {
+    return res.status(403).json({ ok: false, error: "You do not have access to this session" });
+  }
+
+  const rows = db
+    .prepare(
+      `
+      SELECT id, session_id, speaker, text, timestamp
+      FROM transcripts
+      WHERE session_id = ?
+      ORDER BY timestamp ASC
+      `
+    )
+    .all<TranscriptRow>(sessionId);
+
+  res.json({
+    ok: true,
+    data: {
+      sessionId,
+      transcripts: rows,
+    },
+  });
+});
+
+/**
  * POST /api/transcript/chunk
- *
- * Body:
- * {
- *   "sessionId": "ses_...",
- *   "text": "transcribed speech..."
- * }
  */
 transcriptRouter.post("/chunk", requireAuth, async (req, res, next) => {
   try {
@@ -120,6 +194,10 @@ transcriptRouter.post("/chunk", requireAuth, async (req, res, next) => {
           : "";
 
     const text = typeof req.body?.text === "string" ? req.body.text.trim() : "";
+    const speaker =
+      typeof req.body?.speaker === "string" && req.body.speaker.trim()
+        ? req.body.speaker.trim()
+        : "Unknown";
 
     if (!sessionId || !text) {
       return res.status(400).json({
@@ -128,28 +206,14 @@ transcriptRouter.post("/chunk", requireAuth, async (req, res, next) => {
       });
     }
 
-    const session = getSession(sessionId);
+    if (!validateSession(req, res, sessionId)) return;
 
-    if (!session) {
-      return res.status(404).json({
-        ok: false,
-        error: "Session not found",
-      });
-    }
-
-    if (session.status === "ended") {
-      return res.status(409).json({
-        ok: false,
-        error: "Cannot send transcript to an ended session",
-      });
-    }
-
-    if (!canUseSession(session, req.auth!.sub, req.auth!.role)) {
-      return res.status(403).json({
-        ok: false,
-        error: "You do not have access to this session",
-      });
-    }
+    const row = saveTranscriptChunk({
+      sessionId,
+      speaker,
+      text,
+      timestamp: typeof req.body?.timestamp === "string" ? req.body.timestamp : undefined,
+    });
 
     const routed = await routeTextToAi(sessionId, text, req.auth!.role);
 
@@ -157,13 +221,20 @@ transcriptRouter.post("/chunk", requireAuth, async (req, res, next) => {
       return res.status(routed.status).json({
         ok: false,
         error: routed.error,
-        data: routed.data,
+        data: {
+          transcript: row,
+          ...routed.data,
+        },
       });
     }
 
     res.json({
       ok: true,
-      data: routed.data,
+      data: {
+        sessionId,
+        transcript: row,
+        ...routed.data,
+      },
     });
   } catch (err) {
     next(err);
@@ -172,13 +243,6 @@ transcriptRouter.post("/chunk", requireAuth, async (req, res, next) => {
 
 /**
  * POST /api/transcript/audio-chunk
- *
- * Body:
- * {
- *   "sessionId": "ses_...",
- *   "audioBase64": "...",
- *   "mimeType": "audio/webm"
- * }
  */
 transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
   try {
@@ -195,6 +259,11 @@ transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
     const mimeType =
       typeof req.body?.mimeType === "string" ? req.body.mimeType : "audio/webm";
 
+    const speaker =
+      typeof req.body?.speaker === "string" && req.body.speaker.trim()
+        ? req.body.speaker.trim()
+        : "Speaker";
+
     if (!sessionId || !audioBase64) {
       return res.status(400).json({
         ok: false,
@@ -202,28 +271,7 @@ transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
       });
     }
 
-    const session = getSession(sessionId);
-
-    if (!session) {
-      return res.status(404).json({
-        ok: false,
-        error: "Session not found",
-      });
-    }
-
-    if (session.status === "ended") {
-      return res.status(409).json({
-        ok: false,
-        error: "Cannot send audio to an ended session",
-      });
-    }
-
-    if (!canUseSession(session, req.auth!.sub, req.auth!.role)) {
-      return res.status(403).json({
-        ok: false,
-        error: "You do not have access to this session",
-      });
-    }
+    if (!validateSession(req, res, sessionId)) return;
 
     const cleanBase64 = audioBase64.includes(",")
       ? audioBase64.split(",").pop() ?? ""
@@ -238,11 +286,7 @@ transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
       });
     }
 
-    const stt = await transcribeAudio({
-      audio,
-      mimeType,
-    });
-
+    const stt = await transcribeAudio({ audio, mimeType });
     const text = stt.text.trim();
 
     if (!text) {
@@ -250,18 +294,18 @@ transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
         ok: true,
         data: {
           sessionId,
-          transcript: {
-            provider: stt.provider,
-            text: "",
-          },
+          transcript: null,
           ai: null,
-          suggestions: {
-            created: [],
-            answered: [],
-          },
+          suggestions: { created: [], answered: [] },
         },
       });
     }
+
+    const row = saveTranscriptChunk({
+      sessionId,
+      speaker,
+      text,
+    });
 
     const routed = await routeTextToAi(sessionId, text, req.auth!.role);
 
@@ -269,18 +313,21 @@ transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
       return res.status(routed.status).json({
         ok: false,
         error: routed.error,
-        data: routed.data,
+        data: {
+          transcript: row,
+          stt: { provider: stt.provider },
+          ...routed.data,
+        },
       });
     }
 
     res.json({
       ok: true,
       data: {
+        sessionId,
+        transcript: row,
+        stt: { provider: stt.provider },
         ...routed.data,
-        transcript: {
-          provider: stt.provider,
-          text,
-        },
       },
     });
   } catch (err) {
