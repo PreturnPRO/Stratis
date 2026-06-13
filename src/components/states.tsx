@@ -41,16 +41,29 @@ function SkeletonCard() {
   );
 }
 
-export function LoadingState({ count = 3, delayMs = 1500, onDone }: { count?: number; delayMs?: number; onDone?: () => void }) {
+export function LoadingState({
+  count = 3,
+  delayMs = 1500,
+  onDone,
+  persist = false,
+}: {
+  count?: number;
+  delayMs?: number;
+  onDone?: () => void;
+  persist?: boolean;
+}) {
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
+    if (persist) return;
+
     const t = setTimeout(() => {
       setVisible(false);
       if (onDone) onDone();
     }, delayMs);
+
     return () => clearTimeout(t);
-  }, [delayMs, onDone]);
+  }, [delayMs, onDone, persist]);
 
   if (!visible) return null;
 
@@ -81,9 +94,11 @@ export function LoadingState({ count = 3, delayMs = 1500, onDone }: { count?: nu
         }} />
         Loading...
       </div>
+
       {Array.from({ length: count }).map((_, i) => (
         <SkeletonCard key={i} />
       ))}
+
       <style>{`
         @keyframes pulse {
           0%, 100% { opacity: 1; }

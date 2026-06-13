@@ -1,13 +1,8 @@
-// S1-T03-D/E — calls POST /api/ai/structure and returns renderable blocks.
-// Handles async state, loading, and the 10s timeout.
-//
-// S1-T03-E: /api/ai/structure does NOT filter QuestionSuggestion blocks
-// server-side (that endpoint is generic). Suggestion cards are produced by
-// the separate /api/ai/suggest flow and delivered over /ws — see
-// useSuggestionSocket. QuestionSuggestion blocks are filtered out here so
-// they never reach BlockRenderer / the transcript panel.
+// S1-T03-D/E + S1-T05-D — async AI calls with loading/timeout state.
+// Calls POST /api/ai/structure and returns renderable blocks.
+// QuestionSuggestion blocks are filtered out here; live cards use /api/ai/suggest + /ws.
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import type { AIBlock } from "../../shared/types";
 
 export type AiBlocksStatus = "idle" | "loading" | "ok" | "error" | "timeout";
@@ -17,6 +12,8 @@ export interface UseAiBlocksReturn {
   blocks: AIBlock[];
   error: string | null;
   provider: string | null;
+  isLoading: boolean;
+  canSend: boolean;
   send: (input: string, opts?: { token?: string }) => Promise<void>;
   reset: () => void;
   append: (blocks: AIBlock[], provider?: string | null) => void;
@@ -31,7 +28,12 @@ export function useAiBlocks(): UseAiBlocksReturn {
   const [error, setError] = useState<string | null>(null);
   const [provider, setProvider] = useState<string | null>(null);
 
+  const inFlightRef = useRef(false);
+  const requestIdRef = useRef(0);
+
   const reset = useCallback(() => {
+    requestIdRef.current += 1;
+    inFlightRef.current = false;
     setStatus("idle");
     setBlocks([]);
     setError(null);
@@ -39,7 +41,13 @@ export function useAiBlocks(): UseAiBlocksReturn {
   }, []);
 
   const send = useCallback(async (input: string, opts?: { token?: string }) => {
-    if (!input.trim()) return;
+    const clean = input.trim();
+    if (!clean || inFlightRef.current) return;
+
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    inFlightRef.current = true;
+
     setStatus("loading");
     setError(null);
 
@@ -50,12 +58,15 @@ export function useAiBlocks(): UseAiBlocksReturn {
       const headers: Record<string, string> = {
         "Content-Type": "application/json",
       };
-      if (opts?.token) headers["Authorization"] = `Bearer ${opts.token}`;
+
+      if (opts?.token) {
+        headers.Authorization = `Bearer ${opts.token}`;
+      }
 
       const res = await fetch(`${API_BASE}/api/ai/structure`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ input }),
+        body: JSON.stringify({ input: clean }),
         signal: controller.signal,
       });
 
@@ -65,6 +76,8 @@ export function useAiBlocks(): UseAiBlocksReturn {
         data?: { provider: string; blocks: AIBlock[] };
       };
 
+      if (requestId !== requestIdRef.current) return;
+
       if (!data.ok) {
         setError(data.error ?? "AI call failed");
         setStatus("error");
@@ -72,15 +85,18 @@ export function useAiBlocks(): UseAiBlocksReturn {
       }
 
       const allBlocks: AIBlock[] = data.data?.blocks ?? [];
-      // QuestionSuggestion is delivered via /ws (S1-T03-E), not BlockRenderer.
+
+      // QuestionSuggestion is delivered via /ws, not transcript renderer.
       const renderBlocks = allBlocks.filter(
         (b) => b.type !== "QuestionSuggestion",
       );
 
       setProvider(data.data?.provider ?? null);
-      setBlocks((prev: AIBlock[]) => [...prev, ...renderBlocks]);
+      setBlocks((prev) => [...prev, ...renderBlocks]);
       setStatus("ok");
     } catch (err) {
+      if (requestId !== requestIdRef.current) return;
+
       if ((err as Error).name === "AbortError") {
         setError("AI took too long — try again");
         setStatus("timeout");
@@ -90,6 +106,10 @@ export function useAiBlocks(): UseAiBlocksReturn {
       }
     } finally {
       clearTimeout(timer);
+
+      if (requestId === requestIdRef.current) {
+        inFlightRef.current = false;
+      }
     }
   }, []);
 
@@ -98,12 +118,27 @@ export function useAiBlocks(): UseAiBlocksReturn {
       const renderBlocks = incoming.filter(
         (b) => b.type !== "QuestionSuggestion",
       );
+
       if (nextProvider !== undefined) setProvider(nextProvider);
-      setBlocks((prev: AIBlock[]) => [...prev, ...renderBlocks]);
+      setBlocks((prev) => [...prev, ...renderBlocks]);
       setStatus("ok");
+      setError(null);
     },
     [],
   );
 
-  return { status, blocks, error, provider, send, append, reset };
+  const isLoading = status === "loading";
+  const canSend = !isLoading;
+
+  return {
+    status,
+    blocks,
+    error,
+    provider,
+    isLoading,
+    canSend,
+    send,
+    append,
+    reset,
+  };
 }

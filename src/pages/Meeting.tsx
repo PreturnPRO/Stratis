@@ -122,7 +122,7 @@ export default function Meeting() {
 
   const handleSend = useCallback(async () => {
     const text = inputText.trim();
-    if (!text || ai.status === "loading") return;
+    if (!text || !ai.canSend) return;
     setInputText("");
 
     await ai.send(text, { token: token ?? undefined });
@@ -395,7 +395,12 @@ export default function Meeting() {
                 onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
                   setInputText(e.target.value)
                 }
-                onKeyDown={handleKeyDown}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey && ai.canSend) {
+                    e.preventDefault();
+                    void handleSend();
+                  }
+                }}
                 placeholder="Paste or type a transcript chunk to test the AI pipeline…"
                 style={{
                   flex: 1,
@@ -413,15 +418,14 @@ export default function Meeting() {
               />
               <button
                 onClick={() => void handleSend()}
-                disabled={!inputText.trim() || ai.status === "loading"}
+                disabled={!inputText.trim() || ai.isLoading}
                 style={{
                   ...btnAccent(),
                   fontSize: 12,
                   padding: "8px 14px",
-                  opacity:
-                    !inputText.trim() || ai.status === "loading" ? 0.4 : 1,
+                  opacity: !inputText.trim() || ai.isLoading ? 0.55 : 1,
                   cursor:
-                    !inputText.trim() || ai.status === "loading"
+                    !inputText.trim() || ai.isLoading
                       ? "not-allowed"
                       : "pointer",
                 }}
@@ -500,6 +504,44 @@ export default function Meeting() {
               minHeight: 0,
             }}
           >
+            {ai.isLoading && (
+              <div style={{ marginBottom: 12 }}>
+                <LoadingState count={1} persist />
+              </div>
+            )}
+
+            {ai.status === "timeout" && (
+              <div
+                style={{
+                  background: COLORS.orangeBg,
+                  border: `1px solid ${COLORS.orange}`,
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                  color: COLORS.orange,
+                  fontSize: 12,
+                  marginBottom: 12,
+                }}
+              >
+                {ai.error ?? "AI took too long — try again"}
+              </div>
+            )}
+
+            {ai.status === "error" && (
+              <div
+                style={{
+                  background: COLORS.redBg,
+                  border: `1px solid ${COLORS.red}`,
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                  color: COLORS.red,
+                  fontSize: 12,
+                  marginBottom: 12,
+                }}
+              >
+                {ai.error ?? "AI call failed"}
+              </div>
+            )}
+
             <BlockRenderer nodes={ai.blocks} />
           </div>
         </div>
