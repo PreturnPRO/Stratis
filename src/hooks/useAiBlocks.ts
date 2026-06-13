@@ -7,87 +7,103 @@
 // useSuggestionSocket. QuestionSuggestion blocks are filtered out here so
 // they never reach BlockRenderer / the transcript panel.
 
-import { useState, useCallback } from 'react'
-import type { AIBlock } from '../../shared/types'
+import { useState, useCallback } from "react";
+import type { AIBlock } from "../../shared/types";
 
-export type AiBlocksStatus = 'idle' | 'loading' | 'ok' | 'error' | 'timeout'
+export type AiBlocksStatus = "idle" | "loading" | "ok" | "error" | "timeout";
 
 export interface UseAiBlocksReturn {
-  status: AiBlocksStatus
-  blocks: AIBlock[]
-  error: string | null
-  provider: string | null
-  send: (input: string, opts?: { token?: string }) => Promise<void>
-  reset: () => void
+  status: AiBlocksStatus;
+  blocks: AIBlock[];
+  error: string | null;
+  provider: string | null;
+  send: (input: string, opts?: { token?: string }) => Promise<void>;
+  reset: () => void;
+  append: (blocks: AIBlock[], provider?: string | null) => void;
 }
 
-const API_BASE = 'http://localhost:3001'
-const TIMEOUT_MS = 10_000
+const API_BASE = "http://localhost:3001";
+const TIMEOUT_MS = 10_000;
 
 export function useAiBlocks(): UseAiBlocksReturn {
-  const [status, setStatus]     = useState<AiBlocksStatus>('idle')
-  const [blocks, setBlocks]     = useState<AIBlock[]>([])
-  const [error, setError]       = useState<string | null>(null)
-  const [provider, setProvider] = useState<string | null>(null)
+  const [status, setStatus] = useState<AiBlocksStatus>("idle");
+  const [blocks, setBlocks] = useState<AIBlock[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [provider, setProvider] = useState<string | null>(null);
 
   const reset = useCallback(() => {
-    setStatus('idle')
-    setBlocks([])
-    setError(null)
-    setProvider(null)
-  }, [])
+    setStatus("idle");
+    setBlocks([]);
+    setError(null);
+    setProvider(null);
+  }, []);
 
   const send = useCallback(async (input: string, opts?: { token?: string }) => {
-    if (!input.trim()) return
-    setStatus('loading')
-    setError(null)
+    if (!input.trim()) return;
+    setStatus("loading");
+    setError(null);
 
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (opts?.token) headers['Authorization'] = `Bearer ${opts.token}`
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (opts?.token) headers["Authorization"] = `Bearer ${opts.token}`;
 
       const res = await fetch(`${API_BASE}/api/ai/structure`, {
-        method: 'POST',
+        method: "POST",
         headers,
         body: JSON.stringify({ input }),
         signal: controller.signal,
-      })
+      });
 
-      const data = await res.json() as {
-        ok: boolean
-        error?: string
-        data?: { provider: string; blocks: AIBlock[] }
-      }
+      const data = (await res.json()) as {
+        ok: boolean;
+        error?: string;
+        data?: { provider: string; blocks: AIBlock[] };
+      };
 
       if (!data.ok) {
-        setError(data.error ?? 'AI call failed')
-        setStatus('error')
-        return
+        setError(data.error ?? "AI call failed");
+        setStatus("error");
+        return;
       }
 
-      const allBlocks: AIBlock[] = data.data?.blocks ?? []
+      const allBlocks: AIBlock[] = data.data?.blocks ?? [];
       // QuestionSuggestion is delivered via /ws (S1-T03-E), not BlockRenderer.
-      const renderBlocks = allBlocks.filter((b) => b.type !== 'QuestionSuggestion')
+      const renderBlocks = allBlocks.filter(
+        (b) => b.type !== "QuestionSuggestion",
+      );
 
-      setProvider(data.data?.provider ?? null)
-      setBlocks((prev: AIBlock[]) => [...prev, ...renderBlocks])
-      setStatus('ok')
-
+      setProvider(data.data?.provider ?? null);
+      setBlocks((prev: AIBlock[]) => [...prev, ...renderBlocks]);
+      setStatus("ok");
     } catch (err) {
-      if ((err as Error).name === 'AbortError') {
-        setError('AI took too long — try again')
-        setStatus('timeout')
+      if ((err as Error).name === "AbortError") {
+        setError("AI took too long — try again");
+        setStatus("timeout");
       } else {
-        setError((err as Error).message ?? 'Network error')
-        setStatus('error')
+        setError((err as Error).message ?? "Network error");
+        setStatus("error");
       }
     } finally {
-      clearTimeout(timer)
+      clearTimeout(timer);
     }
-  }, [])
+  }, []);
 
-  return { status, blocks, error, provider, send, reset }
+  const append = useCallback(
+    (incoming: AIBlock[], nextProvider?: string | null) => {
+      const renderBlocks = incoming.filter(
+        (b) => b.type !== "QuestionSuggestion",
+      );
+      if (nextProvider !== undefined) setProvider(nextProvider);
+      setBlocks((prev: AIBlock[]) => [...prev, ...renderBlocks]);
+      setStatus("ok");
+    },
+    [],
+  );
+
+  return { status, blocks, error, provider, send, append, reset };
 }
