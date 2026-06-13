@@ -160,12 +160,15 @@ export default function Meeting() {
     }
   }, [inputText, ai, token, blocksOpen, isFacilitator, sessionId]);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      void handleSend();
-    }
-  };
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key === "Enter" && !e.shiftKey && ai.canSend) {
+        e.preventDefault();
+        void handleSend();
+      }
+    },
+    [ai, handleSend]
+  );
 
   return (
     <div style={{ display: "flex", flex: 1, overflow: "hidden", minHeight: 0 }}>
@@ -395,12 +398,7 @@ export default function Meeting() {
                 onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
                   setInputText(e.target.value)
                 }
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey && ai.canSend) {
-                    e.preventDefault();
-                    void handleSend();
-                  }
-                }}
+                onKeyDown={handleKeyDown}
                 placeholder="Paste or type a transcript chunk to test the AI pipeline…"
                 style={{
                   flex: 1,
@@ -430,7 +428,7 @@ export default function Meeting() {
                       : "pointer",
                 }}
               >
-                {ai.status === "loading" ? "Thinking…" : "Send"}
+                {ai.isLoading ? "Thinking…" : "Send"}
               </button>
               {ai.blocks.length > 0 && (
                 <button
