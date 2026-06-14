@@ -313,7 +313,30 @@ transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
       });
     }
 
-    const stt = await transcribeAudio({ audio, mimeType });
+    let stt;
+
+    try {
+      stt = await transcribeAudio({ audio, mimeType });
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Speech-to-text failed";
+
+      return res.status(502).json({
+        ok: false,
+        error: message,
+        data: {
+          sessionId,
+          transcript: null,
+          stt: null,
+          ai: null,
+          suggestions: {
+            created: [],
+            answered: [],
+          },
+        },
+      });
+    }
+
     const text = stt.text.trim();
 
     if (!text) {

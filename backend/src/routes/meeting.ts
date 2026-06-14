@@ -368,6 +368,151 @@ meetingRouter.post("/", requireAuth, (req, res) => {
   });
 });
 
+interface ProjectListRow {
+  project_id: string;
+  meeting_count: number;
+  last_meeting_at: string | null;
+}
+
+function slugifyProjectName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/['"]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
+}
+
+function titleFromProjectId(projectId: string): string {
+  return projectId
+    .replace(/[-_]+/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/**
+ * GET /api/meeting/projects
+ *
+ * Sprint 1 MVP project list.
+ * There is no full projects table yet, so projects are derived from meetings.project_id.
+ */
+meetingRouter.get("/projects", requireAuth, (req, res) => {
+  const where: string[] = ["m.org_id = ?"];
+  const params: unknown[] = [req.auth!.orgId];
+  if (req.auth!.role === "facilitator") {
+    where.push("m.created_by = ?");
+    params.push(req.auth!.sub);
+  }
+  const rows = db
+    .prepare(
+      `
+      SELECT
+        m.project_id,
+        COUNT(*) AS meeting_count,
+        MAX(COALESCE(m.scheduled_at, m.created_at)) AS last_meeting_at
+      FROM meetings m
+      WHERE ${where.join(" AND ")}
+      GROUP BY m.project_id
+      ORDER BY last_meeting_at DESC
+      `
+    )
+    .all<ProjectListRow>(...params);
+  res.json({
+    ok: true,
+    data: {
+      projects: rows.map((row) => ({
+        id: row.project_id,
+        projectId: row.project_id,
+        name: titleFromProjectId(row.project_id),
+        meetingCount: Number(row.meeting_count ?? 0),
+        lastMeetingAt: row.last_meeting_at,
+      })),
+    },
+  });
+});
+
+/**
+ * POST /api/meeting/projects
+ *
+ * Sprint 1 MVP new project.
+ * Creates a starter meeting under a new project_id.
+ */
+meetingRouter.post("/projects", requireAuth, (req, res) => {
+  const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+  if (!name) {
+    return res.status(400).json({
+      ok: false,
+      error: "Project name is required",
+    });
+  }
+  const baseProjectId = slugifyProjectName(name);
+  if (!baseProjectId) {
+    return res.status(400).json({
+      ok: false,
+      error: "Project name must contain letters or numbers",
+    });
+  }
+  let projectId = baseProjectId;
+  const existing = db
+    .prepare(
+      `
+      SELECT project_id
+      FROM meetings
+      WHERE org_id = ?
+        AND project_id = ?
+      LIMIT 1
+      `
+    )
+    .get<{ project_id: string }>(req.auth!.orgId, projectId);
+  if (existing) {
+    projectId = `${baseProjectId}-${Date.now().toString(36)}`;
+  }
+  const ts = now();
+  const meetingId = newId("mtg");
+  const title = `Kickoff: ${name}`;
+  db.prepare(
+    `
+    INSERT INTO meetings (
+      id,
+      org_id,
+      project_id,
+      title,
+      scheduled_at,
+      created_by,
+      created_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    `
+  ).run(
+    meetingId,
+    req.auth!.orgId,
+    projectId,
+    title,
+    null,
+    req.auth!.sub,
+    ts
+  );
+  res.status(201).json({
+    ok: true,
+    data: {
+      project: {
+        id: projectId,
+        projectId,
+        name,
+        meetingCount: 1,
+        lastMeetingAt: ts,
+      },
+      meeting: {
+        id: meetingId,
+        projectId,
+        title,
+        scheduledAt: null,
+        createdAt: ts,
+      },
+    },
+  });
+});
+
 /**
  * GET /api/meeting/:id
  */
