@@ -54,36 +54,117 @@ STRATIS-APP/
 │   ├── App.tsx
 │   ├── main.tsx
 │   ├── index.css
+│   ├── vite-env.d.ts
+│   │
 │   ├── components/
+│   │   ├── BlockRenderer.tsx
+│   │   ├── MeetingTransition.tsx
+│   │   ├── NodeTypes.tsx
+│   │   ├── Sidebar.tsx
+│   │   ├── Stats.tsx
+│   │   ├── SuggestionCardStack.tsx
+│   │   └── ui.tsx
+│   │
 │   ├── constants/
+│   │   ├── index.d.ts
+│   │   └── index.js
+│   │
 │   ├── context/
+│   │   └── AuthContext.tsx
+│   │
 │   ├── hooks/
+│   │   ├── useAiBlocks.ts
+│   │   ├── useDraggableNodes.d.ts
+│   │   ├── useDraggableNodes.js
+│   │   ├── useMediaRecorder.ts
+│   │   └── useSuggestionSocket.ts
+│   │
 │   ├── mocks/
+│   │   ├── suggestionCards.ts
+│   │   └── summaryMock.ts
+│   │
 │   ├── pages/
+│   │   ├── Dashboard.tsx
+│   │   ├── Decisions.tsx
+│   │   ├── Documents.tsx
+│   │   ├── Inbox.tsx
+│   │   ├── Landing.tsx
+│   │   ├── LiveVoicePipelineTest.tsx
+│   │   ├── Login.tsx
+│   │   ├── Meeting.tsx
+│   │   ├── Projects.tsx
+│   │   ├── Register.tsx
+│   │   ├── Settings.tsx
+│   │   ├── StrategyMap.tsx
+│   │   └── SummaryView.tsx
+│   │
 │   ├── schema/
+│   │   └── block-types.json
+│   │
 │   └── tokens/
+│       └── colors.ts
 │
 ├── backend/                     # Express backend
 │   ├── package.json
 │   ├── tsconfig.json
+│   │
 │   └── src/
 │       ├── index.ts
+│       │
 │       ├── auth/
+│       │   ├── jwt.ts
+│       │   ├── middleware.ts
+│       │   └── routes.ts
+│       │
 │       ├── config/
+│       │   └── env.ts
+│       │
 │       ├── db/
+│       │   ├── database.ts
+│       │   ├── migrate.ts
+│       │   ├── schema.sql
+│       │   └── seed.ts
+│       │
 │       ├── lib/
+│       │   ├── ids.ts
+│       │   └── stt.ts
+│       │
 │       ├── middleware/
+│       │   ├── errorHandler.ts
+│       │   └── validateAiOutput.ts
+│       │
 │       ├── realtime/
+│       │   ├── autodetect.ts
+│       │   ├── hub.ts
+│       │   └── suggestions.ts
+│       │
 │       └── routes/
+│           ├── _placeholder.ts
+│           ├── ai.ts
+│           ├── index.ts
+│           ├── meeting.ts
+│           ├── session.ts
+│           ├── summary.ts
+│           └── transcript.ts
 │
 ├── ai-service/                  # AI provider + structured output layer
 │   └── src/
 │       ├── index.ts
 │       ├── schema.ts
+│       │
 │       └── providers/
+│           ├── groq.ts
+│           ├── mock.ts
+│           ├── ollama.ts
+│           └── types.ts
 │
 ├── shared/                      # Shared frontend/backend types
-│   └── types.ts
+│   ├── types.ts
+│   └── schema/
+│       ├── document-patch-output.schema.json
+│       ├── live-card-output.schema.json
+│       ├── participant-summary-output.schema.json
+│       └── tree-node-output.schema.json
 │
 ├── schema/                      # Formal Stratis AI JSON schemas
 │   ├── block-types.json
@@ -93,12 +174,27 @@ STRATIS-APP/
 │   └── participant-summary-output.schema.json
 │
 ├── data/                        # Local SQLite runtime files, ignored
+│   ├── stratis.db
+│   ├── stratis.db-shm
+│   └── stratis.db-wal
+│
 ├── dist/                        # Frontend build output, ignored
+│   ├── index.html
+│   └── assets/
+│       ├── index-BQy-6a84.js
+│       └── index-V4592Tcs.css
+│
+├── .github/
+├── node_modules/
+│
 ├── .env.example
 ├── .gitignore
+├── index.html
 ├── package.json                 # Frontend package
+├── package-lock.json
 ├── vite.config.js
 ├── tsconfig.json
+├── tsconfig.node.json
 └── README.md
 ```
 
