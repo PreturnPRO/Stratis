@@ -28,7 +28,7 @@ export const NAV_ITEMS = [
   // { id: "decisions", icon: "☑", label: "Decisions" },
   // { id: "inbox", icon: "✉", label: "Inbox" },
   // { id: "settings", icon: "⚙", label: "Settings" },
-  // { id: "live-voice-test", icon: "🧪", label: "Live Voice Test" },
+  { id: "live-voice-test", icon: "🧪", label: "Live Voice Test" },
 ];
 
 export const INITIAL_NODES = [
