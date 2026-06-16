@@ -223,7 +223,7 @@ export default function Meeting({ onNav }: MeetingProps) {
     onChunk: (chunk) => {
       void sendAudioChunk(chunk);
     },
-    chunkIntervalMs: 5000,
+    chunkIntervalMs: 8000,
     mimeType: RECORDER_MIME_TYPE,
   });
 
