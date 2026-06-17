@@ -27,6 +27,22 @@ import type { AIBlock } from "../../shared/types";
 const API_BASE = "http://localhost:3001";
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 
+const MIN_AUDIO_CHUNK_BYTES = 2048;
+
+function getPreferredRecorderMimeType(): string | undefined {
+  if (typeof MediaRecorder === "undefined") return undefined;
+
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/ogg;codecs=opus",
+  ];
+
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type));
+}
+
+const RECORDER_MIME_TYPE = getPreferredRecorderMimeType();
+
 interface MeetingProps {
   onNav?: (id: string, params?: Record<string, string>) => void;
 }
@@ -59,7 +75,12 @@ interface AudioChunkResponse {
 function isRealSessionId(value: string | null | undefined): value is string {
   if (!value) return false;
   const clean = value.trim();
-  return clean !== "" && clean !== "session_demo" && clean !== "undefined" && clean !== "null";
+  return (
+    clean !== "" &&
+    clean !== "session_demo" &&
+    clean !== "undefined" &&
+    clean !== "null"
+  );
 }
 
 function formatTime(value: string): string {
@@ -112,13 +133,8 @@ export default function Meeting({ onNav }: MeetingProps) {
     return token ? { Authorization: `Bearer ${token}` } : {};
   }, [token]);
 
-  const {
-    cards,
-    role,
-    connected,
-    markAnswered,
-    markActive,
-  } = useSuggestionSocket(sessionId);
+  const { cards, role, connected, markAnswered, markActive } =
+    useSuggestionSocket(sessionId);
 
   const appendTranscript = useCallback((row: TranscriptRow) => {
     setTranscripts((prev) => {
@@ -130,6 +146,21 @@ export default function Meeting({ onNav }: MeetingProps) {
   const sendAudioChunk = useCallback(
     async (blob: Blob) => {
       if (!token || !sessionId) return;
+
+      if (blob.size < MIN_AUDIO_CHUNK_BYTES) {
+        console.warn("[meeting] skipped tiny audio chunk", {
+          size: blob.size,
+          type: blob.type,
+        });
+        return;
+      }
+
+      const chunkMimeType = blob.type || RECORDER_MIME_TYPE || "audio/webm";
+
+      console.log("[meeting] audio chunk", {
+        size: blob.size,
+        type: chunkMimeType,
+      });
 
       setSendingChunk(true);
       setError(null);
@@ -148,8 +179,8 @@ export default function Meeting({ onNav }: MeetingProps) {
             sessionId,
             session_id: sessionId,
             speaker: user?.name ?? "Facilitator",
-            mimeType: blob.type || "audio/webm",
-            mime_type: blob.type || "audio/webm",
+            mimeType: chunkMimeType,
+            mime_type: chunkMimeType,
             audioBase64,
             audio_base64: audioBase64,
           }),
@@ -178,19 +209,22 @@ export default function Meeting({ onNav }: MeetingProps) {
           ai.append(data.data.ai.blocks, data.data.ai.provider);
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not send audio chunk");
+        setError(
+          err instanceof Error ? err.message : "Could not send audio chunk",
+        );
       } finally {
         setSendingChunk(false);
       }
     },
-    [token, sessionId, authHeaders, user?.name, appendTranscript, ai]
+    [token, sessionId, authHeaders, user?.name, appendTranscript, ai],
   );
 
   const recorder = useMediaRecorder({
     onChunk: (chunk) => {
       void sendAudioChunk(chunk);
     },
-    chunkIntervalMs: 3000,
+    chunkIntervalMs: 8000,
+    mimeType: RECORDER_MIME_TYPE,
   });
 
   const loadTranscript = useCallback(async () => {
@@ -200,9 +234,12 @@ export default function Meeting({ onNav }: MeetingProps) {
     setError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/api/transcript/session/${sessionId}`, {
-        headers: authHeaders,
-      });
+      const res = await fetch(
+        `${API_BASE}/api/transcript/session/${sessionId}`,
+        {
+          headers: authHeaders,
+        },
+      );
 
       const data = await res.json();
 
@@ -211,10 +248,7 @@ export default function Meeting({ onNav }: MeetingProps) {
         return;
       }
 
-      const rows =
-        data.data?.transcripts ??
-        data.data?.rows ??
-        [];
+      const rows = data.data?.transcripts ?? data.data?.rows ?? [];
 
       setTranscripts(rows);
     } catch {
@@ -277,7 +311,14 @@ export default function Meeting({ onNav }: MeetingProps) {
   if (!sessionId) {
     return (
       <div style={{ padding: "40px 60px", overflowY: "auto", flex: 1 }}>
-        <h1 style={{ color: COLORS.text, fontSize: 22, fontWeight: 500, margin: "0 0 24px" }}>
+        <h1
+          style={{
+            color: COLORS.text,
+            fontSize: 22,
+            fontWeight: 500,
+            margin: "0 0 24px",
+          }}
+        >
           Meeting
         </h1>
 
@@ -293,18 +334,36 @@ export default function Meeting({ onNav }: MeetingProps) {
   }
 
   return (
-    <div style={{ display: "flex", flex: 1, minHeight: 0, background: COLORS.bg }}>
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        <div style={{
-          borderBottom: `1px solid ${COLORS.border}`,
-          padding: "18px 24px",
+    <div
+      style={{ display: "flex", flex: 1, minHeight: 0, background: COLORS.bg }}
+    >
+      <div
+        style={{
+          flex: 1,
           display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 16,
-        }}>
+          flexDirection: "column",
+          minWidth: 0,
+        }}
+      >
+        <div
+          style={{
+            borderBottom: `1px solid ${COLORS.border}`,
+            padding: "18px 24px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 16,
+          }}
+        >
           <div>
-            <h1 style={{ color: COLORS.text, fontSize: 20, fontWeight: 500, margin: "0 0 4px" }}>
+            <h1
+              style={{
+                color: COLORS.text,
+                fontSize: 20,
+                fontWeight: 500,
+                margin: "0 0 4px",
+              }}
+            >
               Live meeting
             </h1>
 
@@ -356,41 +415,61 @@ export default function Meeting({ onNav }: MeetingProps) {
         </div>
 
         {error && (
-          <div style={{
-            background: COLORS.redBg,
-            borderBottom: `1px solid ${COLORS.red}`,
-            color: COLORS.red,
-            padding: "10px 24px",
-            fontSize: 13,
-          }}>
+          <div
+            style={{
+              background: COLORS.redBg,
+              borderBottom: `1px solid ${COLORS.red}`,
+              color: COLORS.red,
+              padding: "10px 24px",
+              fontSize: 13,
+            }}
+          >
             {error}
           </div>
         )}
 
         {recorder.error && (
-          <div style={{
-            background: COLORS.redBg,
-            borderBottom: `1px solid ${COLORS.red}`,
-            color: COLORS.red,
-            padding: "10px 24px",
-            fontSize: 13,
-          }}>
+          <div
+            style={{
+              background: COLORS.redBg,
+              borderBottom: `1px solid ${COLORS.red}`,
+              color: COLORS.red,
+              padding: "10px 24px",
+              fontSize: 13,
+            }}
+          >
             {recorder.error}
           </div>
         )}
 
-        <div style={{
-          flex: 1,
-          overflow: "auto",
-          padding: "24px",
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 24,
-          alignItems: "start",
-        }}>
+        <div
+          style={{
+            flex: 1,
+            overflow: "auto",
+            padding: "24px",
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 24,
+            alignItems: "start",
+          }}
+        >
           <section>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-              <h2 style={{ color: COLORS.text, fontSize: 14, fontWeight: 500, margin: 0 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 14,
+              }}
+            >
+              <h2
+                style={{
+                  color: COLORS.text,
+                  fontSize: 14,
+                  fontWeight: 500,
+                  margin: 0,
+                }}
+              >
                 Transcript
               </h2>
 
@@ -400,7 +479,10 @@ export default function Meeting({ onNav }: MeetingProps) {
                     Processing audio...
                   </span>
                 )}
-                <button style={btnGhost()} onClick={() => void loadTranscript()}>
+                <button
+                  style={btnGhost()}
+                  onClick={() => void loadTranscript()}
+                >
                   Refresh
                 </button>
               </div>
@@ -411,7 +493,9 @@ export default function Meeting({ onNav }: MeetingProps) {
             ) : transcripts.length === 0 ? (
               <EmptyState message="Transcript will appear here after you start speaking." />
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: 10 }}
+              >
                 {transcripts.map((row) => (
                   <div
                     key={row.id}
@@ -422,8 +506,21 @@ export default function Meeting({ onNav }: MeetingProps) {
                       padding: "12px 14px",
                     }}
                   >
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                      <span style={{ color: COLORS.teal, fontSize: 12, fontWeight: 600 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        marginBottom: 6,
+                      }}
+                    >
+                      <span
+                        style={{
+                          color: COLORS.teal,
+                          fontSize: 12,
+                          fontWeight: 600,
+                        }}
+                      >
                         {row.speaker}
                       </span>
                       <span style={{ color: COLORS.textDim, fontSize: 11 }}>
@@ -431,7 +528,13 @@ export default function Meeting({ onNav }: MeetingProps) {
                       </span>
                     </div>
 
-                    <div style={{ color: COLORS.textMuted, fontSize: 13, lineHeight: 1.6 }}>
+                    <div
+                      style={{
+                        color: COLORS.textMuted,
+                        fontSize: 13,
+                        lineHeight: 1.6,
+                      }}
+                    >
                       {row.text}
                     </div>
                   </div>
@@ -441,8 +544,22 @@ export default function Meeting({ onNav }: MeetingProps) {
           </section>
 
           <section>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-              <h2 style={{ color: COLORS.text, fontSize: 14, fontWeight: 500, margin: 0 }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 14,
+              }}
+            >
+              <h2
+                style={{
+                  color: COLORS.text,
+                  fontSize: 14,
+                  fontWeight: 500,
+                  margin: 0,
+                }}
+              >
                 AI notes
               </h2>
 
@@ -452,15 +569,17 @@ export default function Meeting({ onNav }: MeetingProps) {
             </div>
 
             {ai.error && (
-              <div style={{
-                background: COLORS.redBg,
-                border: `1px solid ${COLORS.red}`,
-                color: COLORS.red,
-                borderRadius: 8,
-                padding: "10px 12px",
-                marginBottom: 12,
-                fontSize: 13,
-              }}>
+              <div
+                style={{
+                  background: COLORS.redBg,
+                  border: `1px solid ${COLORS.red}`,
+                  color: COLORS.red,
+                  borderRadius: 8,
+                  padding: "10px 12px",
+                  marginBottom: 12,
+                  fontSize: 13,
+                }}
+              >
                 {ai.error}
               </div>
             )}

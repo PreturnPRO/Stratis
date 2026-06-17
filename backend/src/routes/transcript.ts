@@ -11,6 +11,7 @@ import { validateAiOutput } from "../middleware/validateAiOutput";
 
 export const transcriptRouter = Router();
 
+const MIN_AUDIO_CHUNK_BYTES = 2048;
 interface SessionRow {
   id: string;
   facilitator_id: string;
@@ -306,10 +307,49 @@ transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
 
     const audio = Buffer.from(cleanBase64, "base64");
 
+    console.log("[transcript] audio upload", {
+      sessionId,
+      bytes: audio.length,
+      mimeType,
+    });
+
     if (audio.length === 0) {
       return res.status(400).json({
         ok: false,
         error: "audioBase64 decoded to empty audio",
+      });
+    }
+
+    if (audio.length < MIN_AUDIO_CHUNK_BYTES) {
+      console.warn("[transcript] skipped tiny audio chunk", {
+        sessionId,
+        bytes: audio.length,
+        mimeType,
+      });
+
+      return res.json({
+        ok: true,
+        data: {
+          sessionId,
+          stt: {
+            provider: "skipped",
+            text: "",
+            raw: {
+              skipped: true,
+              reason: "tiny_audio_chunk",
+              bytes: audio.length,
+              mimeType,
+            },
+          },
+          ai: {
+            provider: null,
+            blocks: [],
+          },
+          suggestions: {
+            created: [],
+            answered: [],
+          },
+        },
       });
     }
 

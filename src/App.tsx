@@ -17,7 +17,7 @@ import Dashboard from "./pages/Dashboard";
 import SummaryView from "./pages/SummaryView";
 
 //For Ai testing
-//import LiveVoicePipelineTest from './pages/LiveVoicePipelineTest'
+import LiveVoicePipelineTest from './pages/LiveVoicePipelineTest'
 
 type AuthPage = "landing" | "login" | "register" | "app";
 
@@ -27,7 +27,7 @@ function renderPage(
   handleNav: (id: string, params?: Record<string, string>) => void,
 ) {
   switch (active) {
-    //    case 'live-voice-test':return <LiveVoicePipelineTest /> // Temporary page for AI testing
+      case 'live-voice-test':return <LiveVoicePipelineTest /> // Temporary page for AI testing
 
     case "projects":
       return <Projects />;
@@ -55,23 +55,29 @@ function AppShell() {
   const [navParams, setNavParams] = useState<Record<string, string>>({});
   const [showTransition, setShowTransition] = useState(false);
 
-  const ALLOWED_PAGES = new Set([
-    "dashboard",
-    "projects",
-    "meeting",
-    "summary",
-  ]);
+  // const ALLOWED_PAGES = new Set([
+  //   "dashboard",
+  //   "projects",
+  //   "meeting",
+  //   "summary",
+  // ]);
+
+  // const handleNav = (id: string, params?: Record<string, string>) => {
+  //   const nextPage = ALLOWED_PAGES.has(id) ? id : "dashboard";
+
+  //   if (nextPage === "meeting" && active !== "meeting") {
+  //     setShowTransition(true);
+  //   }
+
+  //   setActive(nextPage);
+  //   setNavParams(nextPage === id ? (params ?? {}) : {});
+  // };
 
   const handleNav = (id: string, params?: Record<string, string>) => {
-    const nextPage = ALLOWED_PAGES.has(id) ? id : "dashboard";
-
-    if (nextPage === "meeting" && active !== "meeting") {
-      setShowTransition(true);
-    }
-
-    setActive(nextPage);
-    setNavParams(nextPage === id ? (params ?? {}) : {});
-  };
+    if (id === 'meeting' && active !== 'meeting') setShowTransition(true)
+    setActive(id)
+    setNavParams(params ?? {})
+  }
 
   // Auth pages — no sidebar
   if (!isAuthed) {
