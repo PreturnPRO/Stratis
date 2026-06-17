@@ -7,7 +7,7 @@ interface Props {
   onNavigate: (page: 'landing' | 'register' | 'app') => void
 }
 
-const API_BASE = 'http://localhost:3001'
+import { API_BASE } from '../lib/api'
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)

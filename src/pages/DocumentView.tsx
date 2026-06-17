@@ -12,7 +12,7 @@ import {
   type PmDocumentVersion,
 } from '../../shared/types'
 
-const API_BASE = 'http://localhost:3001'
+import { API_BASE } from '../lib/api'
 
 type Decision = 'pending' | 'approved' | 'rejected'
 

@@ -4,7 +4,7 @@ import { NodeBadge as _NodeBadge } from '../components/NodeTypes';
 import { ParticipantSummaryOutput, SummaryBlock, ActionItem } from '../mocks/summaryMock';
 import { useAuth } from '../context/AuthContext';
 
-const API_BASE = 'http://localhost:3001';
+import { API_BASE } from '../lib/api';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type UserRole = 'facilitator' | 'participant';

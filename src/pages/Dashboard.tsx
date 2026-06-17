@@ -4,7 +4,7 @@ import { btnAccent, btnGhost } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { useAuth } from "../context/AuthContext";
 
-const API_BASE = "http://localhost:3001";
+import { API_BASE } from "../lib/api";
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 
 interface DashboardProps {
