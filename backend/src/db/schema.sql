@@ -54,6 +54,10 @@ CREATE TABLE IF NOT EXISTS meetings (
   org_id        TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   project_id    TEXT NOT NULL,
   title         TEXT NOT NULL,
+  -- Human-owned meeting goal (schema spec §7.4) + free-form brief/agenda.
+  -- Captured before the meeting; fed to the live AI as context, never AI-rewritten.
+  goal          TEXT,
+  brief         TEXT,
   scheduled_at  TEXT,
   created_by    TEXT REFERENCES users(id) ON DELETE SET NULL,
   created_at    TEXT NOT NULL

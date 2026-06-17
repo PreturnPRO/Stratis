@@ -12,6 +12,8 @@ interface MeetingRow {
   org_id: string;
   project_id: string;
   title: string;
+  goal: string | null;
+  brief: string | null;
   scheduled_at: string | null;
   created_by: string | null;
   created_at: string;
@@ -56,7 +58,7 @@ function getMeeting(id: string): MeetingRow | undefined {
   return db
     .prepare(
       `
-      SELECT id, org_id, project_id, title, scheduled_at, created_by, created_at
+      SELECT id, org_id, project_id, title, goal, brief, scheduled_at, created_by, created_at
       FROM meetings
       WHERE id = ?
       `
@@ -339,6 +341,9 @@ meetingRouter.post("/", requireAuth, (req, res) => {
         ? req.body.scheduled_at
         : null;
 
+  const goal = typeof req.body?.goal === "string" ? req.body.goal.trim() || null : null;
+  const brief = typeof req.body?.brief === "string" ? req.body.brief.trim() || null : null;
+
   if (!title) return res.status(400).json({ ok: false, error: "body.title is required" });
   if (!projectId) return res.status(400).json({ ok: false, error: "body.projectId is required" });
 
@@ -352,13 +357,15 @@ meetingRouter.post("/", requireAuth, (req, res) => {
       org_id,
       project_id,
       title,
+      goal,
+      brief,
       scheduled_at,
       created_by,
       created_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
-  ).run(id, req.auth!.orgId, projectId, title, scheduledAt, req.auth!.sub, timestamp);
+  ).run(id, req.auth!.orgId, projectId, title, goal, brief, scheduledAt, req.auth!.sub, timestamp);
 
   res.status(201).json({
     ok: true,
@@ -598,6 +605,15 @@ meetingRouter.patch("/:id", requireAuth, (req, res) => {
 
     updates.push("scheduled_at = ?");
     params.push(scheduledAt);
+  }
+
+  for (const field of ["goal", "brief"] as const) {
+    if (typeof req.body?.[field] === "string" || req.body?.[field] === null) {
+      const value =
+        typeof req.body?.[field] === "string" ? req.body[field].trim() || null : null;
+      updates.push(`${field} = ?`);
+      params.push(value);
+    }
   }
 
   if (updates.length === 0) {
