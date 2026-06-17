@@ -51,6 +51,11 @@ export default function DocumentView({ sessionId, projectId }: Props) {
   const [proposed, setProposed] = useState<DocumentPatchOutput | null>(null)
   const [reviews, setReviews] = useState<PatchReview[]>([])
 
+  // Project picker — shown when opened with no session/project context (e.g. the
+  // sidebar nav), so the page is never a dead end and any project's doc is reachable.
+  const [picker, setPicker] = useState<{ id: string; name: string; meetingCount: number }[]>([])
+  const browsable = !sessionId && !projectId
+
   // Browse an existing project document (read-only history view).
   const loadProject = useCallback(
     async (pid: string) => {
@@ -112,11 +117,26 @@ export default function DocumentView({ sessionId, projectId }: Props) {
     [authHeaders],
   )
 
+  // List the org's projects so the user can pick one to view (no context yet).
+  const loadPicker = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(`${API_BASE}/api/meeting/projects`, { headers: authHeaders })
+      const data = await res.json()
+      setPicker(res.ok && data.ok ? (data.data?.projects ?? []) : [])
+    } catch {
+      setError('Could not reach the server')
+    } finally {
+      setLoading(false)
+    }
+  }, [authHeaders])
+
   useEffect(() => {
     if (sessionId) void generate(sessionId)
     else if (projectId) void loadProject(projectId)
-    else setLoading(false) // no context yet — show the neutral empty state
-  }, [sessionId, projectId, generate, loadProject])
+    else void loadPicker()
+  }, [sessionId, projectId, generate, loadProject, loadPicker])
 
   const setDecision = (id: string, decision: Decision) =>
     setReviews((rs) => rs.map((r) => (r.patch.client_patch_id === id ? { ...r, decision } : r)))
@@ -155,8 +175,11 @@ export default function DocumentView({ sessionId, projectId }: Props) {
       setDocState(data.data.document.state)
       setVersion(data.data.document.version)
       setVersions(data.data.versions ?? [])
-      setProposed(null)
-      setReviews([])
+      // Drop only the patches we just committed; keep the rest reviewable so
+      // approving one doesn't lock out the others.
+      const remaining = reviews.filter((r) => r.decision !== 'approved')
+      setReviews(remaining)
+      if (remaining.length === 0) setProposed(null)
     } catch {
       setError('Could not reach the server')
     } finally {
@@ -170,6 +193,18 @@ export default function DocumentView({ sessionId, projectId }: Props) {
     <div style={styles.page}>
       <div style={styles.header}>
         <div>
+          {browsable && docState && (
+            <button
+              style={styles.backBtn}
+              onClick={() => {
+                setDocState(null)
+                setVersions([])
+                void loadPicker()
+              }}
+            >
+              ← All projects
+            </button>
+          )}
           <h1 style={styles.title}>PM Document</h1>
           <p style={styles.subtitle}>
             Source of truth · version {version}
@@ -195,10 +230,27 @@ export default function DocumentView({ sessionId, projectId }: Props) {
                   </section>
                 )
               })
-            : !error && (
-                <p style={styles.dim}>
-                  Open a meeting summary or a project to view its PM document.
-                </p>
+            : browsable ? (
+                <div style={styles.pickerList}>
+                  <p style={styles.dim}>Select a project to view its PM document.</p>
+                  {picker.length === 0 && !error && (
+                    <p style={styles.dim}>No projects yet.</p>
+                  )}
+                  {picker.map((p) => (
+                    <button key={p.id} style={styles.pickerRow} onClick={() => void loadProject(p.id)}>
+                      <span style={styles.pickerName}>{p.name}</span>
+                      <span style={styles.dim}>
+                        {p.meetingCount} meeting{p.meetingCount === 1 ? '' : 's'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                !error && (
+                  <p style={styles.dim}>
+                    Open a meeting summary or a project to view its PM document.
+                  </p>
+                )
               )}
         </div>
 
@@ -332,6 +384,28 @@ const styles: Record<string, React.CSSProperties> = {
   title: { fontSize: 22, fontWeight: 600, margin: 0, color: COLORS.textPrimary },
   subtitle: { fontSize: 13, color: COLORS.textMuted, margin: '6px 0 0' },
   dim: { color: COLORS.textMuted },
+  backBtn: {
+    background: 'transparent',
+    border: 'none',
+    color: COLORS.accent,
+    cursor: 'pointer',
+    fontSize: 12,
+    padding: 0,
+    marginBottom: 8,
+  },
+  pickerList: { display: 'flex', flexDirection: 'column', gap: 10 },
+  pickerRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    background: COLORS.surface,
+    border: `1px solid ${COLORS.border}`,
+    borderRadius: 10,
+    padding: '14px 16px',
+    cursor: 'pointer',
+    textAlign: 'left',
+  },
+  pickerName: { fontSize: 14, fontWeight: 600, color: COLORS.textPrimary },
   errorBox: {
     background: COLORS.redBg,
     border: `1px solid ${COLORS.red}`,
