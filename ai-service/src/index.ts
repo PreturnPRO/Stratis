@@ -11,12 +11,19 @@ import type { AIProvider, ChatMessage, CompletionResult } from "./providers/type
 import { groqProvider } from "./providers/groq";
 import { ollamaProvider } from "./providers/ollama";
 import { mockProvider } from "./providers/mock";
-import { SYSTEM_PROMPT_JSON, parseStructured, type ParseResult } from "./schema";
-import type { AIStructuredResponse } from "../../shared/types";
+import {
+  SYSTEM_PROMPT_JSON,
+  SYSTEM_PROMPT_LIVE_CARD,
+  parseStructured,
+  parseLiveCard,
+  type ParseResult,
+  type LiveCardParseResult,
+} from "./schema";
+import type { AIStructuredResponse, LiveCardOutput } from "../../shared/types";
 
 export type { ChatMessage, CompletionResult } from "./providers/types";
-export { SYSTEM_PROMPT_JSON, parseStructured } from "./schema";
-export type { ParseResult } from "./schema";
+export { SYSTEM_PROMPT_JSON, SYSTEM_PROMPT_LIVE_CARD, parseStructured, parseLiveCard } from "./schema";
+export type { ParseResult, LiveCardParseResult } from "./schema";
 
 /** Pick the active provider. groq with no key falls back to mock so the call
  *  always confirms. */
@@ -82,4 +89,62 @@ export async function structuredCall(input: string): Promise<
     };
   }
   return { ok: true, provider: provider.name, data: parsed.data, raw: result.raw };
+}
+
+/** Context the live meeting AI receives each chunk (schema spec §6.4). */
+export interface LiveContext {
+  sessionId: string;
+  goal?: string | null;
+  brief?: string | null;
+  rollingSummary?: string | null;
+  openQuestions?: string[];
+  recentTranscript: string;
+}
+
+function liveContextPrompt(ctx: LiveContext): string {
+  const openQs = ctx.openQuestions?.length
+    ? ctx.openQuestions.map((q) => `- ${q}`).join("\n")
+    : "(none)";
+  return [
+    `Meeting goal: ${ctx.goal?.trim() || "(not provided)"}`,
+    `Agenda / brief: ${ctx.brief?.trim() || "(not provided)"}`,
+    `Rolling memory so far: ${ctx.rollingSummary?.trim() || "(empty)"}`,
+    `Unresolved questions:\n${openQs}`,
+    `Recent transcript (most recent last):\n${ctx.recentTranscript.trim() || "(silence)"}`,
+  ].join("\n\n");
+}
+
+/**
+ * Live meeting gateway: classify the latest transcript window and surface
+ * facilitator cards. Returns a validated `live_card_output` (session_id injected).
+ */
+export async function liveCardCall(ctx: LiveContext): Promise<
+  | { ok: true; provider: string; data: LiveCardOutput; raw: unknown }
+  | { ok: false; provider: string; error: string; rawText: string; raw: unknown }
+> {
+  const provider = selectProvider();
+  const messages: ChatMessage[] = [
+    { role: "system", content: SYSTEM_PROMPT_LIVE_CARD },
+    { role: "user", content: liveContextPrompt(ctx) },
+  ];
+
+  const result = await provider.complete(messages);
+  const parsed: LiveCardParseResult = parseLiveCard(result.text);
+
+  if (!parsed.ok) {
+    console.warn(`[ai] live card validation failed: ${parsed.error}`);
+    return {
+      ok: false,
+      provider: provider.name,
+      error: parsed.error,
+      rawText: result.text,
+      raw: result.raw,
+    };
+  }
+  return {
+    ok: true,
+    provider: provider.name,
+    data: { ...parsed.data, session_id: ctx.sessionId },
+    raw: result.raw,
+  };
 }

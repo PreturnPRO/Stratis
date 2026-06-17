@@ -43,6 +43,8 @@ function toUICard(card: ServerCard): UICard {
     question: card.question,
     reason: card.reason,
     status: card.answered ? 'answered' : 'active',
+    cardType: card.cardType,
+    urgency: card.urgency,
   }
 }
 

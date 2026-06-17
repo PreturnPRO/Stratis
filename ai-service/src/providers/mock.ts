@@ -8,6 +8,31 @@ export const mockProvider: AIProvider = {
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
     const echo = lastUser?.content?.slice(0, 120) ?? "";
 
+    // Live card gateway (schema spec §6): emit a valid live_card_output so the
+    // live pipeline is exercisable offline / in CI with no key.
+    const wantsLiveCard = messages.some(
+      (m) => m.role === "system" && m.content.includes('"output_type": "live_card_output"')
+    );
+    if (wantsLiveCard) {
+      const text = JSON.stringify({
+        output_type: "live_card_output",
+        chunk_signal: "IMPORTANT",
+        rolling_memory_update: `Mock memory: the team touched on "${echo}".`,
+        cards: [
+          {
+            card_type: "MISSING_DECISION",
+            title: "Ownership not assigned",
+            brief_description: "The topic was discussed but no owner was named.",
+            suggested_question: "Who will own this before the next meeting?",
+            urgency: "MEDIUM",
+            reason_now: "The conversation appears to be closing without a decision.",
+            confidence: 0.7,
+          },
+        ],
+      });
+      return { text, provider: "mock", raw: { mock: true, liveCard: true, text } };
+    }
+
     // S1-T03-C: when asked for structured output, emit valid JSON so the
     // parse+validate path is exercisable offline / in CI with no key.
     const wantsJson = messages.some(

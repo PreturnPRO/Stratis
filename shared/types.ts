@@ -77,22 +77,84 @@ export interface AIStructuredResponse {
   blocks: AIBlock[];
 }
 
+// ── Live card output gateway (schema spec §6) ─────────────────────────────────
+// The live meeting AI emits ONE `live_card_output` envelope per transcript
+// chunk: it classifies the chunk, updates rolling memory, and may surface
+// facilitator-only cards. DTOs are snake_case — they map 1:1 to the AI JSON and
+// the SQLite columns. The frontend/internal view types below stay camelCase and
+// are mapped at the boundary.
+
+export type LiveCardType =
+  | "QUESTION_SUGGESTION"
+  | "DRIFT_ALERT"
+  | "MISSING_DECISION"
+  | "UNRESOLVED_ASSUMPTION";
+
+export type LiveCardUrgency = "LOW" | "MEDIUM" | "HIGH";
+
+export type ChunkSignal = "IMPORTANT" | "LOW_SIGNAL" | "IGNORE";
+
+export type LiveCardState =
+  | "NEW"
+  | "AWARE"
+  | "ANSWERED"
+  | "DISMISSED"
+  | "ESCALATED_TO_OPEN_QUESTION"
+  | "LINKED_TO_DOCUMENT_PATCH";
+
+export interface LiveCardEvidence {
+  transcript_ref?: string;
+  timestamp_start?: string;
+  timestamp_end?: string;
+  speaker?: string;
+  quote?: string;
+}
+
+export interface LiveCardDTO {
+  card_type: LiveCardType;
+  title: string;
+  brief_description: string;
+  suggested_question?: string;
+  urgency: LiveCardUrgency;
+  related_agenda_item?: string | null;
+  reason_now?: string;
+  expected_resolution_signal?: string;
+  confidence?: number;
+  evidence?: LiveCardEvidence[];
+  suggested_state?: LiveCardState;
+}
+
+/** The exact JSON shape the live meeting AI is required to emit. */
+export interface LiveCardOutput {
+  output_type: "live_card_output";
+  session_id: string;
+  chunk_id?: string;
+  chunk_signal: ChunkSignal;
+  rolling_memory_update?: string;
+  cards: LiveCardDTO[];
+}
+
 // ── Realtime suggestion cards (S1-T03-E) ──────────────────────────────────────
-// A QuestionSuggestion block becomes a card in the facilitator's suggestion
-// stack. Cards are pushed over WebSocket to the facilitator's session ONLY —
-// participants never receive suggestion events. A card is struck through when
-// answered, either auto-detected from the transcript or marked manually.
+// A live card becomes a card in the facilitator's suggestion stack. Cards are
+// pushed over WebSocket to the facilitator's session ONLY — participants never
+// receive suggestion events. A card is struck through when answered, either
+// auto-detected from the transcript or marked manually.
 
 export type AnsweredSource = "auto" | "manual";
 
 export interface SuggestionCard {
   id: string;
   sessionId: string;
-  question: string; // from QuestionSuggestion.title
-  reason: string; // from QuestionSuggestion.content
+  question: string; // suggested_question (or title fallback)
+  reason: string; // brief_description
   answered: boolean;
   answeredBy?: AnsweredSource;
   createdAt: string;
+  // Phase 2 — live_card_output enrichment. Optional so pre-Phase-2 cards (and
+  // the legacy block path) still validate.
+  cardType?: LiveCardType;
+  urgency?: LiveCardUrgency;
+  confidence?: number;
 }
 
 /** Events the server pushes to a connected facilitator over /ws. */
