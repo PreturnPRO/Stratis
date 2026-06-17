@@ -277,11 +277,10 @@ sessionRouter.post("/", requireAuth, (req, res) => {
     });
   }
 
-  if (
-    req.auth!.role !== "admin" &&
-    meeting.created_by &&
-    meeting.created_by !== req.auth!.sub
-  ) {
+  // A meeting belongs to an org; anyone in that org may start a session for it
+  // (and becomes its facilitator). Gating on the individual creator denied every
+  // account that didn't personally create the meeting (e.g. seeded meetings).
+  if (req.auth!.role !== "admin" && meeting.org_id !== req.auth!.orgId) {
     return res.status(403).json({
       ok: false,
       error: "You cannot create a session for this meeting",
