@@ -10,6 +10,7 @@ import Projects from "./pages/Projects";
 import Meeting from "./pages/Meeting";
 import Dashboard from "./pages/Dashboard";
 import SummaryView from "./pages/SummaryView";
+import DocumentView from "./pages/DocumentView";
 
 type AuthPage = "landing" | "login" | "register" | "app";
 
@@ -28,6 +29,10 @@ function renderPage(
     case "summary":
       return (
         <SummaryView role="facilitator" sessionId={navParams?.sessionId} />
+      );
+    case "document":
+      return (
+        <DocumentView sessionId={navParams?.sessionId} projectId={navParams?.projectId} />
       );
     default:
       return <Dashboard onNav={handleNav} />;

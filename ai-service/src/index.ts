@@ -14,16 +14,30 @@ import { mockProvider } from "./providers/mock";
 import {
   SYSTEM_PROMPT_JSON,
   SYSTEM_PROMPT_LIVE_CARD,
+  SYSTEM_PROMPT_DOC_PATCH,
   parseStructured,
   parseLiveCard,
+  parseDocumentPatch,
   type ParseResult,
   type LiveCardParseResult,
+  type DocPatchParseResult,
 } from "./schema";
-import type { AIStructuredResponse, LiveCardOutput } from "../../shared/types";
+import type {
+  AIStructuredResponse,
+  LiveCardOutput,
+  DocumentPatchOutput,
+} from "../../shared/types";
 
 export type { ChatMessage, CompletionResult } from "./providers/types";
-export { SYSTEM_PROMPT_JSON, SYSTEM_PROMPT_LIVE_CARD, parseStructured, parseLiveCard } from "./schema";
-export type { ParseResult, LiveCardParseResult } from "./schema";
+export {
+  SYSTEM_PROMPT_JSON,
+  SYSTEM_PROMPT_LIVE_CARD,
+  SYSTEM_PROMPT_DOC_PATCH,
+  parseStructured,
+  parseLiveCard,
+  parseDocumentPatch,
+} from "./schema";
+export type { ParseResult, LiveCardParseResult, DocPatchParseResult } from "./schema";
 
 /** Pick the active provider. groq with no key falls back to mock so the call
  *  always confirms. */
@@ -145,6 +159,67 @@ export async function liveCardCall(ctx: LiveContext): Promise<
     ok: true,
     provider: provider.name,
     data: { ...parsed.data, session_id: ctx.sessionId },
+    raw: result.raw,
+  };
+}
+
+/** Context the post-meeting document AI receives (schema spec §7). */
+export interface DocPatchContext {
+  sessionId: string;
+  projectId: string;
+  baseVersion: number;
+  currentDocument: string; // rendered current sections, or "(empty)"
+  transcript: string;
+  rollingSummary?: string | null;
+}
+
+function docPatchPrompt(ctx: DocPatchContext): string {
+  return [
+    `Project: ${ctx.projectId}`,
+    `Current PM document (version ${ctx.baseVersion}):\n${ctx.currentDocument.trim() || "(empty — first version)"}`,
+    `Rolling memory: ${ctx.rollingSummary?.trim() || "(none)"}`,
+    `Meeting transcript:\n${ctx.transcript.trim() || "(no transcript)"}`,
+  ].join("\n\n");
+}
+
+/**
+ * Post-meeting gateway: propose section patches to the PM document. Returns a
+ * validated `document_patch_output` (backend injects ids/version). Patches may
+ * be empty when the meeting changed nothing about project state.
+ */
+export async function documentPatchCall(ctx: DocPatchContext): Promise<
+  | { ok: true; provider: string; data: DocumentPatchOutput; raw: unknown }
+  | { ok: false; provider: string; error: string; rawText: string; raw: unknown }
+> {
+  const provider = selectProvider();
+  const messages: ChatMessage[] = [
+    { role: "system", content: SYSTEM_PROMPT_DOC_PATCH },
+    { role: "user", content: docPatchPrompt(ctx) },
+  ];
+
+  const result = await provider.complete(messages);
+  const parsed: DocPatchParseResult = parseDocumentPatch(result.text);
+
+  if (!parsed.ok) {
+    console.warn(`[ai] document patch validation failed: ${parsed.error}`);
+    return {
+      ok: false,
+      provider: provider.name,
+      error: parsed.error,
+      rawText: result.text,
+      raw: result.raw,
+    };
+  }
+  return {
+    ok: true,
+    provider: provider.name,
+    data: {
+      ...parsed.data,
+      output_type: "document_patch_output",
+      session_id: ctx.sessionId,
+      project_id: ctx.projectId,
+      base_document_version: ctx.baseVersion,
+    },
     raw: result.raw,
   };
 }

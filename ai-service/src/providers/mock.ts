@@ -33,6 +33,30 @@ export const mockProvider: AIProvider = {
       return { text, provider: "mock", raw: { mock: true, liveCard: true, text } };
     }
 
+    // Document patch gateway (schema spec §7): emit a valid document_patch_output.
+    const wantsDocPatch = messages.some(
+      (m) => m.role === "system" && m.content.includes("PM document after a meeting")
+    );
+    if (wantsDocPatch) {
+      const text = JSON.stringify({
+        overall_change_summary: `Mock update from this meeting. Heard: "${echo}".`,
+        patches: [
+          {
+            client_patch_id: "patch_1",
+            operation: "replace_section",
+            section_key: "current_status",
+            section_title: "Current Status",
+            new_content: `Updated from the latest meeting. Discussion touched on: ${echo}`,
+            reason: "Mock patch — set a real AI provider for genuine document updates.",
+            confidence: 0.7,
+            review_priority: "MEDIUM",
+          },
+        ],
+        rejected_suggestions: [],
+      });
+      return { text, provider: "mock", raw: { mock: true, docPatch: true, text } };
+    }
+
     // S1-T03-C: when asked for structured output, emit valid JSON so the
     // parse+validate path is exercisable offline / in CI with no key.
     const wantsJson = messages.some(

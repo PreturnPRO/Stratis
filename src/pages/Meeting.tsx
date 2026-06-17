@@ -289,7 +289,7 @@ export default function Meeting({ onNav }: MeetingProps) {
       window.localStorage.removeItem(ACTIVE_SESSION_KEY);
       recovery.clearRecoveredSession();
 
-      onNav?.("summary", { sessionId });
+      onNav?.("document", { sessionId });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not end meeting");
     } finally {

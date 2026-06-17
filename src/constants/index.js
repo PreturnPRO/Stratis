@@ -25,10 +25,10 @@ export const NAV_ITEMS = [
   { id: "projects", icon: "⊞", label: "Projects" },
 //  { id: "map", icon: "⌥", label: "Map" },
   { id: "meeting", icon: "⏺", label: "Meeting" },
+  { id: "document", icon: "▤", label: "Document" },
   // { id: "decisions", icon: "☑", label: "Decisions" },
   // { id: "inbox", icon: "✉", label: "Inbox" },
   // { id: "settings", icon: "⚙", label: "Settings" },
-  { id: "live-voice-test", icon: "🧪", label: "Live Voice Test" },
 ];
 
 export const INITIAL_NODES = [

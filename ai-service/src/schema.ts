@@ -18,6 +18,11 @@ import type {
   LiveCardType,
   LiveCardUrgency,
   LiveCardOutput,
+  DocumentPatchDTO,
+  DocumentPatchOutput,
+  PatchOperation,
+  PmSectionKey,
+  ReviewPriority,
 } from "../../shared/types";
 
 const BLOCK_TYPES: readonly AIBlockType[] = [
@@ -261,6 +266,154 @@ export function parseLiveCard(raw: string): LiveCardParseResult {
       chunk_signal: root.chunk_signal as ChunkSignal,
       rolling_memory_update: rolling,
       cards,
+    },
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOCUMENT PATCH OUTPUT (schema spec §7) — the post-meeting PM-document gateway.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PATCH_OPERATIONS: readonly PatchOperation[] = [
+  "replace_section",
+  "append_to_section",
+  "insert_section",
+];
+const PM_SECTION_KEYS: readonly PmSectionKey[] = [
+  "project_brief",
+  "current_status",
+  "current_project_direction",
+  "active_risks",
+  "key_constraints",
+  "context_needed_for_next_meeting",
+];
+const REVIEW_PRIORITIES: readonly ReviewPriority[] = ["LOW", "MEDIUM", "HIGH"];
+
+/** System prompt forcing JSON-only `document_patch_output` after a meeting. */
+export const SYSTEM_PROMPT_DOC_PATCH = `You are Stratis, updating a project's PM document after a meeting.
+You output STRUCTURED DATA ONLY. Never write markdown, prose, or commentary.
+
+You receive the current PM document (its sections) and the meeting transcript +
+rolling memory. Propose section-based patches that bring the document to the
+current project state. The PM document is the source of truth: keep it clean,
+professional, and current — not a log of every decision.
+
+Return EXACTLY one JSON object with this shape and nothing else:
+
+{
+  "overall_change_summary": "human-readable summary of what changed",
+  "patches": [
+    {
+      "client_patch_id": "patch_1",
+      "operation": "replace_section" | "append_to_section" | "insert_section",
+      "section_key": "project_brief" | "current_status" | "current_project_direction" | "active_risks" | "key_constraints" | "context_needed_for_next_meeting",
+      "section_title": "Human title for the section",
+      "new_content": "the markdown content for the section",
+      "reason": "why this change, citing the meeting",
+      "confidence": 0.0,
+      "review_priority": "LOW" | "MEDIUM" | "HIGH"
+    }
+  ],
+  "rejected_suggestions": [
+    { "title": "thing considered", "reason_rejected": "why it does not belong in the PM document" }
+  ]
+}
+
+Rules:
+- Output JSON only. No \`\`\` fences, no leading or trailing text.
+- "patches" may be EMPTY ([]) if the meeting changed nothing about project state.
+- Only patch sections that genuinely changed. Do not restate unchanged sections.
+- Put trivial action items that do not affect project state into rejected_suggestions.
+- "confidence" is 0..1.`;
+
+export type DocPatchParseResult =
+  | {
+      ok: true;
+      data: Pick<DocumentPatchOutput, "overall_change_summary" | "patches" | "rejected_suggestions">;
+    }
+  | { ok: false; error: string };
+
+function validatePatch(value: unknown, index: number): DocumentPatchDTO | string {
+  if (typeof value !== "object" || value === null) {
+    return `patches[${index}] is not an object`;
+  }
+  const p = value as Record<string, unknown>;
+
+  if (!PATCH_OPERATIONS.includes(p.operation as PatchOperation)) {
+    return `patches[${index}].operation "${String(p.operation)}" is invalid`;
+  }
+  if (!PM_SECTION_KEYS.includes(p.section_key as PmSectionKey)) {
+    return `patches[${index}].section_key "${String(p.section_key)}" is invalid`;
+  }
+  if (typeof p.new_content !== "string" || p.new_content.trim() === "") {
+    return `patches[${index}].new_content must be a non-empty string`;
+  }
+  if (
+    p.confidence !== undefined &&
+    (typeof p.confidence !== "number" || p.confidence < 0 || p.confidence > 1)
+  ) {
+    return `patches[${index}].confidence must be a number in 0..1`;
+  }
+
+  const patch: DocumentPatchDTO = {
+    client_patch_id: typeof p.client_patch_id === "string" ? p.client_patch_id : `patch_${index + 1}`,
+    operation: p.operation as PatchOperation,
+    section_key: p.section_key as PmSectionKey,
+    section_title: typeof p.section_title === "string" ? p.section_title : "",
+    new_content: p.new_content,
+  };
+  if (typeof p.reason === "string") patch.reason = p.reason;
+  if (typeof p.confidence === "number") patch.confidence = p.confidence;
+  if (REVIEW_PRIORITIES.includes(p.review_priority as ReviewPriority)) {
+    patch.review_priority = p.review_priority as ReviewPriority;
+  }
+  return patch;
+}
+
+/** Parse + validate raw model text into document patches (backend injects
+ *  session_id / project_id / base_document_version). Patches may be empty. */
+export function parseDocumentPatch(raw: string): DocPatchParseResult {
+  const cleaned = stripFences(raw);
+  if (cleaned === "") return { ok: false, error: "model returned empty output" };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (err) {
+    return { ok: false, error: `not valid JSON: ${(err as Error).message}` };
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return { ok: false, error: "top-level value must be a JSON object" };
+  }
+
+  const root = parsed as Record<string, unknown>;
+  if (!Array.isArray(root.patches)) {
+    return { ok: false, error: '"patches" must be an array' };
+  }
+
+  const patches: DocumentPatchDTO[] = [];
+  for (let i = 0; i < root.patches.length; i++) {
+    const result = validatePatch(root.patches[i], i);
+    if (typeof result === "string") return { ok: false, error: result };
+    patches.push(result);
+  }
+
+  const rejected: DocumentPatchOutput["rejected_suggestions"] = Array.isArray(root.rejected_suggestions)
+    ? (root.rejected_suggestions as unknown[])
+        .filter((r): r is Record<string, unknown> => typeof r === "object" && r !== null)
+        .map((r) => ({
+          title: typeof r.title === "string" ? r.title : "",
+          reason_rejected: typeof r.reason_rejected === "string" ? r.reason_rejected : "",
+        }))
+    : [];
+
+  return {
+    ok: true,
+    data: {
+      overall_change_summary:
+        typeof root.overall_change_summary === "string" ? root.overall_change_summary : "",
+      patches,
+      rejected_suggestions: rejected,
     },
   };
 }

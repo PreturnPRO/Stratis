@@ -134,6 +134,91 @@ export interface LiveCardOutput {
   cards: LiveCardDTO[];
 }
 
+// ── Document patch gateway (schema spec §7) ───────────────────────────────────
+// After a meeting the AI proposes section-based patches to the PM document — the
+// project's source of truth. The facilitator approves/edits/rejects each patch;
+// approved patches commit the next document version (git-style history lives in
+// document_versions). DTOs snake_case (AI JSON + DB); view types camelCase.
+
+export type PmSectionKey =
+  | "project_brief"
+  | "current_status"
+  | "current_project_direction"
+  | "active_risks"
+  | "key_constraints"
+  | "context_needed_for_next_meeting";
+
+export type PatchOperation = "replace_section" | "append_to_section" | "insert_section";
+
+export type ReviewPriority = "LOW" | "MEDIUM" | "HIGH";
+
+export interface DocumentPatchDTO {
+  client_patch_id: string;
+  operation: PatchOperation;
+  section_key: PmSectionKey;
+  section_title: string;
+  new_content: string;
+  reason?: string;
+  confidence?: number;
+  review_priority?: ReviewPriority;
+  requires_facilitator_review?: boolean;
+}
+
+export interface RejectedSuggestion {
+  title: string;
+  reason_rejected: string;
+}
+
+/** The exact JSON shape the post-meeting document AI is required to emit. */
+export interface DocumentPatchOutput {
+  output_type: "document_patch_output";
+  session_id: string;
+  project_id: string;
+  base_document_version: number;
+  overall_change_summary: string;
+  patches: DocumentPatchDTO[];
+  rejected_suggestions?: RejectedSuggestion[];
+}
+
+// PM document persisted state + version history (view types, camelCase).
+
+export interface PmSection {
+  title: string;
+  content: string;
+}
+
+export interface PmDocumentState {
+  sections: Record<PmSectionKey, PmSection>;
+}
+
+export interface PmDocument {
+  id: string;
+  projectId: string;
+  orgId: string;
+  state: PmDocumentState;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PmDocumentVersion {
+  id: string;
+  version: number;
+  sessionId: string | null;
+  changeSummary: string;
+  createdAt: string;
+}
+
+/** Canonical PM document section order + default titles (schema spec §7.3). */
+export const PM_SECTIONS: { key: PmSectionKey; title: string }[] = [
+  { key: "project_brief", title: "Project Brief" },
+  { key: "current_status", title: "Current Status" },
+  { key: "current_project_direction", title: "Current Project Direction" },
+  { key: "active_risks", title: "Active Risks" },
+  { key: "key_constraints", title: "Key Constraints" },
+  { key: "context_needed_for_next_meeting", title: "Context for Next Meeting" },
+];
+
 // ── Realtime suggestion cards (S1-T03-E) ──────────────────────────────────────
 // A live card becomes a card in the facilitator's suggestion stack. Cards are
 // pushed over WebSocket to the facilitator's session ONLY — participants never
