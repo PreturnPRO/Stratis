@@ -1,6 +1,3 @@
-Use this. Replace whole `README.md`.
-
-Current repo is Vite React frontend, Express backend, SQLite local DB, shared types, and separate AI service. Vite proxies `/api` to backend port `3001` [7]. Backend scripts include `dev`, `db:migrate`, `db:seed`, `db:reset`, `typecheck`, and `build` [4]. Env files are ignored except `.env.example` [8].
 
 ```md
 # Stratis
