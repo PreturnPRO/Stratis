@@ -17,7 +17,14 @@ export const groqProvider: AIProvider = {
           "Content-Type": "application/json",
           Authorization: `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({ model, messages, temperature: 0.4 }),
+        // response_format json_object: Groq/Llama returns bare JSON instead of
+        // prose-wrapped or fenced text, so parseStructured/parseDocumentPatch don't fail.
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: 0.4,
+          response_format: { type: "json_object" },
+        }),
       },
       env.ai.timeoutMs
     );

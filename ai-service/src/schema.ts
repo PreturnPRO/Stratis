@@ -321,7 +321,8 @@ Return EXACTLY one JSON object with this shape and nothing else:
 
 Rules:
 - Output JSON only. No \`\`\` fences, no leading or trailing text.
-- "patches" may be EMPTY ([]) if the meeting changed nothing about project state.
+- If the current PM document is empty / first version (sections show "(empty)"), EVERYTHING is new: you MUST emit a patch for every section the transcript gives you material for. Do not return empty patches for an empty document.
+- "patches" may be EMPTY ([]) ONLY when the document already has content and this meeting changed nothing about project state.
 - Only patch sections that genuinely changed. Do not restate unchanged sections.
 - Put trivial action items that do not affect project state into rejected_suggestions.
 - "confidence" is 0..1.`;
