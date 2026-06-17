@@ -1,4 +1,3 @@
-import type { Request, Response, NextFunction } from "express";
 import type {
   AIBlock,
   AIBlockType,
@@ -124,26 +123,4 @@ export function validateAiOutput(value: unknown): AiOutputValidationResult {
   }
 
   return { ok: true, data: { blocks } };
-}
-
-/**
- * Express middleware for routes that receive AI output in req.body.output.
- * Useful for tests/admin/debug routes.
- */
-export function validateAiOutputMiddleware(
-  req: Request,
-  res: Response,
-  next: NextFunction
-) {
-  const result = validateAiOutput(req.body?.output ?? req.body);
-
-  if (!result.ok) {
-    return res.status(422).json({
-      ok: false,
-      error: `AI output failed validation: ${result.error}`,
-    });
-  }
-
-  res.locals.aiOutput = result.data;
-  next();
 }

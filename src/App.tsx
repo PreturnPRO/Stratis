@@ -7,17 +7,9 @@ import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Projects from "./pages/Projects";
-//import StrategyMap from './pages/StrategyMap'
 import Meeting from "./pages/Meeting";
-//import Decisions  from './pages/Decisions'
-//import Inbox      from './pages/Inbox'
-//import Settings   from './pages/Settings'
 import Dashboard from "./pages/Dashboard";
-//import Documents  from './pages/Documents'
 import SummaryView from "./pages/SummaryView";
-
-//For Ai testing
-import LiveVoicePipelineTest from './pages/LiveVoicePipelineTest'
 
 type AuthPage = "landing" | "login" | "register" | "app";
 
@@ -27,18 +19,12 @@ function renderPage(
   handleNav: (id: string, params?: Record<string, string>) => void,
 ) {
   switch (active) {
-      case 'live-voice-test':return <LiveVoicePipelineTest /> // Temporary page for AI testing
-
     case "projects":
       return <Projects />;
-    //    case 'map':       return <StrategyMap />
-    case "meeting":   return <Meeting onNav={handleNav} />
-    //    case 'decisions': return <Decisions />
-    //    case 'inbox':     return <Inbox />
-    //    case 'settings':  return <Settings />
+    case "meeting":
+      return <Meeting onNav={handleNav} />;
     case "dashboard":
       return <Dashboard onNav={handleNav} />;
-    //   case 'documents': return <Documents />
     case "summary":
       return (
         <SummaryView role="facilitator" sessionId={navParams?.sessionId} />
