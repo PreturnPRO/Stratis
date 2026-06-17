@@ -1,5 +1,3 @@
-
-```md
 # Stratis
 
 Stratis is an AI co-facilitator for team meetings.
@@ -41,7 +39,6 @@ It listens during meetings, captures transcript chunks, sends facilitator-only s
   - `SummaryBlock`
   - `QuestionSuggestion`
 
----
 
 ## Project Structure
 
