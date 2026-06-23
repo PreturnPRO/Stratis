@@ -56,9 +56,67 @@ export default function Dashboard({ onNav }: DashboardProps) {  return (
                   gap: 12,
                 }}
               >
+<<<<<<< Updated upstream
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ color: COLORS.text, fontSize: 14, fontWeight: 500, marginBottom: 4, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {m.title}
+=======
+                Upcoming meetings
+              </h2>
+              <button style={btnGhost()} onClick={loadDashboard}>
+                Refresh
+              </button>
+            </div>
+
+            {meetings.length === 0 ? (
+              <EmptyState message="No meetings yet. Create your first meeting." />
+            ) : (
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: 10 }}
+              >
+                {meetings.map((m) => (
+                  <div
+                    key={m.id}
+                    style={{
+                      background: COLORS.surface,
+                      border: `1px solid ${COLORS.border}`,
+                      borderRadius: 10,
+                      padding: "16px 18px",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        justifyContent: "space-between",
+                        gap: 16,
+                      }}
+                    >
+                      <div>
+                        <div
+                          style={{
+                            color: COLORS.text,
+                            fontSize: 14,
+                            fontWeight: 500,
+                            marginBottom: 6,
+                          }}
+                        >
+                          {m.title}
+                        </div>
+                        <div style={{ color: COLORS.textMuted, fontSize: 12 }}>
+                          {m.project ?? m.projectId ?? "Project"} ┬╖{" "}
+                          {formatDate(m.scheduledAt ?? m.time)}
+                        </div>
+                      </div>
+
+                      <button
+                        style={btnAccent()}
+                        onClick={() => void handleStartExisting(m)}
+                      >
+                        {m.activeSession ? "Resume" : "Start"}
+                      </button>
+                    </div>
+>>>>>>> Stashed changes
                   </div>
                   <div style={{ display: "flex", gap: 10, fontSize: 12, color: COLORS.textMuted }}>
                     <span>{m.project}</span>
@@ -81,6 +139,7 @@ export default function Dashboard({ onNav }: DashboardProps) {  return (
           </div>
         </div>
 
+<<<<<<< Updated upstream
         {/* Recent summaries */}
         <div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
@@ -102,6 +161,71 @@ export default function Dashboard({ onNav }: DashboardProps) {  return (
                 onMouseEnter={(e) => (e.currentTarget.style.borderColor = COLORS.borderLight)}
                 onMouseLeave={(e) => (e.currentTarget.style.borderColor = COLORS.border)}
                 onClick={() => onNav?.('summary', { sessionId: s.id })}
+=======
+      {showNewMeeting && (
+        <div style={overlayStyle}>
+          <div style={modalStyle}>
+            <h2
+              style={{
+                color: COLORS.text,
+                fontSize: 18,
+                fontWeight: 500,
+                margin: "0 0 18px",
+              }}
+            >
+              New meeting
+            </h2>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <input
+                style={inputStyle}
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Meeting title"
+              />
+
+              <input
+                style={inputStyle}
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                placeholder="Project name"
+              />
+
+              <input
+                style={inputStyle}
+                type="datetime-local"
+                value={scheduledAt}
+                onChange={(e) => setScheduledAt(e.target.value)}
+              />
+
+              <input
+                style={inputStyle}
+                value={goal}
+                onChange={(e) => setGoal(e.target.value)}
+                placeholder="Meeting goal (one line)"
+              />
+
+              <textarea
+                style={{ ...inputStyle, minHeight: 72, resize: "vertical", fontFamily: "inherit" }}
+                value={brief}
+                onChange={(e) => setBrief(e.target.value)}
+                placeholder="Brief / agenda ΓÇö context for the AI (optional)"
+              />
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 8,
+                marginTop: 22,
+              }}
+            >
+              <button
+                style={btnGhost()}
+                onClick={() => setShowNewMeeting(false)}
+                disabled={creating}
+>>>>>>> Stashed changes
               >
                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
                   <span style={{ color: COLORS.text, fontSize: 14, fontWeight: 500 }}>{s.title}</span>
@@ -125,5 +249,39 @@ export default function Dashboard({ onNav }: DashboardProps) {  return (
 
       </div>
     </div>
+<<<<<<< Updated upstream
   )
 }
+=======
+  );
+}
+
+const overlayStyle: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(0,0,0,0.7)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  zIndex: 200,
+};
+
+const modalStyle: React.CSSProperties = {
+  width: 420,
+  background: COLORS.surface,
+  border: `1px solid ${COLORS.border}`,
+  borderRadius: 12,
+  padding: 24,
+};
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  background: COLORS.bg,
+  border: `1px solid ${COLORS.border}`,
+  color: COLORS.text,
+  borderRadius: 6,
+  padding: "10px 12px",
+  fontSize: 14,
+  outline: "none",
+};
+>>>>>>> Stashed changes
