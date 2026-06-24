@@ -11,6 +11,7 @@ import type { AIProvider, ChatMessage, CompletionResult } from "./providers/type
 import { groqProvider } from "./providers/groq";
 import { ollamaProvider } from "./providers/ollama";
 import { mockProvider } from "./providers/mock";
+import { typhoonProvider } from "./providers/typhoon";
 import {
   SYSTEM_PROMPT_JSON,
   SYSTEM_PROMPT_LIVE_CARD,
@@ -39,14 +40,16 @@ export {
 } from "./schema";
 export type { ParseResult, LiveCardParseResult, DocPatchParseResult } from "./schema";
 
-/** Pick the active provider. groq with no key falls back to mock so the call
- *  always confirms. */
+/** Pick the active provider. Providers with no key fall back to mock so the call
+ * always confirms. */
 export function selectProvider(): AIProvider {
   switch (env.ai.provider) {
     case "ollama":
       return ollamaProvider;
     case "mock":
       return mockProvider;
+    case "typhoon":
+      return env.ai.typhoon.apiKey ? typhoonProvider : mockProvider;
     case "groq":
     default:
       return env.ai.groq.apiKey ? groqProvider : mockProvider;

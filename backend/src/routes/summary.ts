@@ -150,9 +150,10 @@ ${session.meeting_title}
 
 Instructions:
 - Use the transcript only.
+- The transcript may contain conversational Thai and English. Smoothly parse, translate, and synthesize the context across both languages.
 - Produce useful participant-facing summary content.
-- Include overview, decisions, open items, risks, assumptions, and next steps when present.
-- If action items are mentioned, include them in the content.
+- Organize custom output blocks prioritizing dynamic block structures for: Decisions, Action Items, Open Questions, and Risks.
+- Include overview, assumptions, and next steps when present.
 - Keep it concise and clear.
 - Return valid Stratis AI structured blocks only.
 

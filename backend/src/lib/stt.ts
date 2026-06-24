@@ -6,7 +6,7 @@ export interface TranscribeInput {
 }
 
 export interface TranscribeResult {
-  provider: "deepgram" | "mock";
+  provider: "typhoon" | "mock";
   text: string;
   raw?: unknown;
 }
@@ -29,76 +29,80 @@ async function fetchWithTimeout(
 function mockTranscribe(input: TranscribeInput): TranscribeResult {
   return {
     provider: "mock",
-    text: `[mock transcript] received ${input.audio.length} bytes of ${input.mimeType}. Set STT_PROVIDER=deepgram and DEEPGRAM_API_KEY for real STT.`,
+    text: `[mock transcript] received ${input.audio.length} bytes of ${input.mimeType}. Set STT_PROVIDER=typhoon and HF_TOKEN for real STT.`,
     raw: { mock: true, bytes: input.audio.length, mimeType: input.mimeType },
   };
 }
 
-async function deepgramTranscribe(
+async function typhoonTranscribe(
   input: TranscribeInput,
 ): Promise<TranscribeResult> {
-  const { apiKey, model, baseUrl } = env.stt.deepgram;
+  const { hfToken, baseUrl } = env.stt.typhoon;
 
-  if (!apiKey) {
+  if (!hfToken) {
     return mockTranscribe(input);
   }
 
-  const url = `${baseUrl}?model=${encodeURIComponent(model)}&smart_format=true&punctuate=true`;
-
-  const res = await fetchWithTimeout(
-    url,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Token ${apiKey}`,
-        "Content-Type": input.mimeType,
-      },
-      body: input.audio,
-    },
-    env.stt.timeoutMs,
-  );
-
-  const raw: any = await res.json();
-
-  if (!res.ok) {
-    const message = `Deepgram error ${res.status}: ${JSON.stringify(raw)}`;
-
-    // Browser MediaRecorder can occasionally emit a tiny/partial chunk,
-    // especially on stop. Deepgram may reject that as corrupt/unsupported.
-    // Treat 400 as "no transcript for this chunk" instead of crashing
-    // the live meeting pipeline.
-    if (res.status === 400) {
-      console.warn(`[stt] ${message}`);
-
-      return {
-        provider: "deepgram",
-        text: "",
-        raw: {
-          skipped: true,
-          reason: "deepgram_rejected_chunk",
-          error: raw,
+  try {
+    const res = await fetchWithTimeout(
+      baseUrl,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${hfToken}`,
+          "Content-Type": input.mimeType,
         },
-      };
+        body: input.audio,
+      },
+      env.stt.timeoutMs,
+    );
+
+    // Read raw text first so we can parse errors that might be thrown in HTML or non-standard JSON during a 503
+    const rawText = await res.text();
+    let parsedRaw: any = {};
+    
+    try {
+      parsedRaw = JSON.parse(rawText);
+    } catch (e) {
+      parsedRaw = { unparseableResponse: rawText };
     }
 
-    throw new Error(message);
+    if (!res.ok) {
+      // Cold-start safeguard 
+      const isLoadingStr = JSON.stringify(parsedRaw).toLowerCase().includes("currently loading");
+      
+      if (res.status === 503 || isLoadingStr) {
+        console.warn(`[stt] Typhoon model loading (503). Skipping chunk gracefully.`);
+        return { provider: "typhoon", text: "", raw: { skipped: true, reason: "cold-start", ...parsedRaw } };
+      }
+      
+      console.warn(`[stt] Typhoon error ${res.status}`);
+      return { provider: "typhoon", text: "", raw: { skipped: true, error: parsedRaw } };
+    }
+
+    // Hugging Face standard text response extraction
+    const text = parsedRaw?.text ?? "";
+    return { provider: "typhoon", text, raw: parsedRaw };
+    
+  } catch (error) {
+    // Graceful fallback for any network/timeout errors to keep the meeting pipeline alive
+    console.warn(`[stt] Network or timeout error during Typhoon transcription.`);
+    return { provider: "typhoon", text: "", raw: { skipped: true, error } };
   }
-
-  const text = raw?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? "";
-
-  return {
-    provider: "deepgram",
-    text,
-    raw,
-  };
 }
 
 export async function transcribeAudio(
   input: TranscribeInput,
 ): Promise<TranscribeResult> {
-  if (env.stt.provider === "deepgram") {
-    return deepgramTranscribe(input);
+  switch (env.stt.provider) {
+    case "typhoon":
+      return typhoonTranscribe(input);
+    case "mock":
+      return mockTranscribe(input);
+    default:
+      console.warn(
+        `[stt] Unknown provider ${env.stt.provider}, falling back to mock`,
+      );
+      return mockTranscribe(input);
   }
-
-  return mockTranscribe(input);
 }
