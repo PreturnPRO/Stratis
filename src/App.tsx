@@ -1,54 +1,3 @@
-<<<<<<< HEAD
-import { useState } from "react";
-import { COLORS } from "./constants";
-import { AuthProvider, useAuth } from "./context/AuthContext";
-import Sidebar from "./components/Sidebar";
-import MeetingTransition from "./components/MeetingTransition";
-import Landing from "./pages/Landing";
-import Login from "./pages/Login";
-import Register from "./pages/Register";
-import Projects from "./pages/Projects";
-import Meeting from "./pages/Meeting";
-import Dashboard from "./pages/Dashboard";
-import SummaryView from "./pages/SummaryView";
-import DocumentView from "./pages/DocumentView";
-=======
-<<<<<<< Updated upstream
-import { useState } from 'react'
-import { COLORS } from './constants'
-import { AuthProvider, useAuth } from './context/AuthContext'
-import Sidebar from './components/Sidebar'
-import MeetingTransition from './components/MeetingTransition'
-import Landing    from './pages/Landing'
-import Login      from './pages/Login'
-import Register   from './pages/Register'
-import Projects   from './pages/Projects'
-import StrategyMap from './pages/StrategyMap'
-import Meeting    from './pages/Meeting'
-import Decisions  from './pages/Decisions'
-import Inbox      from './pages/Inbox'
-import Settings   from './pages/Settings'
-import Dashboard  from './pages/Dashboard'
-import Documents  from './pages/Documents'
-import SummaryView from './pages/SummaryView';
->>>>>>> 5cdca32a9d1ee7c78daa4fb40683219dced616a6
-
-type AuthPage = "landing" | "login" | "register" | "app";
-
-<<<<<<< HEAD
-=======
-function renderPage(active: string, navParams: Record<string, string>, handleNav: (id: string, params?: Record<string, string>) => void) {  switch (active) {
-    case 'projects':  return <Projects />
-    case 'map':       return <StrategyMap />
-    case 'meeting':   return <Meeting />
-    case 'decisions': return <Decisions />
-    case 'inbox':     return <Inbox />
-    case 'settings':  return <Settings />
-    case 'dashboard': return <Dashboard onNav={handleNav} />
-    case 'documents': return <Documents />
-    case 'summary':   return <SummaryView role="facilitator" sessionId={navParams?.sessionId} />
-    default:          return <Projects />
-=======
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { COLORS } from "./constants";
@@ -69,13 +18,12 @@ type AppPage = "dashboard" | "projects" | "meeting" | "summary" | "document";
 
 const PAGE_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
-  projects:  "Projects",
-  meeting:   "Meeting",
-  summary:   "Summary",
-  document:  "Document",
+  projects: "Projects",
+  meeting: "Meeting",
+  summary: "Summary",
+  document: "Document",
 };
 
->>>>>>> 5cdca32a9d1ee7c78daa4fb40683219dced616a6
 function renderPage(
   active: string,
   navParams: Record<string, string>,
@@ -83,89 +31,37 @@ function renderPage(
 ) {
   switch (active) {
     case "projects":
-<<<<<<< HEAD
-      return <Projects />;
-=======
       return <Projects onNav={handleNav} />;
->>>>>>> 5cdca32a9d1ee7c78daa4fb40683219dced616a6
     case "meeting":
       return <Meeting onNav={handleNav} />;
     case "dashboard":
       return <Dashboard onNav={handleNav} />;
     case "summary":
-<<<<<<< HEAD
-      return (
-        <SummaryView role="facilitator" sessionId={navParams?.sessionId} />
-      );
-    case "document":
-      return (
-        <DocumentView sessionId={navParams?.sessionId} projectId={navParams?.projectId} />
-      );
-    default:
-      return <Dashboard onNav={handleNav} />;
-=======
       return <SummaryView role="facilitator" sessionId={navParams?.sessionId} />;
     case "document":
       return <DocumentView sessionId={navParams?.sessionId} projectId={navParams?.projectId} onNav={handleNav} />;
     default:
       return <Dashboard onNav={handleNav} />;
->>>>>>> Stashed changes
->>>>>>> 5cdca32a9d1ee7c78daa4fb40683219dced616a6
   }
 }
 
 function AppShell() {
-<<<<<<< HEAD
-  const { isAuthed, logout } = useAuth();
-  const [authPage, setAuthPage] = useState<AuthPage>("landing");
-  const [active, setActive] = useState("dashboard");
-  const [navParams, setNavParams] = useState<Record<string, string>>({});
-  const [showTransition, setShowTransition] = useState(false);
-
-  // const ALLOWED_PAGES = new Set([
-  //   "dashboard",
-  //   "projects",
-  //   "meeting",
-  //   "summary",
-  // ]);
-
-  // const handleNav = (id: string, params?: Record<string, string>) => {
-  //   const nextPage = ALLOWED_PAGES.has(id) ? id : "dashboard";
-
-  //   if (nextPage === "meeting" && active !== "meeting") {
-  //     setShowTransition(true);
-  //   }
-
-  //   setActive(nextPage);
-  //   setNavParams(nextPage === id ? (params ?? {}) : {});
-  // };
-=======
-<<<<<<< Updated upstream
-  const { isAuthed, logout } = useAuth()
-  const [authPage, setAuthPage] = useState<AuthPage>('landing')
-  const [active, setActive] = useState('projects')
-  const [navParams, setNavParams] = useState<Record<string, string>>({})
-  const [showTransition, setShowTransition] = useState(false)
-=======
   const { isAuthed, logout } = useAuth();
   const [authPage, setAuthPage] = useState<AuthPage>("landing");
   const [active, setActive] = useState<AppPage>("dashboard");
   const [navParams, setNavParams] = useState<Record<string, string>>({});
   const [showTransition, setShowTransition] = useState(false);
 
-  // ─── Nav history stores {page, params} tuples ──────────────────────────────
   type HistoryEntry = { page: AppPage; params: Record<string, string> };
   const [history, setHistory] = useState<HistoryEntry[]>([{ page: "dashboard", params: {} }]);
   const [historyIndex, setHistoryIndex] = useState(0);
->>>>>>> Stashed changes
->>>>>>> 5cdca32a9d1ee7c78daa4fb40683219dced616a6
 
   const handleNav = (id: string, params?: Record<string, string>) => {
     const page = id as AppPage;
     const resolvedParams = params ?? {};
 
     const current = history[historyIndex];
-    const isSamePage   = current?.page === page;
+    const isSamePage = current?.page === page;
     const isSameParams = JSON.stringify(current?.params) === JSON.stringify(resolvedParams);
     if (isSamePage && isSameParams) return;
 
@@ -195,7 +91,6 @@ function AppShell() {
     handleNav(id, {});
   };
 
-
   const handleBack = () => {
     if (historyIndex <= 0) return;
     const prev = history[historyIndex - 1];
@@ -212,123 +107,26 @@ function AppShell() {
     setNavParams(next.params);
   };
 
-  const canBack    = historyIndex > 0;
+  const canBack = historyIndex > 0;
   const canForward = historyIndex < history.length - 1;
 
-  // ─── Auth pages ────────────────────────────────────────────────────────────
   if (!isAuthed) {
-<<<<<<< HEAD
-    const page = authPage;
-    return (
-      <div
-        style={{
-          height: "100vh",
-          background: COLORS.bg,
-          color: COLORS.text,
-          fontFamily: "'Helvetica Neue', Arial, sans-serif",
-        }}
-      >
-        {page === "landing" && <Landing onNavigate={setAuthPage} />}
-        {page === "login" && (
-          <Login
-            onNavigate={(p) =>
-              p === "app" ? setAuthPage("app") : setAuthPage(p)
-            }
-          />
-        )}
-        {page === "register" && (
-          <Register
-            onNavigate={(p) =>
-              p === "app" ? setAuthPage("app") : setAuthPage(p)
-            }
-          />
-        )}
-=======
-<<<<<<< Updated upstream
-    const page = authPage
-    return (
-      <div style={{ height: '100vh', background: COLORS.bg, color: COLORS.text, fontFamily: "'Helvetica Neue', Arial, sans-serif" }}>
-        {page === 'landing'  && <Landing  onNavigate={setAuthPage} />}
-        {page === 'login'    && <Login    onNavigate={p => p === 'app' ? setAuthPage('app') : setAuthPage(p)} />}
-        {page === 'register' && <Register onNavigate={p => p === 'app' ? setAuthPage('app') : setAuthPage(p)} />}
-=======
     return (
       <div style={{ height: "100vh", background: COLORS.bg, color: COLORS.text, fontFamily: "'Helvetica Neue', Arial, sans-serif" }}>
-        {authPage === "landing"  && <Landing onNavigate={setAuthPage} />}
-        {authPage === "login"    && <Login    onNavigate={(p) => p === "app" ? setAuthPage("app") : setAuthPage(p)} />}
+        {authPage === "landing" && <Landing onNavigate={setAuthPage} />}
+        {authPage === "login" && <Login onNavigate={(p) => p === "app" ? setAuthPage("app") : setAuthPage(p)} />}
         {authPage === "register" && <Register onNavigate={(p) => p === "app" ? setAuthPage("app") : setAuthPage(p)} />}
->>>>>>> Stashed changes
->>>>>>> 5cdca32a9d1ee7c78daa4fb40683219dced616a6
       </div>
     );
   }
 
-  // ─── App shell ─────────────────────────────────────────────────────────────
   return (
-<<<<<<< HEAD
-    <div
-      style={{
-        display: "flex",
-        height: "100vh",
-        background: COLORS.bg,
-        fontFamily: "'Helvetica Neue', Arial, sans-serif",
-        overflow: "hidden",
-        color: COLORS.text,
-      }}
-    >
-      {showTransition && (
-        <MeetingTransition onDone={() => setShowTransition(false)} />
-      )}
-=======
-<<<<<<< Updated upstream
-    <div style={{
-      display: 'flex', height: '100vh', background: COLORS.bg,
-      fontFamily: "'Helvetica Neue', Arial, sans-serif",
-      overflow: 'hidden', color: COLORS.text,
-    }}>
-      {showTransition && <MeetingTransition onDone={() => setShowTransition(false)} />}
->>>>>>> 5cdca32a9d1ee7c78daa4fb40683219dced616a6
-      <Sidebar active={active} onNav={handleNav} onLogout={logout} />
-      <div
-        style={{
-          flex: 1,
-          overflow: "hidden",
-          display: "flex",
-          flexDirection: "column",
-          position: "relative",
-        }}
-      >
-        <div
-          style={{
-            height: 48,
-            borderBottom: `1px solid ${COLORS.border}`,
-            display: "flex",
-            alignItems: "center",
-            padding: "0 20px",
-            flexShrink: 0,
-            color: COLORS.textMuted,
-            fontSize: 13,
-          }}
-        >
-          Top bar
-        </div>
-<<<<<<< HEAD
-        <div
-          style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}
-        >
-          <div style={{ flex: 1, overflow: "hidden", height: "100%" }}>
-=======
-        <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
-          <div style={{ flex: 1, overflow: 'hidden', height: '100%' }}>
-=======
     <div style={{ display: "flex", height: "100vh", background: COLORS.bg, fontFamily: "'Helvetica Neue', Arial, sans-serif", overflow: "hidden", color: COLORS.text }}>
       {showTransition && <MeetingTransition onDone={() => setShowTransition(false)} />}
 
       <Sidebar active={active} onNav={handleSidebarNav} onLogout={logout} />
 
       <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", position: "relative" }}>
-
-        {/* ─── Topbar ──────────────────────────────────────────────────────── */}
         <div style={{
           height: 40,
           borderBottom: `1px solid ${COLORS.border}`,
@@ -338,7 +136,6 @@ function AppShell() {
           gap: 6,
           flexShrink: 0,
         }}>
-          {/* Back */}
           <button
             onClick={handleBack}
             disabled={!canBack}
@@ -355,7 +152,6 @@ function AppShell() {
             <ChevronLeft size={15} strokeWidth={1.75} />
           </button>
 
-          {/* Forward */}
           <button
             onClick={handleForward}
             disabled={!canForward}
@@ -372,16 +168,13 @@ function AppShell() {
             <ChevronRight size={15} strokeWidth={1.75} />
           </button>
 
-          {/* Breadcrumb path */}
           <div style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
             {history.slice(0, historyIndex + 1).map((entry, i) => {
               const isCurrent = i === historyIndex;
               const isClickable = !isCurrent;
               return (
                 <div key={`${entry.page}-${i}`} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                  {i > 0 && (
-                    <span style={{ color: COLORS.textDim, fontSize: 12, userSelect: "none" }}>›</span>
-                  )}
+                  {i > 0 && <span style={{ color: COLORS.textDim, fontSize: 12, userSelect: "none" }}>›</span>}
                   <button
                     onClick={() => {
                       if (!isClickable) return;
@@ -405,11 +198,8 @@ function AppShell() {
           </div>
         </div>
 
-        {/* ─── Page content ─────────────────────────────────────────────────── */}
         <div style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}>
           <div style={{ flex: 1, overflow: "hidden", height: "100%" }}>
->>>>>>> Stashed changes
->>>>>>> 5cdca32a9d1ee7c78daa4fb40683219dced616a6
             {renderPage(active, navParams, handleNav)}
           </div>
         </div>
@@ -423,14 +213,5 @@ export default function App() {
     <AuthProvider>
       <AppShell />
     </AuthProvider>
-<<<<<<< HEAD
   );
 }
-=======
-<<<<<<< Updated upstream
-  )
-=======
-  );
->>>>>>> Stashed changes
-}
->>>>>>> 5cdca32a9d1ee7c78daa4fb40683219dced616a6
