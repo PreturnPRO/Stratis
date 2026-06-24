@@ -41,14 +41,6 @@ function SkeletonCard() {
   );
 }
 
-export function LoadingState({ count = 3, delayMs = 1500, onDone }:
-  {
-  count?: number;
-  delayMs?: number;
-  onDone?: () => void;}) {
-  const [visible, setVisible] = useState(true);
-
-  useEffect(() => {
 const APPEAR_DELAY_MS = 500;
 
 export function LoadingState({
