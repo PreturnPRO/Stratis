@@ -1,69 +1,62 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Stratis Live Card Output",
+  "$id": "https://stratis.dev/schema/live-card-output.schema.json",
+  "title": "live_card_output",
+  "description": "Live meeting AI gateway (schema spec §6). One envelope per transcript chunk: classifies the chunk, updates rolling memory, and surfaces facilitator-only cards.",
   "type": "object",
-  "required": ["output_type", "session_id", "chunk_id", "chunk_signal", "rolling_memory_update", "cards"],
+  "required": ["output_type", "session_id", "chunk_signal", "cards"],
+  "additionalProperties": false,
   "properties": {
     "output_type": { "const": "live_card_output" },
     "session_id": { "type": "string" },
     "chunk_id": { "type": "string" },
-    "chunk_signal": {
+    "chunk_signal": { "enum": ["IMPORTANT", "LOW_SIGNAL", "IGNORE"] },
+    "rolling_memory_update": {
       "type": "string",
-      "enum": ["IMPORTANT", "LOW_SIGNAL", "IGNORE"]
+      "description": "Compressed one-sentence memory update for the meeting so far. Empty string if no update needed."
     },
-    "rolling_memory_update": { "type": "string" },
     "cards": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["client_card_id", "card_type", "title", "brief_description", "urgency", "confidence", "evidence", "suggested_state"],
-        "properties": {
-          "client_card_id": { "type": "string" },
-          "card_type": {
-            "type": "string",
-            "enum": ["QUESTION_SUGGESTION", "AGENDA_DRIFT", "RISK", "DECISION_NEEDED", "ASSUMPTION"]
-          },
-          "title": { "type": "string" },
-          "brief_description": { "type": "string" },
-          "suggested_question": { "type": "string" },
-          "urgency": {
-            "type": "string",
-            "enum": ["LOW", "MEDIUM", "HIGH"]
-          },
-          "related_agenda_item": { "type": "string" },
-          "reason_now": { "type": "string" },
-          "expected_resolution_signal": { "type": "string" },
-          "confidence": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          },
-          "evidence": {
-            "type": "array",
-            "items": { "$ref": "#/definitions/evidence" }
-          },
-          "suggested_state": {
-            "type": "string",
-            "enum": ["NEW", "ACTIVE", "ANSWERED", "DISMISSED"]
-          }
-        },
-        "additionalProperties": false
-      }
+      "description": "Facilitator suggestion cards. May be empty when no intervention is warranted.",
+      "items": { "$ref": "#/definitions/live_card" }
     }
   },
   "definitions": {
+    "live_card": {
+      "type": "object",
+      "required": ["card_type", "title", "brief_description", "urgency"],
+      "additionalProperties": false,
+      "properties": {
+        "card_type": {
+          "enum": ["QUESTION_SUGGESTION", "DRIFT_ALERT", "MISSING_DECISION", "UNRESOLVED_ASSUMPTION"]
+        },
+        "title": { "type": "string", "maxLength": 120 },
+        "brief_description": { "type": "string" },
+        "suggested_question": { "type": "string" },
+        "urgency": { "enum": ["LOW", "MEDIUM", "HIGH"] },
+        "related_agenda_item": { "type": ["string", "null"] },
+        "reason_now": { "type": "string" },
+        "expected_resolution_signal": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/evidence" }
+        },
+        "suggested_state": {
+          "enum": ["NEW", "AWARE", "ANSWERED", "DISMISSED", "ESCALATED_TO_OPEN_QUESTION", "LINKED_TO_DOCUMENT_PATCH"]
+        }
+      }
+    },
     "evidence": {
       "type": "object",
-      "required": ["transcript_ref", "timestamp_start", "timestamp_end", "speaker", "quote"],
+      "additionalProperties": false,
       "properties": {
         "transcript_ref": { "type": "string" },
         "timestamp_start": { "type": "string" },
         "timestamp_end": { "type": "string" },
         "speaker": { "type": "string" },
         "quote": { "type": "string" }
-      },
-      "additionalProperties": false
+      }
     }
-  },
-  "additionalProperties": false
+  }
 }

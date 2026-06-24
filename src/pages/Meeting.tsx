@@ -24,7 +24,7 @@ import { useAuth } from "../context/AuthContext";
 import { useSessionRecovery } from "../hooks/useSessionRecovery";
 import type { AIBlock } from "../../shared/types";
 
-const API_BASE = "http://localhost:3001";
+import { API_BASE } from "../lib/api";
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 
 const MIN_AUDIO_CHUNK_BYTES = 2048;
@@ -289,7 +289,7 @@ export default function Meeting({ onNav }: MeetingProps) {
       window.localStorage.removeItem(ACTIVE_SESSION_KEY);
       recovery.clearRecoveredSession();
 
-      onNav?.("summary", { sessionId });
+      onNav?.("document", { sessionId });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not end meeting");
     } finally {

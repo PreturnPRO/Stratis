@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { COLORS } from "./constants";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Sidebar from "./components/Sidebar";
@@ -7,19 +8,21 @@ import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Projects from "./pages/Projects";
-//import StrategyMap from './pages/StrategyMap'
 import Meeting from "./pages/Meeting";
-//import Decisions  from './pages/Decisions'
-//import Inbox      from './pages/Inbox'
-//import Settings   from './pages/Settings'
 import Dashboard from "./pages/Dashboard";
-//import Documents  from './pages/Documents'
 import SummaryView from "./pages/SummaryView";
-
-//For Ai testing
-import LiveVoicePipelineTest from './pages/LiveVoicePipelineTest'
+import DocumentView from "./pages/DocumentView";
 
 type AuthPage = "landing" | "login" | "register" | "app";
+type AppPage = "dashboard" | "projects" | "meeting" | "summary" | "document";
+
+const PAGE_LABELS: Record<string, string> = {
+  dashboard: "Dashboard",
+  projects: "Projects",
+  meeting: "Meeting",
+  summary: "Summary",
+  document: "Document",
+};
 
 function renderPage(
   active: string,
@@ -27,21 +30,23 @@ function renderPage(
   handleNav: (id: string, params?: Record<string, string>) => void,
 ) {
   switch (active) {
-      case 'live-voice-test':return <LiveVoicePipelineTest /> // Temporary page for AI testing
-
     case "projects":
       return <Projects />;
-    //    case 'map':       return <StrategyMap />
-    case "meeting":   return <Meeting onNav={handleNav} />
-    //    case 'decisions': return <Decisions />
-    //    case 'inbox':     return <Inbox />
-    //    case 'settings':  return <Settings />
+    case "meeting":
+      return <Meeting onNav={handleNav} />;
     case "dashboard":
       return <Dashboard onNav={handleNav} />;
-    //   case 'documents': return <Documents />
     case "summary":
       return (
         <SummaryView role="facilitator" sessionId={navParams?.sessionId} />
+      );
+    case "document":
+      return (
+        <DocumentView
+          sessionId={navParams?.sessionId}
+          projectId={navParams?.projectId}
+          onNav={handleNav}
+        />
       );
     default:
       return <Dashboard onNav={handleNav} />;
@@ -51,37 +56,74 @@ function renderPage(
 function AppShell() {
   const { isAuthed, logout } = useAuth();
   const [authPage, setAuthPage] = useState<AuthPage>("landing");
-  const [active, setActive] = useState("dashboard");
+  const [active, setActive] = useState<AppPage>("dashboard");
   const [navParams, setNavParams] = useState<Record<string, string>>({});
   const [showTransition, setShowTransition] = useState(false);
 
-  // const ALLOWED_PAGES = new Set([
-  //   "dashboard",
-  //   "projects",
-  //   "meeting",
-  //   "summary",
-  // ]);
-
-  // const handleNav = (id: string, params?: Record<string, string>) => {
-  //   const nextPage = ALLOWED_PAGES.has(id) ? id : "dashboard";
-
-  //   if (nextPage === "meeting" && active !== "meeting") {
-  //     setShowTransition(true);
-  //   }
-
-  //   setActive(nextPage);
-  //   setNavParams(nextPage === id ? (params ?? {}) : {});
-  // };
+  type HistoryEntry = { page: AppPage; params: Record<string, string> };
+  const [history, setHistory] = useState<HistoryEntry[]>([
+    { page: "dashboard", params: {} },
+  ]);
+  const [historyIndex, setHistoryIndex] = useState(0);
 
   const handleNav = (id: string, params?: Record<string, string>) => {
-    if (id === 'meeting' && active !== 'meeting') setShowTransition(true)
-    setActive(id)
-    setNavParams(params ?? {})
-  }
+    const page = id as AppPage;
+    const resolvedParams = params ?? {};
 
-  // Auth pages — no sidebar
+    const current = history[historyIndex];
+    const isSamePage = current?.page === page;
+    const isSameParams =
+      JSON.stringify(current?.params) === JSON.stringify(resolvedParams);
+    if (isSamePage && isSameParams) return;
+
+    if (page === "meeting" && active !== "meeting") setShowTransition(true);
+
+    const visibleHistory = history.slice(0, historyIndex + 1);
+    const existingIndex = visibleHistory.findIndex(
+      (e) =>
+        e.page === page &&
+        JSON.stringify(e.params) === JSON.stringify(resolvedParams),
+    );
+
+    if (existingIndex !== -1) {
+      setHistoryIndex(existingIndex);
+      setActive(page);
+      setNavParams(resolvedParams);
+      return;
+    }
+
+    const newEntry: HistoryEntry = { page, params: resolvedParams };
+    const newHistory = [...history.slice(0, historyIndex + 1), newEntry];
+    setHistory(newHistory);
+    setHistoryIndex(newHistory.length - 1);
+    setActive(page);
+    setNavParams(resolvedParams);
+  };
+
+  const handleSidebarNav = (id: string) => {
+    handleNav(id, {});
+  };
+
+  const handleBack = () => {
+    if (historyIndex <= 0) return;
+    const prev = history[historyIndex - 1];
+    setHistoryIndex(historyIndex - 1);
+    setActive(prev.page);
+    setNavParams(prev.params);
+  };
+
+  const handleForward = () => {
+    if (historyIndex >= history.length - 1) return;
+    const next = history[historyIndex + 1];
+    setHistoryIndex(historyIndex + 1);
+    setActive(next.page);
+    setNavParams(next.params);
+  };
+
+  const canBack = historyIndex > 0;
+  const canForward = historyIndex < history.length - 1;
+
   if (!isAuthed) {
-    const page = authPage;
     return (
       <div
         style={{
@@ -91,15 +133,15 @@ function AppShell() {
           fontFamily: "'Helvetica Neue', Arial, sans-serif",
         }}
       >
-        {page === "landing" && <Landing onNavigate={setAuthPage} />}
-        {page === "login" && (
+        {authPage === "landing" && <Landing onNavigate={setAuthPage} />}
+        {authPage === "login" && (
           <Login
             onNavigate={(p) =>
               p === "app" ? setAuthPage("app") : setAuthPage(p)
             }
           />
         )}
-        {page === "register" && (
+        {authPage === "register" && (
           <Register
             onNavigate={(p) =>
               p === "app" ? setAuthPage("app") : setAuthPage(p)
@@ -110,7 +152,6 @@ function AppShell() {
     );
   }
 
-  // Authenticated app shell
   return (
     <div
       style={{
@@ -125,7 +166,9 @@ function AppShell() {
       {showTransition && (
         <MeetingTransition onDone={() => setShowTransition(false)} />
       )}
-      <Sidebar active={active} onNav={handleNav} onLogout={logout} />
+
+      <Sidebar active={active} onNav={handleSidebarNav} onLogout={logout} />
+
       <div
         style={{
           flex: 1,
@@ -137,18 +180,110 @@ function AppShell() {
       >
         <div
           style={{
-            height: 48,
+            height: 40,
             borderBottom: `1px solid ${COLORS.border}`,
             display: "flex",
             alignItems: "center",
-            padding: "0 20px",
+            padding: "0 12px",
+            gap: 6,
             flexShrink: 0,
-            color: COLORS.textMuted,
-            fontSize: 13,
           }}
         >
-          Top bar
+          <button
+            onClick={handleBack}
+            disabled={!canBack}
+            title="Back"
+            style={{
+              width: 26,
+              height: 26,
+              borderRadius: 5,
+              background: "transparent",
+              border: "none",
+              color: canBack ? COLORS.textMuted : COLORS.textDim,
+              cursor: canBack ? "pointer" : "default",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <ChevronLeft size={15} strokeWidth={1.75} />
+          </button>
+
+          <button
+            onClick={handleForward}
+            disabled={!canForward}
+            title="Forward"
+            style={{
+              width: 26,
+              height: 26,
+              borderRadius: 5,
+              background: "transparent",
+              border: "none",
+              color: canForward ? COLORS.textMuted : COLORS.textDim,
+              cursor: canForward ? "pointer" : "default",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <ChevronRight size={15} strokeWidth={1.75} />
+          </button>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              marginLeft: 4,
+            }}
+          >
+            {history.slice(0, historyIndex + 1).map((entry, i) => {
+              const isCurrent = i === historyIndex;
+              const isClickable = !isCurrent;
+              return (
+                <div
+                  key={`${entry.page}-${i}`}
+                  style={{ display: "flex", alignItems: "center", gap: 4 }}
+                >
+                  {i > 0 && (
+                    <span
+                      style={{
+                        color: COLORS.textDim,
+                        fontSize: 12,
+                        userSelect: "none",
+                      }}
+                    >
+                      ›
+                    </span>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (!isClickable) return;
+                      setActive(entry.page);
+                      setHistoryIndex(i);
+                      setNavParams(entry.params);
+                    }}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      padding: "2px 4px",
+                      fontSize: 12,
+                      fontWeight: isCurrent ? 500 : 400,
+                      color: isCurrent ? COLORS.text : COLORS.textMuted,
+                      cursor: isClickable ? "pointer" : "default",
+                      borderRadius: 4,
+                    }}
+                  >
+                    {PAGE_LABELS[entry.page] ?? entry.page}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
+
         <div
           style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}
         >

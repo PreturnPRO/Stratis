@@ -2,12 +2,11 @@ import { Router } from "express";
 import { requireAuth } from "../auth/middleware";
 import { db } from "../db/database";
 import { newId, now } from "../lib/ids";
-import { structuredCall } from "@ai/index";
+import { liveCardCall, type LiveContext } from "@ai/index";
 import { transcribeAudio } from "../lib/stt";
 import * as suggestions from "../realtime/suggestions";
 import { detectAnswered } from "../realtime/autodetect";
 import { pushSuggestion, pushAnswered } from "../realtime/hub";
-import { validateAiOutput } from "../middleware/validateAiOutput";
 
 export const transcriptRouter = Router();
 
@@ -66,7 +65,64 @@ function saveTranscriptChunk(input: {
   };
 }
 
-async function routeTextToAi(sessionId: string, text: string, role: string) {
+// Recent transcript window the live AI sees each chunk (schema spec §6.4 — the
+// last 1-3 minutes, not the whole meeting). Capped to the most recent rows.
+const RECENT_WINDOW_ROWS = 12;
+
+/** Build the live AI context for a session: meeting goal/brief, rolling memory,
+ *  open questions, and the recent transcript window. */
+function buildLiveContext(sessionId: string, latestText: string): LiveContext {
+  const meta = db
+    .prepare(
+      `
+      SELECT s.rolling_summary AS rolling_summary, m.goal AS goal, m.brief AS brief
+      FROM sessions s
+      JOIN meetings m ON m.id = s.meeting_id
+      WHERE s.id = ?
+      `,
+    )
+    .get<{ rolling_summary: string | null; goal: string | null; brief: string | null }>(
+      sessionId,
+    );
+
+  const recentRows = db
+    .prepare(
+      `
+      SELECT speaker, text
+      FROM transcripts
+      WHERE session_id = ?
+      ORDER BY timestamp DESC
+      LIMIT ?
+      `,
+    )
+    .all<{ speaker: string; text: string }>(sessionId, RECENT_WINDOW_ROWS)
+    .reverse();
+
+  const recentTranscript = recentRows.length
+    ? recentRows.map((r) => `${r.speaker}: ${r.text}`).join("\n")
+    : latestText;
+
+  return {
+    sessionId,
+    goal: meta?.goal ?? null,
+    brief: meta?.brief ?? null,
+    rollingSummary: meta?.rolling_summary ?? null,
+    openQuestions: suggestions.openCards(sessionId).map((c) => c.question),
+    recentTranscript,
+  };
+}
+
+/**
+ * Route a fresh transcript chunk through the live meeting AI (schema spec §6):
+ * auto-detect answered cards, call the live_card gateway with rolling context,
+ * persist the chunk signal + updated rolling memory, and push new cards.
+ */
+async function routeTextToAi(
+  sessionId: string,
+  text: string,
+  role: string,
+  transcriptId?: string,
+) {
   const open = suggestions.openCards(sessionId);
   const answeredIds = detectAnswered(text, open);
 
@@ -78,7 +134,8 @@ async function routeTextToAi(sessionId: string, text: string, role: string) {
     }
   }
 
-  const result = await structuredCall(text);
+  const ctx = buildLiveContext(sessionId, text);
+  const result = await liveCardCall(ctx);
 
   if (!result.ok) {
     return {
@@ -93,23 +150,26 @@ async function routeTextToAi(sessionId: string, text: string, role: string) {
     };
   }
 
-  const checked = validateAiOutput(result.data);
-  if (!checked.ok) {
-    return {
-      ok: false as const,
-      status: 422,
-      error: `AI output failed validation: ${checked.error}`,
-      data: {
-        provider: result.provider,
-        answered,
-      },
-    };
+  const out = result.data;
+
+  // Persist the chunk classification on the saved transcript row.
+  if (transcriptId) {
+    db.prepare(`UPDATE transcripts SET chunk_signal = ? WHERE id = ?`).run(
+      out.chunk_signal,
+      transcriptId,
+    );
+  }
+
+  // IMPORTANT chunks update rolling memory (schema spec §6.4); others skipped.
+  if (out.chunk_signal === "IMPORTANT" && out.rolling_memory_update?.trim()) {
+    db.prepare(`UPDATE sessions SET rolling_summary = ? WHERE id = ?`).run(
+      out.rolling_memory_update.trim(),
+      sessionId,
+    );
   }
 
   const cards =
-    role === "facilitator"
-      ? suggestions.createFromBlocks(sessionId, checked.data.blocks)
-      : [];
+    role === "facilitator" ? suggestions.createFromLiveCards(sessionId, out.cards) : [];
 
   for (const card of cards) pushSuggestion(card);
 
@@ -118,7 +178,9 @@ async function routeTextToAi(sessionId: string, text: string, role: string) {
     data: {
       ai: {
         provider: result.provider,
-        blocks: checked.data.blocks,
+        chunkSignal: out.chunk_signal,
+        rollingMemoryUpdate: out.rolling_memory_update,
+        cards: out.cards,
       },
       suggestions: {
         created: cards,
@@ -243,7 +305,7 @@ transcriptRouter.post("/chunk", requireAuth, async (req, res, next) => {
           : undefined,
     });
 
-    const routed = await routeTextToAi(sessionId, text, req.auth!.role);
+    const routed = await routeTextToAi(sessionId, text, req.auth!.role, row.id);
 
     if (!routed.ok) {
       return res.status(routed.status).json({
@@ -397,7 +459,7 @@ transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
       text,
     });
 
-    const routed = await routeTextToAi(sessionId, text, req.auth!.role);
+    const routed = await routeTextToAi(sessionId, text, req.auth!.role, row.id);
 
     if (!routed.ok) {
       return res.status(routed.status).json({

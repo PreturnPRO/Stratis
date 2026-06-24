@@ -54,6 +54,10 @@ CREATE TABLE IF NOT EXISTS meetings (
   org_id        TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   project_id    TEXT NOT NULL,
   title         TEXT NOT NULL,
+  -- Human-owned meeting goal (schema spec §7.4) + free-form brief/agenda.
+  -- Captured before the meeting; fed to the live AI as context, never AI-rewritten.
+  goal          TEXT,
+  brief         TEXT,
   scheduled_at  TEXT,
   created_by    TEXT REFERENCES users(id) ON DELETE SET NULL,
   created_at    TEXT NOT NULL
@@ -90,6 +94,9 @@ CREATE TABLE IF NOT EXISTS sessions (
   facilitator_id  TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   status          TEXT NOT NULL DEFAULT 'created'
                     CHECK (status IN ('created', 'active', 'ended')),
+  -- Rolling meeting memory (schema spec §6.4/§11): compressed running summary
+  -- the live AI carries forward instead of re-reading the whole transcript.
+  rolling_summary TEXT,
   started_at      TEXT,
   ended_at        TEXT,
   created_at      TEXT NOT NULL
@@ -115,11 +122,14 @@ ON sessions(created_at);
 -- ==========================================================
 
 CREATE TABLE IF NOT EXISTS transcripts (
-  id          TEXT PRIMARY KEY,
-  session_id  TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  speaker     TEXT NOT NULL,
-  text        TEXT NOT NULL,
-  timestamp   TEXT NOT NULL
+  id            TEXT PRIMARY KEY,
+  session_id    TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  speaker       TEXT NOT NULL,
+  text          TEXT NOT NULL,
+  -- AI chunk classification (schema spec §6.4): IMPORTANT chunks feed rolling
+  -- memory, LOW_SIGNAL are compressed, IGNORE skipped. Raw text saved regardless.
+  chunk_signal  TEXT CHECK (chunk_signal IS NULL OR chunk_signal IN ('IMPORTANT', 'LOW_SIGNAL', 'IGNORE')),
+  timestamp     TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_transcripts_session_id

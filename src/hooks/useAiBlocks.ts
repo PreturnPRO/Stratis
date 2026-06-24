@@ -19,7 +19,8 @@ export interface UseAiBlocksReturn {
   append: (blocks: AIBlock[], provider?: string | null) => void;
 }
 
-const API_BASE = "http://localhost:3001";
+import { API_BASE } from "../lib/api";
+
 const TIMEOUT_MS = 10_000;
 
 export function useAiBlocks(): UseAiBlocksReturn {

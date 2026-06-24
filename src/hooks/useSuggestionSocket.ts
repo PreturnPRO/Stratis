@@ -20,8 +20,7 @@ import { useAuth } from '../context/AuthContext'
 import type { SuggestionCard as ServerCard, WsServerEvent } from '../../shared/types'
 import type { SuggestionCard as UICard } from '../components/SuggestionCardStack'
 
-const API_BASE = 'http://localhost:3001'
-const WS_BASE = 'ws://localhost:3001'
+import { API_BASE, WS_BASE } from '../lib/api'
 
 function isRealSessionId(sessionId: string | null | undefined): sessionId is string {
   if (!sessionId) return false
@@ -43,6 +42,8 @@ function toUICard(card: ServerCard): UICard {
     question: card.question,
     reason: card.reason,
     status: card.answered ? 'answered' : 'active',
+    cardType: card.cardType,
+    urgency: card.urgency,
   }
 }
 

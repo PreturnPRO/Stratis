@@ -4,7 +4,7 @@ import { btnAccent, btnGhost } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { useAuth } from "../context/AuthContext";
 
-const API_BASE = "http://localhost:3001";
+import { API_BASE } from "../lib/api";
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 
 interface DashboardProps {
@@ -99,6 +99,8 @@ export default function Dashboard({ onNav }: DashboardProps) {
   const [title, setTitle] = useState("");
   const [projectName, setProjectName] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
+  const [goal, setGoal] = useState("");
+  const [brief, setBrief] = useState("");
   const [creating, setCreating] = useState(false);
 
   const authHeaders = useMemo((): Record<string, string> => {
@@ -131,9 +133,9 @@ export default function Dashboard({ onNav }: DashboardProps) {
 
       setMeetings(
         dashboardData?.upcomingMeetings ??
-        dashboardData?.upcoming ??
-        dashboardData?.meetings ??
-        [],
+          dashboardData?.upcoming ??
+          dashboardData?.meetings ??
+          [],
       );
 
       setSummaries(
@@ -249,6 +251,8 @@ export default function Dashboard({ onNav }: DashboardProps) {
           project_id: projectId,
           scheduledAt: scheduledAt || null,
           scheduled_at: scheduledAt || null,
+          goal: goal.trim() || null,
+          brief: brief.trim() || null,
         }),
       });
 
@@ -270,6 +274,8 @@ export default function Dashboard({ onNav }: DashboardProps) {
       setTitle("");
       setProjectName("");
       setScheduledAt("");
+      setGoal("");
+      setBrief("");
 
       await startSessionForMeeting(meetingId);
     } catch (err) {
@@ -328,7 +334,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
       )}
 
       {loading ? (
-        <LoadingState count={4} persist />
+        <LoadingState count={4} />
       ) : (
         <div
           style={{
@@ -338,6 +344,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
             alignItems: "start",
           }}
         >
+          {/* Upcoming Meetings */}
           <div>
             <div
               style={{
@@ -361,7 +368,6 @@ export default function Dashboard({ onNav }: DashboardProps) {
                 Refresh
               </button>
             </div>
-
             {meetings.length === 0 ? (
               <EmptyState message="No meetings yet. Create your first meeting." />
             ) : (
@@ -416,6 +422,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
             )}
           </div>
 
+          {/* Recent Summaries */}
           <div>
             <h2
               style={{
@@ -514,6 +521,25 @@ export default function Dashboard({ onNav }: DashboardProps) {
                 type="datetime-local"
                 value={scheduledAt}
                 onChange={(e) => setScheduledAt(e.target.value)}
+              />
+
+              <input
+                style={inputStyle}
+                value={goal}
+                onChange={(e) => setGoal(e.target.value)}
+                placeholder="Meeting goal (one line)"
+              />
+
+              <textarea
+                style={{
+                  ...inputStyle,
+                  minHeight: 72,
+                  resize: "vertical",
+                  fontFamily: "inherit",
+                }}
+                value={brief}
+                onChange={(e) => setBrief(e.target.value)}
+                placeholder="Brief / agenda — context for the AI (optional)"
               />
             </div>
 
