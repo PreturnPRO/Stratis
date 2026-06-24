@@ -41,6 +41,7 @@ function SkeletonCard() {
   );
 }
 
+<<<<<<< HEAD
 export function LoadingState({
   count = 3,
   delayMs = 1500,
@@ -57,6 +58,39 @@ export function LoadingState({
   useEffect(() => {
     if (persist) return;
 
+=======
+<<<<<<< Updated upstream
+export function LoadingState({ count = 3, delayMs = 1500, onDone }: { count?: number; delayMs?: number; onDone?: () => void }) {
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+=======
+const APPEAR_DELAY_MS = 500;
+
+export function LoadingState({
+  count = 3,
+  delayMs = 1500,
+  onDone,
+  persist = false,
+}: {
+  count?: number;
+  delayMs?: number;
+  onDone?: () => void;
+  persist?: boolean;
+}) {
+  const [shown, setShown]     = useState(false);
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const appearTimer = setTimeout(() => setShown(true), APPEAR_DELAY_MS);
+    return () => clearTimeout(appearTimer);
+  }, []);
+
+  useEffect(() => {
+    if (persist) return;
+
+>>>>>>> Stashed changes
+>>>>>>> 5cdca32a9d1ee7c78daa4fb40683219dced616a6
     const t = setTimeout(() => {
       setVisible(false);
       if (onDone) onDone();
@@ -65,7 +99,7 @@ export function LoadingState({
     return () => clearTimeout(t);
   }, [delayMs, onDone, persist]);
 
-  if (!visible) return null;
+  if (!visible || !shown) return null;
 
   return (
     <div style={{
