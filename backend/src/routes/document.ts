@@ -30,7 +30,7 @@ interface DocumentRow {
   id: string;
   project_id: string;
   org_id: string;
-  state_json: string;
+  state_json: string | any; // Type 'any' to handle pg driver auto-parsing JSONB
   version: number;
   created_at: string;
   updated_at: string;
@@ -40,7 +40,7 @@ interface VersionRow {
   id: string;
   version: number;
   session_id: string | null;
-  patch_json: string | null;
+  patch_json: string | any | null; // Handle pg JSONB auto-parsing
   created_at: string;
 }
 
@@ -52,11 +52,14 @@ function emptyState(): PmDocumentState {
 }
 
 function rowToDocument(row: DocumentRow): PmDocument {
+  // If the pg driver auto-parses the JSONB column, it will be an object.
+  // If it's retrieved as text, we parse it.
+  const state = typeof row.state_json === "string" ? JSON.parse(row.state_json) : row.state_json;
   return {
     id: row.id,
     projectId: row.project_id,
     orgId: row.org_id,
-    state: JSON.parse(row.state_json) as PmDocumentState,
+    state: state as PmDocumentState,
     version: row.version,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -86,48 +89,51 @@ function applyPatches(state: PmDocumentState, patches: DocumentPatchDTO[]): PmDo
   return next;
 }
 
-function getSessionMeta(sessionId: string): SessionMetaRow | undefined {
-  return db
-    .prepare(
-      `
-      SELECT s.id AS session_id, s.facilitator_id AS facilitator_id,
-             m.project_id AS project_id, m.org_id AS org_id, m.title AS meeting_title
-      FROM sessions s
-      JOIN meetings m ON m.id = s.meeting_id
-      WHERE s.id = ?
-      `,
-    )
-    .get<SessionMetaRow>(sessionId);
+async function getSessionMeta(sessionId: string): Promise<SessionMetaRow | undefined> {
+  const result = await db.query<SessionMetaRow>(
+    `
+    SELECT s.id AS session_id, s.facilitator_id AS facilitator_id,
+           m.project_id AS project_id, m.org_id AS org_id, m.title AS meeting_title
+    FROM sessions s
+    JOIN meetings m ON m.id = s.meeting_id
+    WHERE s.id = $1
+    `,
+    [sessionId]
+  );
+  return result.rows[0];
 }
 
-function getDocumentRow(orgId: string, projectId: string): DocumentRow | undefined {
-  return db
-    .prepare(`SELECT * FROM documents WHERE org_id = ? AND project_id = ?`)
-    .get<DocumentRow>(orgId, projectId);
+async function getDocumentRow(orgId: string, projectId: string): Promise<DocumentRow | undefined> {
+  const result = await db.query<DocumentRow>(
+    `SELECT * FROM documents WHERE org_id = $1 AND project_id = $2`,
+    [orgId, projectId]
+  );
+  return result.rows[0];
 }
 
-function getVersions(documentId: string): PmDocumentVersion[] {
-  return db
-    .prepare(
-      `SELECT id, version, session_id, patch_json, created_at
-       FROM document_versions WHERE document_id = ? ORDER BY version DESC`,
-    )
-    .all<VersionRow>(documentId)
-    .map((v) => {
-      let changeSummary = "";
-      try {
-        changeSummary = v.patch_json ? (JSON.parse(v.patch_json).overall_change_summary ?? "") : "";
-      } catch {
-        changeSummary = "";
-      }
-      return {
-        id: v.id,
-        version: v.version,
-        sessionId: v.session_id,
-        changeSummary,
-        createdAt: v.created_at,
-      };
-    });
+async function getVersions(documentId: string): Promise<PmDocumentVersion[]> {
+  const result = await db.query<VersionRow>(
+    `SELECT id, version, session_id, patch_json, created_at
+     FROM document_versions WHERE document_id = $1 ORDER BY version DESC`,
+    [documentId]
+  );
+
+  return result.rows.map((v) => {
+    let changeSummary = "";
+    try {
+      const patchObj = typeof v.patch_json === "string" ? JSON.parse(v.patch_json) : v.patch_json;
+      changeSummary = patchObj ? (patchObj.overall_change_summary ?? "") : "";
+    } catch {
+      changeSummary = "";
+    }
+    return {
+      id: v.id,
+      version: v.version,
+      sessionId: v.session_id,
+      changeSummary,
+      createdAt: v.created_at,
+    };
+  });
 }
 
 function canAccess(meta: SessionMetaRow, role: string, userId: string, orgId: string): boolean {
@@ -143,27 +149,29 @@ function canAccess(meta: SessionMetaRow, role: string, userId: string, orgId: st
  */
 documentRouter.post("/session/:sessionId/generate", requireAuth, async (req, res, next) => {
   try {
-    const meta = getSessionMeta(req.params.sessionId);
+    const meta = await getSessionMeta(req.params.sessionId);
     if (!meta) return res.status(404).json({ ok: false, error: "Session not found" });
     if (!canAccess(meta, req.auth!.role, req.auth!.sub, req.auth!.orgId)) {
       return res.status(403).json({ ok: false, error: "You do not have access to this session" });
     }
 
-    const transcripts = db
-      .prepare(
-        `SELECT speaker, text FROM transcripts WHERE session_id = ? ORDER BY timestamp ASC`,
-      )
-      .all<{ speaker: string; text: string }>(meta.session_id);
+    const transcriptsResult = await db.query<{ speaker: string; text: string }>(
+      `SELECT speaker, text FROM transcripts WHERE session_id = $1 ORDER BY timestamp ASC`,
+      [meta.session_id]
+    );
+    const transcripts = transcriptsResult.rows;
 
     if (transcripts.length === 0) {
       return res.status(409).json({ ok: false, error: "No transcript rows for this session" });
     }
 
-    const rolling = db
-      .prepare(`SELECT rolling_summary FROM sessions WHERE id = ?`)
-      .get<{ rolling_summary: string | null }>(meta.session_id);
+    const rollingResult = await db.query<{ rolling_summary: string | null }>(
+      `SELECT rolling_summary FROM sessions WHERE id = $1`,
+      [meta.session_id]
+    );
+    const rolling = rollingResult.rows[0];
 
-    const existing = getDocumentRow(meta.org_id, meta.project_id);
+    const existing = await getDocumentRow(meta.org_id, meta.project_id);
     const currentState = existing ? rowToDocument(existing).state : emptyState();
     const baseVersion = existing?.version ?? 0;
 
@@ -204,9 +212,9 @@ documentRouter.post("/session/:sessionId/generate", requireAuth, async (req, res
  * Apply the facilitator-approved (possibly edited) patches → next version.
  * body: { patches: DocumentPatchDTO[], overall_change_summary: string }
  */
-documentRouter.post("/session/:sessionId/commit", requireAuth, (req, res, next) => {
+documentRouter.post("/session/:sessionId/commit", requireAuth, async (req, res, next) => {
   try {
-    const meta = getSessionMeta(req.params.sessionId);
+    const meta = await getSessionMeta(req.params.sessionId);
     if (!meta) return res.status(404).json({ ok: false, error: "Session not found" });
     if (!canAccess(meta, req.auth!.role, req.auth!.sub, req.auth!.orgId)) {
       return res.status(403).json({ ok: false, error: "You do not have access to this session" });
@@ -221,58 +229,66 @@ documentRouter.post("/session/:sessionId/commit", requireAuth, (req, res, next) 
     }
 
     const timestamp = now();
-    const existing = getDocumentRow(meta.org_id, meta.project_id);
+    const existing = await getDocumentRow(meta.org_id, meta.project_id);
     const currentState = existing ? rowToDocument(existing).state : emptyState();
     const nextState = applyPatches(currentState, patches);
     const nextVersion = (existing?.version ?? 0) + 1;
+    
+    // Explicitly stringify for the PG query to insert into JSONB
     const stateJson = JSON.stringify(nextState);
 
     let documentId: string;
     if (existing) {
       documentId = existing.id;
-      db.prepare(
-        `UPDATE documents SET state_json = ?, version = ?, updated_at = ? WHERE id = ?`,
-      ).run(stateJson, nextVersion, timestamp, documentId);
+      await db.query(
+        `UPDATE documents SET state_json = $1, version = $2, updated_at = $3 WHERE id = $4`,
+        [stateJson, nextVersion, timestamp, documentId]
+      );
     } else {
       documentId = newId("doc");
-      db.prepare(
+      await db.query(
         `INSERT INTO documents (id, project_id, org_id, state_json, version, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      ).run(documentId, meta.project_id, meta.org_id, stateJson, nextVersion, timestamp, timestamp);
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [documentId, meta.project_id, meta.org_id, stateJson, nextVersion, timestamp, timestamp]
+      );
     }
 
     // git-style version log: store the committed state + the patch payload.
-    db.prepare(
+    await db.query(
       `INSERT INTO document_versions (id, document_id, session_id, version, state_json, patch_json, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      newId("dver"),
-      documentId,
-      meta.session_id,
-      nextVersion,
-      stateJson,
-      JSON.stringify({ overall_change_summary: changeSummary, patches }),
-      req.auth!.sub,
-      timestamp,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        newId("dver"),
+        documentId,
+        meta.session_id,
+        nextVersion,
+        stateJson,
+        JSON.stringify({ overall_change_summary: changeSummary, patches }),
+        req.auth!.sub,
+        timestamp,
+      ]
     );
 
     // Surface on the dashboard recent-summaries feed (kind='summary').
-    db.prepare(
+    await db.query(
       `INSERT INTO notifications (id, user_id, session_id, kind, title, body, read, created_at)
-       VALUES (?, ?, ?, 'summary', ?, ?, 0, ?)`,
-    ).run(
-      newId("ntf"),
-      req.auth!.sub,
-      meta.session_id,
-      `${meta.meeting_title} — document v${nextVersion}`,
-      changeSummary || `PM document updated to v${nextVersion}.`,
-      timestamp,
+       VALUES ($1, $2, $3, 'summary', $4, $5, 0, $6)`,
+      [
+        newId("ntf"),
+        req.auth!.sub,
+        meta.session_id,
+        `${meta.meeting_title} — document v${nextVersion}`,
+        changeSummary || `PM document updated to v${nextVersion}.`,
+        timestamp,
+      ]
     );
 
-    const row = getDocumentRow(meta.org_id, meta.project_id)!;
+    const row = await getDocumentRow(meta.org_id, meta.project_id);
+    const versions = await getVersions(documentId);
+
     res.json({
       ok: true,
-      data: { document: rowToDocument(row), versions: getVersions(documentId) },
+      data: { document: rowToDocument(row!), versions },
     });
   } catch (err) {
     next(err);
@@ -280,13 +296,20 @@ documentRouter.post("/session/:sessionId/commit", requireAuth, (req, res, next) 
 });
 
 /** GET /api/document/:projectId — current PM document + version history. */
-documentRouter.get("/:projectId", requireAuth, (req, res) => {
-  const row = getDocumentRow(req.auth!.orgId, req.params.projectId);
-  if (!row) return res.status(404).json({ ok: false, error: "No document for this project yet" });
-  res.json({
-    ok: true,
-    data: { document: rowToDocument(row), versions: getVersions(row.id) },
-  });
+documentRouter.get("/:projectId", requireAuth, async (req, res, next) => {
+  try {
+    const row = await getDocumentRow(req.auth!.orgId, req.params.projectId);
+    if (!row) return res.status(404).json({ ok: false, error: "No document for this project yet" });
+    
+    const versions = await getVersions(row.id);
+    
+    res.json({
+      ok: true,
+      data: { document: rowToDocument(row), versions },
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default documentRouter;

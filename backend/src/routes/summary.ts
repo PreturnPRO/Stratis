@@ -67,47 +67,47 @@ interface ParticipantSummaryOutput {
   action_items: ActionItem[];
 }
 
-function getSessionForSummary(
+async function getSessionForSummary(
   sessionId: string,
   userId: string,
   orgId: string,
   role: string,
-): SessionSummaryRow | undefined {
-  return db
-    .prepare(
-      `
-      SELECT
-        s.id,
-        s.meeting_id,
-        s.facilitator_id,
-        s.status,
-        s.started_at,
-        s.ended_at,
-        s.created_at,
-        m.title AS meeting_title,
-        m.project_id AS project_id,
-        m.org_id AS org_id
-      FROM sessions s
-      JOIN meetings m ON m.id = s.meeting_id
-      WHERE s.id = ?
-        AND m.org_id = ?
-        AND (? = 'admin' OR s.facilitator_id = ?)
-      `,
-    )
-    .get<SessionSummaryRow>(sessionId, orgId, role, userId);
+): Promise<SessionSummaryRow | undefined> {
+  const result = await db.query<SessionSummaryRow>(
+    `
+    SELECT
+      s.id,
+      s.meeting_id,
+      s.facilitator_id,
+      s.status,
+      s.started_at,
+      s.ended_at,
+      s.created_at,
+      m.title AS meeting_title,
+      m.project_id AS project_id,
+      m.org_id AS org_id
+    FROM sessions s
+    JOIN meetings m ON m.id = s.meeting_id
+    WHERE s.id = $1
+      AND m.org_id = $2
+      AND ($3 = 'admin' OR s.facilitator_id = $4)
+    `,
+    [sessionId, orgId, role, userId]
+  );
+  return result.rows[0];
 }
 
-function getTranscripts(sessionId: string): TranscriptRow[] {
-  return db
-    .prepare(
-      `
-      SELECT id, session_id, speaker, text, timestamp
-      FROM transcripts
-      WHERE session_id = ?
-      ORDER BY timestamp ASC
-      `,
-    )
-    .all<TranscriptRow>(sessionId);
+async function getTranscripts(sessionId: string): Promise<TranscriptRow[]> {
+  const result = await db.query<TranscriptRow>(
+    `
+    SELECT id, session_id, speaker, text, timestamp
+    FROM transcripts
+    WHERE session_id = $1
+    ORDER BY timestamp ASC
+    `,
+    [sessionId]
+  );
+  return result.rows;
 }
 
 function minutesBetween(start: string | null, end: string | null): number {
@@ -204,7 +204,7 @@ summaryRouter.get("/:sessionId", requireAuth, async (req, res, next) => {
   try {
     const sessionId = req.params.sessionId;
 
-    const session = getSessionForSummary(
+    const session = await getSessionForSummary(
       sessionId,
       req.auth!.sub,
       req.auth!.orgId,
@@ -218,7 +218,7 @@ summaryRouter.get("/:sessionId", requireAuth, async (req, res, next) => {
       });
     }
 
-    const transcripts = getTranscripts(sessionId);
+    const transcripts = await getTranscripts(sessionId);
 
     if (transcripts.length === 0) {
       return res.status(409).json({
