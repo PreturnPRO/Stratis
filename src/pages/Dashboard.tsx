@@ -87,6 +87,12 @@ function projectIdFromTitle(title: string): string {
   return slug || "default-project";
 }
 
+function getMinDateTime() {
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  return now.toISOString().slice(0, 16);
+}
+
 export default function Dashboard({ onNav }: DashboardProps) {
   const { token, user } = useAuth();
 
@@ -521,6 +527,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
                 type="datetime-local"
                 value={scheduledAt}
                 onChange={(e) => setScheduledAt(e.target.value)}
+                min={getMinDateTime()}
               />
 
               <input

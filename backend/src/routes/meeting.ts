@@ -359,6 +359,10 @@ meetingRouter.post("/", requireAuth, async (req, res) => {
     if (!title) return res.status(400).json({ ok: false, error: "body.title is required" });
     if (!projectId) return res.status(400).json({ ok: false, error: "body.projectId is required" });
 
+    if (scheduledAt && new Date(scheduledAt) < new Date()) {
+      return res.status(400).json({ ok: false, error: "Scheduled date cannot be in the past" });
+    }
+
     const id = newId("mtg");
     const timestamp = now();
 
