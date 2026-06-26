@@ -356,6 +356,64 @@ documentRouter.delete("/:projectId", requireAuth, async (req, res, next) => {
   }
 });
 
+/**
+ * POST /api/document/:projectId/restore — facilitator reverts the document to a
+ * past version. Git-style: writes the old state as a NEW version, keeping history.
+ * body: { version: number }
+ */
+documentRouter.post("/:projectId/restore", requireAuth, async (req, res, next) => {
+  try {
+    if (req.auth!.role === "participant") {
+      return res.status(403).json({ ok: false, error: "Only a facilitator can restore a version" });
+    }
+
+    const targetVersion = Number(req.body?.version);
+    if (!Number.isInteger(targetVersion) || targetVersion < 1) {
+      return res.status(400).json({ ok: false, error: "Invalid version" });
+    }
+
+    const row = await getDocumentRow(req.auth!.orgId, req.params.projectId);
+    if (!row) return res.status(404).json({ ok: false, error: "No document for this project" });
+
+    const verResult = await db.query<{ state_json: string | any }>(
+      `SELECT state_json FROM document_versions WHERE document_id = $1 AND version = $2`,
+      [row.id, targetVersion]
+    );
+    const ver = verResult.rows[0];
+    if (!ver) return res.status(404).json({ ok: false, error: "Version not found" });
+
+    const restoredState =
+      typeof ver.state_json === "string" ? ver.state_json : JSON.stringify(ver.state_json);
+    const nextVersion = row.version + 1;
+    const timestamp = now();
+    const summary = `Restored content from v${targetVersion}`;
+
+    await db.query(
+      `UPDATE documents SET state_json = $1, version = $2, updated_at = $3 WHERE id = $4`,
+      [restoredState, nextVersion, timestamp, row.id]
+    );
+    await db.query(
+      `INSERT INTO document_versions (id, document_id, session_id, version, state_json, patch_json, created_by, created_at)
+       VALUES ($1, $2, NULL, $3, $4, $5, $6, $7)`,
+      [
+        newId("dver"),
+        row.id,
+        nextVersion,
+        restoredState,
+        JSON.stringify({ overall_change_summary: summary, patches: [] }),
+        req.auth!.sub,
+        timestamp,
+      ]
+    );
+
+    const updated = await getDocumentRow(req.auth!.orgId, req.params.projectId);
+    const versions = await getVersions(row.id);
+    res.json({ ok: true, data: { document: rowToDocument(updated!), versions } });
+  } catch (err) {
+    next(err);
+  }
+});
+
 /** GET /api/document/:projectId — current PM document + version history. */
 documentRouter.get("/:projectId", requireAuth, async (req, res, next) => {
   try {

@@ -265,6 +265,30 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
     }
   }
 
+  const [restoring, setRestoring] = useState<number | null>(null)
+
+  const handleRestore = async (targetVersion: number) => {
+    if (!activeProjectId || restoring !== null) return
+    setRestoring(targetVersion)
+    setError(null)
+    try {
+      const res = await fetch(`${API_BASE}/api/document/${activeProjectId}/restore`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ version: targetVersion }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.ok) { setError(data.error ?? 'Could not restore version'); return }
+      setDocState(data.data.document.state)
+      setVersion(data.data.document.version)
+      setVersions(data.data.versions ?? [])
+    } catch {
+      setError('Could not reach the server')
+    } finally {
+      setRestoring(null)
+    }
+  }
+
   const scrollToSection = (key: string) => {
     document.getElementById(`sec-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
@@ -344,6 +368,15 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={styles.historySummary}>{v.changeSummary || '(no summary)'}</div>
                     <div style={styles.historyDate}>{formatDate(v.createdAt)}</div>
+                    {isFacilitator && v.version !== version && (
+                      <button
+                        style={styles.restoreLink}
+                        disabled={restoring !== null}
+                        onClick={() => void handleRestore(v.version)}
+                      >
+                        {restoring === v.version ? 'Restoring…' : 'Restore this version'}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -551,7 +584,9 @@ function formatDate(value: string): string {
 
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: '40px 60px', overflowY: 'auto', flex: 1, color: COLORS.textPrimary },
-  shell: { display: 'flex', flex: 1, minHeight: 0, background: COLORS.bg },
+  // height:100% is load-bearing — the parent in App.tsx is a plain block, so
+  // flex:1 alone leaves the shell unbounded and articleScroll never scrolls.
+  shell: { display: 'flex', flex: 1, height: '100%', minHeight: 0, background: COLORS.bg },
 
   // ToC
   toc: {
@@ -658,6 +693,10 @@ const styles: Record<string, React.CSSProperties> = {
   historyVersion: { fontSize: 11, fontWeight: 700, color: COLORS.accent, minWidth: 24 },
   historySummary: { fontSize: 12, color: COLORS.textMuted, lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis' },
   historyDate: { fontSize: 10, color: COLORS.textDim, marginTop: 2 },
+  restoreLink: {
+    background: 'transparent', border: 'none', color: COLORS.accent,
+    fontSize: 11, cursor: 'pointer', padding: '2px 0', marginTop: 2, textAlign: 'left',
+  },
 
   textarea: {
     width: '100%', background: COLORS.bg, border: `1px solid ${COLORS.border}`,
