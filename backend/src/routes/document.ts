@@ -295,6 +295,67 @@ documentRouter.post("/session/:sessionId/commit", requireAuth, async (req, res, 
   }
 });
 
+/**
+ * PATCH /api/document/:projectId/section
+ * Manual facilitator edit of a single section's content. Does not create a new
+ * version (a meeting commit does that) — it's an in-place correction.
+ * body: { sectionKey: PmSectionKey, content: string }
+ */
+documentRouter.patch("/:projectId/section", requireAuth, async (req, res, next) => {
+  try {
+    if (req.auth!.role === "participant") {
+      return res.status(403).json({ ok: false, error: "Only a facilitator can edit the document" });
+    }
+
+    const sectionKey =
+      typeof req.body?.sectionKey === "string" ? (req.body.sectionKey as PmSectionKey) : ("" as PmSectionKey);
+    const content = typeof req.body?.content === "string" ? req.body.content : "";
+
+    const known = PM_SECTIONS.find((s) => s.key === sectionKey);
+    if (!known) {
+      return res.status(400).json({ ok: false, error: "Invalid sectionKey" });
+    }
+
+    const row = await getDocumentRow(req.auth!.orgId, req.params.projectId);
+    if (!row) return res.status(404).json({ ok: false, error: "No document for this project" });
+
+    const doc = rowToDocument(row);
+    const existing = doc.state.sections[sectionKey] ?? { title: known.title, content: "" };
+    const nextState: PmDocumentState = {
+      sections: { ...doc.state.sections, [sectionKey]: { title: existing.title, content } },
+    };
+
+    await db.query(
+      `UPDATE documents SET state_json = $1, updated_at = $2 WHERE id = $3`,
+      [JSON.stringify(nextState), now(), row.id],
+    );
+
+    const updated = await getDocumentRow(req.auth!.orgId, req.params.projectId);
+    res.json({ ok: true, data: { document: rowToDocument(updated!) } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** DELETE /api/document/:projectId — remove the PM document + version history. */
+documentRouter.delete("/:projectId", requireAuth, async (req, res, next) => {
+  try {
+    if (req.auth!.role === "participant") {
+      return res.status(403).json({ ok: false, error: "Only a facilitator can delete the document" });
+    }
+
+    const row = await getDocumentRow(req.auth!.orgId, req.params.projectId);
+    if (!row) return res.status(404).json({ ok: false, error: "No document for this project" });
+
+    // document_versions has ON DELETE CASCADE, so versions go with the document.
+    await db.query(`DELETE FROM documents WHERE id = $1`, [row.id]);
+
+    res.json({ ok: true, data: { deleted: true, projectId: req.params.projectId } });
+  } catch (err) {
+    next(err);
+  }
+});
+
 /** GET /api/document/:projectId — current PM document + version history. */
 documentRouter.get("/:projectId", requireAuth, async (req, res, next) => {
   try {

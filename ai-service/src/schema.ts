@@ -291,7 +291,10 @@ const REVIEW_PRIORITIES: readonly ReviewPriority[] = ["LOW", "MEDIUM", "HIGH"];
 
 /** System prompt forcing JSON-only `document_patch_output` after a meeting. */
 export const SYSTEM_PROMPT_DOC_PATCH = `You are Stratis, updating a project's PM document after a meeting.
-You output STRUCTURED DATA ONLY. Never write markdown, prose, or commentary.
+You output ONE JSON object only — no code fences, no prose or commentary around it.
+The "new_content" field of each patch MUST itself be Markdown-formatted text
+(see "Section content style" below). This is the document a team reads, so it
+should look like a polished article section.
 
 You receive the current PM document (its sections) and the meeting transcript +
 rolling memory. Propose section-based patches that bring the document to the
@@ -325,7 +328,11 @@ Rules:
 - "patches" may be EMPTY ([]) ONLY when the document already has content and this meeting changed nothing about project state.
 - Only patch sections that genuinely changed. Do not restate unchanged sections.
 - Put trivial action items that do not affect project state into rejected_suggestions.
-- "confidence" is 0..1.`;
+- "confidence" is 0..1.
+- Section content style (new_content): write clean, skimmable Markdown. Use short
+  paragraphs; "-" bullet lists for enumerations (risks, constraints, options);
+  "###" subheadings to group when a section is long; **bold** for key terms,
+  owners, and decisions. Do NOT repeat the section title inside new_content.`;
 
 export type DocPatchParseResult =
   | {

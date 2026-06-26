@@ -2,7 +2,28 @@
 
 Stratis is an AI co-facilitator for team meetings.
 
-It listens during meetings, captures transcript chunks, sends facilitator-only suggestion cards, and prepares the foundation for post-meeting summaries, PM document updates, and strategy/tree records.
+It listens during meetings, captures transcript chunks, sends facilitator-only suggestion cards, and generates post-meeting summaries plus change-based PM document updates. The strategy/tree record is the historical retrieval layer.
+
+---
+
+## Deployment
+
+Stratis runs as two deployed services:
+
+| Service | Host | Notes |
+|---|---|---|
+| Frontend (React + Vite) | **Vercel** | Static build. Talks to the backend via `VITE_API_BASE` / `VITE_WS_BASE` set at build time. |
+| Backend (Express) + Database | **Railway** | Node service + managed **PostgreSQL**. Backend reads `DATABASE_URL`. |
+
+The frontend has no dev proxy in production — every request goes to `API_BASE`/`WS_BASE` resolved in [`src/lib/api.ts`](src/lib/api.ts):
+
+```ts
+export const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:3001";
+export const WS_BASE  = import.meta.env.VITE_WS_BASE  ?? API_BASE.replace(/^http/, "ws");
+```
+
+- On Vercel, set `VITE_API_BASE` to the Railway backend URL (e.g. `https://stratis-api.up.railway.app`). `WS_BASE` auto-derives `https → wss`, so a single var usually covers both.
+- The `localhost:3001` fallbacks and the Vite proxy in `vite.config.js` apply to **local dev only**.
 
 ---
 
@@ -10,20 +31,20 @@ It listens during meetings, captures transcript chunks, sends facilitator-only s
 
 ### Frontend
 
-- React
-- TypeScript
+- React + TypeScript
 - Vite
 - Inline component styling for MVP
 - WebSocket client for live suggestion cards
+- Hosted on Vercel
 
 ### Backend
 
-- Node.js
-- Express
-- SQLite via Node `node:sqlite`
+- Node.js + Express
+- **PostgreSQL** via the `pg` driver (hosted on Railway)
 - JWT auth
 - WebSocket hub
 - AI provider abstraction
+- STT provider abstraction
 - Mock-first local development
 
 ### AI Service
@@ -32,13 +53,17 @@ It listens during meetings, captures transcript chunks, sends facilitator-only s
   - `mock`
   - `groq`
   - `ollama`
-- Structured JSON parser
-- Current MVP AI block contract:
-  - `TextBlock`
-  - `DecisionNode`
-  - `SummaryBlock`
-  - `QuestionSuggestion`
+  - `typhoon` (Thai-tuned LLM, for Thai/English meetings)
+- Structured JSON parser + schema validation
+- Four AI output gateways (see [AI Output Architecture](#ai-output-architecture))
 
+### Speech-to-Text
+
+- Provider switch:
+  - `mock`
+  - `typhoon` (Typhoon Whisper turbo via HuggingFace inference)
+
+---
 
 ## Project Structure
 
@@ -55,7 +80,7 @@ STRATIS-APP/
 │   │   ├── MeetingTransition.tsx
 │   │   ├── NodeTypes.tsx
 │   │   ├── Sidebar.tsx
-│   │   ├── Stats.tsx
+│   │   ├── states.tsx
 │   │   ├── SuggestionCardStack.tsx
 │   │   └── ui.tsx
 │   │
@@ -68,32 +93,25 @@ STRATIS-APP/
 │   │
 │   ├── hooks/
 │   │   ├── useAiBlocks.ts
-│   │   ├── useDraggableNodes.d.ts
-│   │   ├── useDraggableNodes.js
 │   │   ├── useMediaRecorder.ts
+│   │   ├── useSessionRecovery.ts
 │   │   └── useSuggestionSocket.ts
 │   │
+│   ├── lib/
+│   │   └── api.ts               # API_BASE / WS_BASE (env-driven)
+│   │
 │   ├── mocks/
-│   │   ├── suggestionCards.ts
 │   │   └── summaryMock.ts
 │   │
 │   ├── pages/
 │   │   ├── Dashboard.tsx
-│   │   ├── Decisions.tsx
-│   │   ├── Documents.tsx
-│   │   ├── Inbox.tsx
+│   │   ├── DocumentView.tsx
 │   │   ├── Landing.tsx
-│   │   ├── LiveVoicePipelineTest.tsx
 │   │   ├── Login.tsx
 │   │   ├── Meeting.tsx
 │   │   ├── Projects.tsx
 │   │   ├── Register.tsx
-│   │   ├── Settings.tsx
-│   │   ├── StrategyMap.tsx
 │   │   └── SummaryView.tsx
-│   │
-│   ├── schema/
-│   │   └── block-types.json
 │   │
 │   └── tokens/
 │       └── colors.ts
@@ -114,9 +132,9 @@ STRATIS-APP/
 │       │   └── env.ts
 │       │
 │       ├── db/
-│       │   ├── database.ts
-│       │   ├── migrate.ts
-│       │   ├── schema.sql
+│       │   ├── database.ts      # pg Pool, DATABASE_URL
+│       │   ├── migrate.ts       # applies schema.sql (--reset drops tables)
+│       │   ├── schema.sql       # PostgreSQL schema
 │       │   └── seed.ts
 │       │
 │       ├── lib/
@@ -135,6 +153,7 @@ STRATIS-APP/
 │       └── routes/
 │           ├── _placeholder.ts
 │           ├── ai.ts
+│           ├── document.ts
 │           ├── index.ts
 │           ├── meeting.ts
 │           ├── session.ts
@@ -150,33 +169,16 @@ STRATIS-APP/
 │           ├── groq.ts
 │           ├── mock.ts
 │           ├── ollama.ts
+│           ├── typhoon.ts
 │           └── types.ts
 │
-├── shared/                      # Shared frontend/backend types
+├── shared/                      # Shared frontend/backend types + schemas
 │   ├── types.ts
 │   └── schema/
 │       ├── document-patch-output.schema.json
-│       ├── live-card-output.schema.json
-│       ├── participant-summary-output.schema.json
-│       └── tree-node-output.schema.json
-│
-├── schema/                      # Formal Stratis AI JSON schemas
-│   ├── block-types.json
-│   ├── live-card-output.schema.json
-│   ├── document-patch-output.schema.json
-│   ├── tree-node-output.schema.json
-│   └── participant-summary-output.schema.json
-│
-├── data/                        # Local SQLite runtime files, ignored
-│   ├── stratis.db
-│   ├── stratis.db-shm
-│   └── stratis.db-wal
+│       └── live-card-output.schema.json
 │
 ├── dist/                        # Frontend build output, ignored
-│   ├── index.html
-│   └── assets/
-│       ├── index-BQy-6a84.js
-│       └── index-V4592Tcs.css
 │
 ├── .github/
 ├── node_modules/
@@ -197,17 +199,16 @@ STRATIS-APP/
 ## Main Product Rules
 
 - Live meeting suggestions are facilitator-only.
-- `QuestionSuggestion` blocks should route to the suggestion card stack, not the transcript renderer.
-- AI output must be validated before frontend receives it.
+- Live AI cards (`live_card_output`) route to the suggestion card stack, not the transcript renderer.
+- AI output must be validated against its schema before the frontend receives it.
 - Meeting session ID anchors:
   - transcripts
-  - live AI outputs
-  - suggestion cards
-  - future summaries
-  - future document outputs
-  - future tree nodes
-- PM document is the source of truth.
-- Tree / strategy map is visual, historical, and retrieval layer only.
+  - live AI outputs / suggestion cards
+  - summaries
+  - document versions
+  - tree nodes
+- PM document is the source of truth; updates are change-based (patch → version), never full rewrites.
+- Tree / strategy map is the visual, historical retrieval layer.
 
 ---
 
@@ -216,22 +217,20 @@ STRATIS-APP/
 Stratis uses four formal AI output gateways:
 
 ```txt
-live_card_output
-document_patch_output
-tree_node_output
-participant_summary_output
+live_card_output          # in-meeting facilitator cards + chunk classification
+document_patch_output     # post-meeting PM-document section patches
+tree_node_output          # structure tree nodes
+participant_summary_output# participant-facing post-meeting summary
 ```
 
-Formal schemas live in:
+Formal JSON schemas live in:
 
 ```txt
-schema/live-card-output.schema.json
-schema/document-patch-output.schema.json
-schema/tree-node-output.schema.json
-schema/participant-summary-output.schema.json
+shared/schema/live-card-output.schema.json
+shared/schema/document-patch-output.schema.json
 ```
 
-Current Sprint 1 MVP also uses block-style AI output:
+Sprint 1 MVP also uses a simpler block-style AI output (legacy structured path), still used by `/api/ai/structure` and the summary route:
 
 ```json
 {
@@ -246,22 +245,19 @@ Current Sprint 1 MVP also uses block-style AI output:
 }
 ```
 
-Block schema:
+Block types: `TextBlock`, `DecisionNode`, `SummaryBlock`, `QuestionSuggestion`.
 
-```txt
-schema/block-types.json
-```
-
-Shared TypeScript contract:
+Shared TypeScript contract (single source of truth):
 
 ```txt
 shared/types.ts
 ```
 
-AI parser:
+AI parser + system prompts:
 
 ```txt
 ai-service/src/schema.ts
+ai-service/src/index.ts
 ```
 
 ---
@@ -280,19 +276,9 @@ npm install
 npm run dev
 ```
 
-Frontend runs with Vite.
+Frontend runs with Vite. Default URL: `http://localhost:5173`.
 
-Default Vite URL:
-
-```txt
-http://localhost:5173
-```
-
-API requests to `/api` are proxied to:
-
-```txt
-http://localhost:3001
-```
+In dev, API requests to `/api` and `/ws` are proxied to `http://localhost:3001` (see `vite.config.js`). In production, set `VITE_API_BASE` (and optionally `VITE_WS_BASE`) at build time — the Vercel build uses these instead of the proxy.
 
 ### Build
 
@@ -309,6 +295,8 @@ npm run preview
 ---
 
 ## Backend
+
+The backend connects to PostgreSQL via `DATABASE_URL`. In production this is the Railway Postgres connection string; for local dev you can point it at a local Postgres instance or a Railway database URL.
 
 ### Install
 
@@ -335,23 +323,15 @@ npm run db:seed
 npm run db:reset
 ```
 
+`db:reset` drops all tables (`CASCADE`) then re-applies `schema.sql` and re-seeds.
+
 ### Run backend dev server
 
 ```bash
 npm run dev
 ```
 
-Backend default URL:
-
-```txt
-http://localhost:3001
-```
-
-WebSocket hub:
-
-```txt
-ws://localhost:3001/ws
-```
+Backend default URL: `http://localhost:3001`. WebSocket hub: `ws://localhost:3001/ws`.
 
 ### Typecheck backend
 
@@ -363,7 +343,7 @@ npm run typecheck
 
 ## Full Local Setup
 
-From repo root:
+From repo root, with a `DATABASE_URL` pointing at a reachable PostgreSQL database in your `.env`:
 
 ```bash
 npm install
@@ -373,7 +353,7 @@ npm run db:reset
 npm run dev
 ```
 
-In another terminal:
+In another terminal (repo root):
 
 ```bash
 npm run dev
@@ -389,12 +369,12 @@ http://localhost:5173
 
 ## Demo Login
 
-After running backend seed:
+After running the backend seed:
 
 ```txt
 facilitator@stratis.dev / password123
 participant@stratis.dev / password123
-admin@stratis.dev / password123
+admin@stratis.dev       / password123
 ```
 
 ---
@@ -414,23 +394,7 @@ The backend loads:
 .env
 ```
 
-Real env values must not be committed.
-
-`.gitignore` ignores real env files:
-
-```txt
-.env
-.env.*
-**/.env
-**/.env.*
-```
-
-But keeps templates:
-
-```txt
-.env.example
-**/.env.example
-```
+Real env values must not be committed. `.gitignore` ignores real env files (`.env`, `.env.*`, `**/.env*`) but keeps templates (`.env.example`, `**/.env.example`).
 
 ---
 
@@ -441,24 +405,28 @@ But keeps templates:
 | `NODE_ENV` | all | `development`, `staging`, or `production` |
 | `PORT` | backend | Express port, default `3001` |
 | `CLIENT_ORIGIN` | backend | Allowed CORS origin, default `http://localhost:5173` |
-| `DATABASE_URL` | backend | SQLite DB path, default `file:./data/stratis.db` |
+| `DATABASE_URL` | backend | **PostgreSQL** connection string (Railway in prod) |
 | `JWT_SECRET` | backend | JWT signing secret |
 | `JWT_EXPIRES_IN` | backend | JWT lifetime, default `7d` |
-| `AI_PROVIDER` | ai-service | `groq`, `ollama`, or `mock` |
+| `AI_PROVIDER` | ai-service | `groq`, `ollama`, `typhoon`, or `mock` |
 | `AI_TIMEOUT_MS` | ai-service | AI request timeout, default `10000` |
 | `GROQ_API_KEY` | ai-service | Groq API key |
 | `GROQ_MODEL` | ai-service | Groq model, default `llama-3.3-70b-versatile` |
 | `OLLAMA_BASE_URL` | ai-service | Ollama URL, default `http://localhost:11434` |
 | `OLLAMA_MODEL` | ai-service | Ollama model, default `llama3.1` |
-| `STT_PROVIDER` | backend | `deepgram` or `mock` |
+| `TYPHOON_API_KEY` | ai-service | Typhoon (OpenTyphoon) API key |
+| `STT_PROVIDER` | backend | `typhoon` or `mock` |
 | `STT_TIMEOUT_MS` | backend | STT timeout, default `15000` |
-| `DEEPGRAM_API_KEY` | backend | Deepgram API key |
-| `DEEPGRAM_MODEL` | backend | Deepgram model, default `nova-2` |
+| `HF_TOKEN` | backend | HuggingFace token for Typhoon Whisper STT |
+| `VITE_API_BASE` | frontend | Backend base URL (build time). Defaults to `http://localhost:3001`. |
+| `VITE_WS_BASE` | frontend | Backend WS base (build time). Derived from `VITE_API_BASE` if unset. |
 
-The app can run with no external keys:
+The app can run with no external AI/STT keys:
 
-- AI falls back to mock if Groq is selected but no key exists.
-- STT can use mock mode.
+- AI falls back to `mock` if a provider is selected but its key is missing.
+- STT can use `mock` mode.
+
+A PostgreSQL database (`DATABASE_URL`) is required for the backend to start.
 
 ---
 
@@ -481,8 +449,11 @@ GET  /api/auth/me
 ### Meeting
 
 ```txt
+GET    /api/meeting
 GET    /api/meeting/upcoming
 GET    /api/meeting/dashboard
+GET    /api/meeting/projects
+POST   /api/meeting/projects
 POST   /api/meeting
 GET    /api/meeting/:id
 PATCH  /api/meeting/:id
@@ -494,6 +465,7 @@ DELETE /api/meeting/:id
 ```txt
 GET  /api/session
 GET  /api/session/active
+GET  /api/session/recover
 GET  /api/session/:id
 POST /api/session
 POST /api/session/:id/start
@@ -525,32 +497,32 @@ GET  /api/ai/suggest/:sessionId
 
 ```txt
 GET /api/summary
+GET /api/summary/:sessionId
 ```
 
-Currently skeleton for later post-meeting summary generation.
+Generates a participant summary from the session's saved transcript via the validated AI call.
+
+### Document
+
+```txt
+POST /api/document/session/:sessionId/generate   # propose PM-document patches (transient)
+POST /api/document/session/:sessionId/commit      # apply approved patches → next version
+GET  /api/document/:projectId                      # current PM document + version history
+```
 
 ---
 
 ## Live Meeting Flow
 
-Text input flow:
+Text chunk flow (live cards):
 
 ```txt
 Meeting.tsx
-→ useAiBlocks.send()
-→ POST /api/ai/structure
-→ ai-service structuredCall()
-→ parse + validate JSON
-→ frontend renders valid blocks
-```
-
-Suggestion flow:
-
-```txt
-Meeting.tsx
-→ POST /api/ai/suggest
-→ AI returns QuestionSuggestion blocks
-→ backend creates suggestion cards
+→ POST /api/transcript/chunk
+→ save transcript row
+→ auto-detect answered cards
+→ liveCardCall() → live_card_output (validated)
+→ backend creates suggestion cards (facilitator only)
 → WebSocket pushes to facilitator
 → SuggestionCardStack renders bottom-right cards
 ```
@@ -561,10 +533,31 @@ Audio flow:
 Meeting.tsx
 → useMediaRecorder
 → POST /api/transcript/audio-chunk
-→ backend STT
+→ backend STT (typhoon | mock)
 → transcript saved
-→ AI structured output
+→ liveCardCall() → live_card_output
 → suggestion cards updated
+```
+
+Structured-block flow (legacy / manual):
+
+```txt
+useAiBlocks.send()
+→ POST /api/ai/structure
+→ ai-service structuredCall()
+→ parse + validate JSON
+→ frontend renders valid blocks
+```
+
+Post-meeting document flow:
+
+```txt
+End session
+→ DocumentView: POST /api/document/session/:sessionId/generate
+→ documentPatchCall() → document_patch_output (validated)
+→ facilitator reviews/edits patches
+→ POST /api/document/session/:sessionId/commit
+→ new document version + notification
 ```
 
 ---
@@ -577,6 +570,8 @@ URL shape:
 ws://localhost:3001/ws?token=<jwt>&sessionId=<sessionId>
 ```
 
+(In production: `wss://<railway-host>/ws?...`.)
+
 Server events:
 
 ```ts
@@ -587,15 +582,15 @@ Server events:
 
 Rules:
 
-- Only facilitator sockets receive suggestion events.
+- Only the session's facilitator socket receives suggestion events (verified against `sessions.facilitator_id`).
 - Participants can connect but do not receive suggestion cards.
-- Answered cards can be auto-detected or manually marked.
+- Answered cards can be auto-detected from the transcript or manually marked.
 
 ---
 
 ## Database
 
-SQLite schema lives in:
+PostgreSQL. Schema lives in:
 
 ```txt
 backend/src/db/schema.sql
@@ -617,13 +612,7 @@ notifications
 consent_logs
 ```
 
-Runtime DB files live in:
-
-```txt
-data/
-```
-
-These are ignored by Git.
+The runtime database is hosted (Railway Postgres in production); there are no local SQLite files.
 
 ---
 
@@ -631,11 +620,15 @@ These are ignored by Git.
 
 ```txt
 src/App.tsx
+src/lib/api.ts
 src/context/AuthContext.tsx
 src/pages/Meeting.tsx
+src/pages/DocumentView.tsx
+src/pages/SummaryView.tsx
 src/hooks/useAiBlocks.ts
 src/hooks/useSuggestionSocket.ts
 src/hooks/useMediaRecorder.ts
+src/hooks/useSessionRecovery.ts
 src/components/BlockRenderer.tsx
 src/components/SuggestionCardStack.tsx
 src/components/states.tsx
@@ -652,9 +645,12 @@ backend/src/routes/ai.ts
 backend/src/routes/session.ts
 backend/src/routes/transcript.ts
 backend/src/routes/meeting.ts
+backend/src/routes/document.ts
+backend/src/routes/summary.ts
 backend/src/realtime/hub.ts
 backend/src/realtime/suggestions.ts
 backend/src/realtime/autodetect.ts
+backend/src/db/database.ts
 backend/src/db/schema.sql
 backend/src/config/env.ts
 ```
@@ -665,50 +661,36 @@ backend/src/config/env.ts
 
 ### AI output validation
 
-AI output must be validated before frontend receives it.
-
-Current validation path:
+AI output must be validated before the frontend receives it. Validation path:
 
 ```txt
-ai-service/src/schema.ts
+ai-service/src/schema.ts        # parse + schema validation
+backend/src/middleware/validateAiOutput.ts
 backend/src/routes/ai.ts
 backend/src/routes/transcript.ts
+backend/src/routes/document.ts
+backend/src/routes/summary.ts
 ```
 
-### QuestionSuggestion rule
+### Suggestion routing rule
 
-`QuestionSuggestion` is not normal transcript content.
-
-Correct route:
+Live cards are not transcript content. Correct route:
 
 ```txt
-QuestionSuggestion
+live_card_output
 → backend realtime suggestion store
-→ WebSocket
+→ WebSocket (facilitator only)
 → SuggestionCardStack
-```
-
-Fallback only:
-
-```txt
-BlockRenderer
 ```
 
 ### Mock-heavy pages
 
-Some pages still use mock data:
+Some pages still use mock data and should be wired to live endpoints in later tasks:
 
 ```txt
-src/pages/Dashboard.tsx
 src/pages/Projects.tsx
-src/pages/StrategyMap.tsx
-src/pages/Decisions.tsx
-src/pages/InBox.tsx
-src/pages/Documents.tsx
-src/pages/SummaryView.tsx
+src/mocks/summaryMock.ts
 ```
-
-Backend endpoints exist for some of these and should be wired in later tasks.
 
 ---
 
@@ -719,9 +701,6 @@ Do not commit:
 ```txt
 .env
 .env.*
-data/*.db
-data/*.db-shm
-data/*.db-wal
 dist/
 node_modules/
 ```
@@ -730,7 +709,7 @@ Safe to commit:
 
 ```txt
 .env.example
-schema/*.json
+shared/schema/*.json
 shared/types.ts
 source files
 README.md
@@ -759,5 +738,3 @@ npm run db:reset
 npm run typecheck
 npm run build
 ```
-
----

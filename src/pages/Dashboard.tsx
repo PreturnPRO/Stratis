@@ -87,11 +87,10 @@ function projectIdFromTitle(title: string): string {
   return slug || "default-project";
 }
 
-function getMinDateTime() {
-  const now = new Date();
-  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-  return now.toISOString().slice(0, 16);
-}
+// Planned meeting length drives the in-meeting countdown + wrap-up warning.
+// Stored per session so the live Meeting page can read it back.
+const DURATION_PRESETS = [30, 45, 60, 90];
+const durationKey = (sessionId: string) => `stratis.duration.${sessionId}`;
 
 export default function Dashboard({ onNav }: DashboardProps) {
   const { token, user } = useAuth();
@@ -104,7 +103,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
 
   const [title, setTitle] = useState("");
   const [projectName, setProjectName] = useState("");
-  const [scheduledAt, setScheduledAt] = useState("");
+  const [durationMinutes, setDurationMinutes] = useState(60);
   const [goal, setGoal] = useState("");
   const [brief, setBrief] = useState("");
   const [creating, setCreating] = useState(false);
@@ -166,7 +165,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
     void loadDashboard();
   }, [token]);
 
-  const startSessionForMeeting = async (meetingId: string) => {
+  const startSessionForMeeting = async (meetingId: string, durationMin: number) => {
     const createRes = await fetch(`${API_BASE}/api/session`, {
       method: "POST",
       headers: {
@@ -201,6 +200,9 @@ export default function Dashboard({ onNav }: DashboardProps) {
     });
 
     window.localStorage.setItem(ACTIVE_SESSION_KEY, sessionId);
+    if (durationMin > 0) {
+      window.localStorage.setItem(durationKey(sessionId), String(durationMin));
+    }
     onNav?.("meeting", { sessionId });
 
     return sessionId;
@@ -219,7 +221,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
         return;
       }
 
-      await startSessionForMeeting(meeting.id);
+      await startSessionForMeeting(meeting.id, 60);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start meeting");
     }
@@ -255,8 +257,8 @@ export default function Dashboard({ onNav }: DashboardProps) {
           title: cleanTitle,
           projectId,
           project_id: projectId,
-          scheduledAt: scheduledAt || null,
-          scheduled_at: scheduledAt || null,
+          scheduledAt: null,
+          scheduled_at: null,
           goal: goal.trim() || null,
           brief: brief.trim() || null,
         }),
@@ -279,11 +281,11 @@ export default function Dashboard({ onNav }: DashboardProps) {
       setShowNewMeeting(false);
       setTitle("");
       setProjectName("");
-      setScheduledAt("");
+      setDurationMinutes(60);
       setGoal("");
       setBrief("");
 
-      await startSessionForMeeting(meetingId);
+      await startSessionForMeeting(meetingId, durationMinutes);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create meeting");
     } finally {
@@ -522,13 +524,46 @@ export default function Dashboard({ onNav }: DashboardProps) {
                 placeholder="Project name"
               />
 
-              <input
-                style={inputStyle}
-                type="datetime-local"
-                value={scheduledAt}
-                onChange={(e) => setScheduledAt(e.target.value)}
-                min={getMinDateTime()}
-              />
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <label style={{ color: COLORS.textDim, fontSize: 11, letterSpacing: 0.3 }}>
+                  Planned duration — Stratis warns you when 15 minutes remain
+                </label>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                  {DURATION_PRESETS.map((min) => {
+                    const selected = durationMinutes === min;
+                    return (
+                      <button
+                        key={min}
+                        type="button"
+                        onClick={() => setDurationMinutes(min)}
+                        style={{
+                          padding: "6px 12px",
+                          borderRadius: 8,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          background: selected ? COLORS.accent : "transparent",
+                          border: `1px solid ${selected ? COLORS.accent : COLORS.border}`,
+                          color: selected ? "#1a1205" : COLORS.textMuted,
+                        }}
+                      >
+                        {min} min
+                      </button>
+                    );
+                  })}
+                  <input
+                    style={{ ...inputStyle, width: 96 }}
+                    type="number"
+                    min={5}
+                    max={480}
+                    value={durationMinutes}
+                    onChange={(e) =>
+                      setDurationMinutes(Math.max(1, Number(e.target.value) || 0))
+                    }
+                    aria-label="Custom duration in minutes"
+                  />
+                  <span style={{ color: COLORS.textDim, fontSize: 12 }}>min</span>
+                </div>
+              </div>
 
               <input
                 style={inputStyle}

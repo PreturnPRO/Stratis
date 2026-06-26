@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { COLORS } from '../tokens/colors'
+import { COLORS, RADIUS } from '../tokens/colors'
 import { useAuth } from '../context/AuthContext'
+import { Button, Modal } from '../components/ui'
+import { Markdown } from '../components/Markdown'
 import {
   PM_SECTIONS,
   type DocumentPatchDTO,
@@ -26,9 +28,14 @@ interface Props {
 }
 
 const PRIORITY_COLOR: Record<string, string> = {
-  HIGH:   COLORS.red,
+  HIGH: COLORS.red,
   MEDIUM: COLORS.amber,
-  LOW:    COLORS.textMuted,
+  LOW: COLORS.textMuted,
+}
+
+function humanizeProjectId(id?: string | null): string {
+  if (!id) return 'PM Document'
+  return id.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
 export default function DocumentView({ sessionId, projectId, onNav }: Props) {
@@ -44,34 +51,33 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
   )
 
   const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState<string | null>(null)
-  const [busy, setBusy]       = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
 
-  const [docState, setDocState]   = useState<PmDocumentState | null>(null)
-  const [version, setVersion]     = useState(0)
-  const [versions, setVersions]   = useState<PmDocumentVersion[]>([])
-  const [proposed, setProposed]   = useState<DocumentPatchOutput | null>(null)
-  const [reviews, setReviews]     = useState<PatchReview[]>([])
+  const [docState, setDocState] = useState<PmDocumentState | null>(null)
+  const [version, setVersion] = useState(0)
+  const [versions, setVersions] = useState<PmDocumentVersion[]>([])
+  const [proposed, setProposed] = useState<DocumentPatchOutput | null>(null)
+  const [reviews, setReviews] = useState<PatchReview[]>([])
   const [activeProjectId, setActiveProjectId] = useState<string | null>(projectId ?? null)
 
   const [picker, setPicker] = useState<{ id: string; name: string; meetingCount: number }[]>([])
   const browsable = !sessionId && !projectId
 
-  const [showEditDoc, setShowEditDoc]         = useState(false)
-  const [editSectionKey, setEditSectionKey]   = useState<string | null>(null)
-  const [editContent, setEditContent]         = useState('')
-  const [savingDoc, setSavingDoc]             = useState(false)
-  const [showRemoveDoc, setShowRemoveDoc]     = useState(false)
-  const [removingDoc, setRemovingDoc]         = useState(false)
+  const [editSectionKey, setEditSectionKey] = useState<string | null>(null)
+  const [editContent, setEditContent] = useState('')
+  const [savingDoc, setSavingDoc] = useState(false)
+  const [showRemoveDoc, setShowRemoveDoc] = useState(false)
+  const [removingDoc, setRemovingDoc] = useState(false)
 
-  // ─── loadProject ───────────────────────────────────────────────────────────
+  // ─── loaders ────────────────────────────────────────────────────────────────
 
   const loadProject = useCallback(
     async (pid: string) => {
       setLoading(true)
       setError(null)
       try {
-        const res  = await fetch(`${API_BASE}/api/document/${pid}`, { headers: authHeaders })
+        const res = await fetch(`${API_BASE}/api/document/${pid}`, { headers: authHeaders })
         const data = await res.json()
         if (!res.ok || !data.ok) {
           setError(data.error ?? 'No document yet for this project')
@@ -94,14 +100,12 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
     [authHeaders],
   )
 
-  // ─── generate (post-meeting patches) ───────────────────────────────────────
-
   const generate = useCallback(
     async (sid: string) => {
       setLoading(true)
       setError(null)
       try {
-        const res  = await fetch(`${API_BASE}/api/document/session/${sid}/generate`, {
+        const res = await fetch(`${API_BASE}/api/document/session/${sid}/generate`, {
           method: 'POST',
           headers: authHeaders,
         })
@@ -112,6 +116,8 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
         }
         setDocState({ sections: data.data.document.sections })
         setVersion(data.data.document.version ?? 0)
+        // FIX: anchor the project so Remove / Edit / per-section actions work.
+        setActiveProjectId(data.data.projectId ?? null)
         const out: DocumentPatchOutput = data.data.proposed
         setProposed(out)
         setReviews(
@@ -128,13 +134,11 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
     [authHeaders],
   )
 
-  // ─── loadPicker ────────────────────────────────────────────────────────────
-
   const loadPicker = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const res  = await fetch(`${API_BASE}/api/meeting/projects`, { headers: authHeaders })
+      const res = await fetch(`${API_BASE}/api/meeting/projects`, { headers: authHeaders })
       const data = await res.json()
       setPicker(res.ok && data.ok ? (data.data?.projects ?? []) : [])
     } catch {
@@ -145,25 +149,34 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
   }, [authHeaders])
 
   useEffect(() => {
-    if (sessionId)      void generate(sessionId)
+    if (sessionId) void generate(sessionId)
     else if (projectId) void loadProject(projectId)
-    else                void loadPicker()
+    else void loadPicker()
   }, [sessionId, projectId, generate, loadProject, loadPicker])
 
-  // ─── patch review helpers ──────────────────────────────────────────────────
+  // ─── review helpers ───────────────────────────────────────────────────────
 
   const setDecision = (id: string, decision: Decision) =>
     setReviews((rs) => rs.map((r) => (r.patch.client_patch_id === id ? { ...r, decision } : r)))
 
   const toggleEdit = (id: string) =>
-    setReviews((rs) =>
-      rs.map((r) => (r.patch.client_patch_id === id ? { ...r, editing: !r.editing } : r)),
-    )
+    setReviews((rs) => rs.map((r) => (r.patch.client_patch_id === id ? { ...r, editing: !r.editing } : r)))
 
   const setContent = (id: string, content: string) =>
     setReviews((rs) => rs.map((r) => (r.patch.client_patch_id === id ? { ...r, content } : r)))
 
+  const approveAll = () =>
+    setReviews((rs) => rs.map((r) => ({ ...r, decision: 'approved' as const })))
+
   const approvedCount = reviews.filter((r) => r.decision === 'approved').length
+
+  const reviewsBySection = useMemo(() => {
+    const map: Record<string, PatchReview[]> = {}
+    for (const r of reviews) {
+      (map[r.patch.section_key] ??= []).push(r)
+    }
+    return map
+  }, [reviews])
 
   const commit = async () => {
     if (!sessionId || approvedCount === 0) return
@@ -173,7 +186,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
       const patches = reviews
         .filter((r) => r.decision === 'approved')
         .map((r) => ({ ...r.patch, new_content: r.content }))
-      const res  = await fetch(`${API_BASE}/api/document/session/${sessionId}/commit`, {
+      const res = await fetch(`${API_BASE}/api/document/session/${sessionId}/commit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({
@@ -196,12 +209,11 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
     }
   }
 
-  // ─── edit section ──────────────────────────────────────────────────────────
+  // ─── manual section edit ────────────────────────────────────────────────────
 
   const openEditSection = (key: string, currentContent: string) => {
     setEditSectionKey(key)
     setEditContent(currentContent)
-    setShowEditDoc(true)
   }
 
   const handleSaveSection = async () => {
@@ -209,7 +221,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
     setSavingDoc(true)
     setError(null)
     try {
-      const res  = await fetch(`${API_BASE}/api/document/${activeProjectId}/section`, {
+      const res = await fetch(`${API_BASE}/api/document/${activeProjectId}/section`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ sectionKey: editSectionKey, content: editContent }),
@@ -217,7 +229,6 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
       const data = await res.json()
       if (!res.ok || !data.ok) { setError(data.error ?? 'Could not save section'); return }
       if (data.data?.document?.state) setDocState(data.data.document.state)
-      setShowEditDoc(false)
       setEditSectionKey(null)
     } catch {
       setError('Could not reach the server')
@@ -226,14 +237,14 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
     }
   }
 
-  // ─── remove document ───────────────────────────────────────────────────────
+  // ─── remove document ──────────────────────────────────────────────────────
 
   const handleRemoveDocument = async () => {
     if (!activeProjectId) return
     setRemovingDoc(true)
     setError(null)
     try {
-      const res  = await fetch(`${API_BASE}/api/document/${activeProjectId}`, {
+      const res = await fetch(`${API_BASE}/api/document/${activeProjectId}`, {
         method: 'DELETE',
         headers: authHeaders,
       })
@@ -242,8 +253,11 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
       setShowRemoveDoc(false)
       setDocState(null)
       setVersions([])
+      setProposed(null)
+      setReviews([])
       setActiveProjectId(null)
-      void loadPicker()
+      if (sessionId) onNavRef.current?.('dashboard')
+      else onNavRef.current?.('projects')
     } catch {
       setError('Could not reach the server')
     } finally {
@@ -251,204 +265,232 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
     }
   }
 
-  if (loading) return <div style={styles.page}><p style={styles.dim}>Loading document…</p></div>
+  const scrollToSection = (key: string) => {
+    document.getElementById(`sec-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  // ─── render ─────────────────────────────────────────────────────────────────
+
+  if (loading) {
+    return (
+      <div style={styles.page}>
+        <p style={styles.dim}>Loading document…</p>
+      </div>
+    )
+  }
+
+  // Project picker (no session, no project selected).
+  if (browsable && !docState) {
+    return (
+      <div style={styles.page}>
+        <h1 style={styles.bigTitle}>PM Documents</h1>
+        <p style={{ ...styles.dim, margin: '6px 0 24px' }}>Select a project to view its living document.</p>
+        {error && <div style={styles.errorBox}>{error}</div>}
+        <div style={styles.pickerList}>
+          {picker.length === 0 && !error && <p style={styles.dim}>No projects yet.</p>}
+          {picker.map((p) => (
+            <button key={p.id} style={styles.pickerRow} onClick={() => void loadProject(p.id)}>
+              <span style={styles.pickerName}>{p.name}</span>
+              <span style={styles.dim}>{p.meetingCount} meeting{p.meetingCount === 1 ? '' : 's'}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  const title = humanizeProjectId(activeProjectId ?? proposed?.project_id)
+  const proposedCount = reviews.length
 
   return (
-    <div style={styles.page}>
-      <div style={styles.header}>
-        <div>
-          {!sessionId && (docState || error) && (
-            <button
-              style={styles.backBtn}
-              onClick={() => {
-                if (browsable) {
-                  setDocState(null)
-                  setVersions([])
-                  setError(null)
-                  setActiveProjectId(null)
-                  void loadPicker()
-                } else {
-                  onNavRef.current?.('projects')
-                }
-              }}
-            >
-              ← All projects
-            </button>
-          )}
-          <h1 style={styles.title}>PM Document</h1>
-          <p style={styles.subtitle}>
-            Source of truth · version {version}
-            {proposed ? ` · reviewing changes for v${version + 1}` : ''}
-          </p>
-        </div>
-
-        {isFacilitator && docState && (
-          <button style={styles.ghostBtn} onClick={() => setShowRemoveDoc(true)}>
-            Remove document
+    <div style={styles.shell}>
+      {/* ── Left ToC sidebar ─────────────────────────────────────────────── */}
+      <nav style={styles.toc}>
+        {!sessionId && (docState || error) && (
+          <button
+            style={styles.backBtn}
+            onClick={() => {
+              if (browsable) {
+                setDocState(null); setVersions([]); setError(null); setActiveProjectId(null); void loadPicker()
+              } else {
+                onNavRef.current?.('projects')
+              }
+            }}
+          >
+            ← All projects
           </button>
         )}
-      </div>
 
-      {error && <div style={styles.errorBox}>{error}</div>}
-
-      <div style={styles.columns}>
-        {/* ─── Document sections / picker ─────────────────────────────────── */}
-        <div style={styles.docCol}>
-          {docState
-            ? PM_SECTIONS.map((s) => {
-                const sec = docState.sections[s.key]
-                return (
-                  <section key={s.key} style={styles.section}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                      <h2 style={styles.sectionTitle}>{sec?.title ?? s.title}</h2>
-                      {isFacilitator && (
-                        <button
-                          style={styles.editSectionBtn}
-                          onClick={() => openEditSection(s.key, sec?.content ?? '')}
-                        >
-                          Edit
-                        </button>
-                      )}
-                    </div>
-                    <p style={styles.sectionBody}>
-                      {sec?.content?.trim() || <span style={styles.dim}>(empty)</span>}
-                    </p>
-                  </section>
-                )
-              })
-            : browsable
-              ? (
-                  <div style={styles.pickerList}>
-                    <p style={styles.dim}>Select a project to view its PM document.</p>
-                    {picker.length === 0 && !error && (
-                      <p style={styles.dim}>No projects yet.</p>
-                    )}
-                    {picker.map((p) => (
-                      <button key={p.id} style={styles.pickerRow} onClick={() => void loadProject(p.id)}>
-                        <span style={styles.pickerName}>{p.name}</span>
-                        <span style={styles.dim}>
-                          {p.meetingCount} meeting{p.meetingCount === 1 ? '' : 's'}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )
-              : !error && (
-                  <p style={styles.dim}>
-                    Open a meeting summary or a project to view its PM document.
-                  </p>
-                )}
+        <div style={styles.tocLabel}>On this page</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {PM_SECTIONS.map((s) => {
+            const hasProposed = (reviewsBySection[s.key]?.length ?? 0) > 0
+            return (
+              <button key={s.key} style={styles.tocLink} onClick={() => scrollToSection(s.key)}>
+                <span style={{ flex: 1, textAlign: 'left' }}>{s.title}</span>
+                {hasProposed && <span style={styles.tocDot} title="Proposed change" />}
+              </button>
+            )
+          })}
         </div>
 
-        {/* ─── Review panel / version history ─────────────────────────────── */}
-        <div style={styles.sideCol}>
-          {proposed && reviews.length > 0 && (
-            <div style={styles.reviewPanel}>
-              <div style={styles.panelHead}>Proposed changes ({reviews.length})</div>
-              {proposed.overall_change_summary && (
-                <p style={styles.changeSummary}>{proposed.overall_change_summary}</p>
-              )}
-              {reviews.map((r) => (
-                <PatchCard
-                  key={r.patch.client_patch_id}
-                  review={r}
-                  onApprove={() => setDecision(r.patch.client_patch_id, 'approved')}
-                  onReject={() => setDecision(r.patch.client_patch_id, 'rejected')}
-                  onToggleEdit={() => toggleEdit(r.patch.client_patch_id)}
-                  onContent={(c) => setContent(r.patch.client_patch_id, c)}
-                />
-              ))}
-              <button
-                style={{ ...styles.commitBtn, opacity: approvedCount && !busy ? 1 : 0.5 }}
-                disabled={!approvedCount || busy}
-                onClick={() => void commit()}
-              >
-                {busy ? 'Committing…' : `Commit ${approvedCount} approved → v${version + 1}`}
-              </button>
-            </div>
-          )}
-
-          {proposed && reviews.length === 0 && (
-            <div style={styles.reviewPanel}>
-              <div style={styles.panelHead}>No changes proposed</div>
-              <p style={styles.dim}>This meeting didn't change the project's state.</p>
-            </div>
-          )}
-
-          {versions.length > 0 && (
-            <div style={styles.historyPanel}>
-              <div style={styles.panelHead}>Version history</div>
-              {versions.map((v) => (
+        {versions.length > 0 && (
+          <div style={{ marginTop: 28 }}>
+            <div style={styles.tocLabel}>History</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {versions.slice(0, 6).map((v) => (
                 <div key={v.id} style={styles.historyRow}>
                   <span style={styles.historyVersion}>v{v.version}</span>
-                  <div style={{ flex: 1 }}>
-                    <p style={styles.historySummary}>{v.changeSummary || '(no summary)'}</p>
-                    <p style={styles.historyDate}>{formatDate(v.createdAt)}</p>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={styles.historySummary}>{v.changeSummary || '(no summary)'}</div>
+                    <div style={styles.historyDate}>{formatDate(v.createdAt)}</div>
                   </div>
                 </div>
               ))}
             </div>
+          </div>
+        )}
+      </nav>
+
+      {/* ── Article ──────────────────────────────────────────────────────── */}
+      <div style={styles.articleScroll}>
+        <article style={styles.article}>
+          <header style={styles.articleHeader}>
+            <div style={{ minWidth: 0 }}>
+              <div style={styles.kicker}>PM DOCUMENT · SOURCE OF TRUTH</div>
+              <h1 style={styles.bigTitle}>{title}</h1>
+              <p style={styles.subtitle}>
+                Version {version}
+                {proposed ? ` · reviewing ${proposedCount} change${proposedCount === 1 ? '' : 's'} for v${version + 1}` : ''}
+              </p>
+            </div>
+            {isFacilitator && docState && (
+              <Button variant="danger" size="sm" onClick={() => setShowRemoveDoc(true)}>
+                Remove document
+              </Button>
+            )}
+          </header>
+
+          {error && <div style={styles.errorBox}>{error}</div>}
+
+          {/* Slim review banner */}
+          {proposed && proposedCount > 0 && (
+            <div style={styles.reviewBanner}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={styles.reviewBannerTitle}>
+                  Stratis proposed {proposedCount} change{proposedCount === 1 ? '' : 's'} from this meeting
+                </div>
+                {proposed.overall_change_summary && (
+                  <div style={styles.reviewBannerSummary}>{proposed.overall_change_summary}</div>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                <Button variant="ghost" size="sm" onClick={approveAll}>Approve all</Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={!approvedCount || busy}
+                  onClick={() => void commit()}
+                >
+                  {busy ? 'Committing…' : `Commit ${approvedCount} → v${version + 1}`}
+                </Button>
+              </div>
+            </div>
           )}
-        </div>
+
+          {proposed && proposedCount === 0 && (
+            <div style={styles.noChanges}>This meeting didn't change the project's state.</div>
+          )}
+
+          {/* Sections */}
+          {docState && PM_SECTIONS.map((s) => {
+            const sec = docState.sections[s.key]
+            const secReviews = reviewsBySection[s.key] ?? []
+            return (
+              <section key={s.key} id={`sec-${s.key}`} style={styles.section}>
+                <div style={styles.sectionHead}>
+                  <h2 style={styles.sectionTitle}>{sec?.title ?? s.title}</h2>
+                  {isFacilitator && !secReviews.length && (
+                    <button style={styles.editLink} onClick={() => openEditSection(s.key, sec?.content ?? '')}>
+                      Edit
+                    </button>
+                  )}
+                </div>
+
+                {/* Current content */}
+                {(sec?.content?.trim() || !secReviews.length) && (
+                  <Markdown>{sec?.content ?? ''}</Markdown>
+                )}
+
+                {/* Proposed changes for this section */}
+                {secReviews.map((r) => (
+                  <ProposedChange
+                    key={r.patch.client_patch_id}
+                    review={r}
+                    onApprove={() => setDecision(r.patch.client_patch_id, 'approved')}
+                    onReject={() => setDecision(r.patch.client_patch_id, 'rejected')}
+                    onToggleEdit={() => toggleEdit(r.patch.client_patch_id)}
+                    onContent={(c) => setContent(r.patch.client_patch_id, c)}
+                  />
+                ))}
+              </section>
+            )
+          })}
+        </article>
       </div>
 
-      {/* ─── Edit section modal ─────────────────────────────────────────────── */}
-      {showEditDoc && (
-        <div style={overlayStyle}>
-          <div style={modalStyle}>
-            <h2 style={{ color: COLORS.textPrimary, fontSize: 17, fontWeight: 500, margin: '0 0 14px' }}>
-              Edit section
-            </h2>
-            <textarea
-              style={textareaStyle}
-              value={editContent}
-              onChange={(e) => setEditContent(e.target.value)}
-              rows={8}
-            />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-              <button style={styles.ghostBtn} onClick={() => setShowEditDoc(false)} disabled={savingDoc}>
-                Cancel
-              </button>
-              <button style={styles.commitBtn} onClick={() => void handleSaveSection()} disabled={savingDoc}>
+      {/* ── Edit section modal ───────────────────────────────────────────── */}
+      {editSectionKey && (
+        <Modal
+          title="Edit section"
+          width={560}
+          onClose={() => !savingDoc && setEditSectionKey(null)}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setEditSectionKey(null)} disabled={savingDoc}>Cancel</Button>
+              <Button variant="primary" onClick={() => void handleSaveSection()} disabled={savingDoc}>
                 {savingDoc ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-          </div>
-        </div>
+              </Button>
+            </>
+          }
+        >
+          <p style={{ ...styles.dim, fontSize: 12, margin: '0 0 8px' }}>Markdown supported (#, **bold**, - lists).</p>
+          <textarea
+            style={styles.textarea}
+            value={editContent}
+            onChange={(e) => setEditContent(e.target.value)}
+            rows={10}
+          />
+        </Modal>
       )}
 
-      {/* ─── Remove document confirm ─────────────────────────────────────────── */}
+      {/* ── Remove document confirm ──────────────────────────────────────── */}
       {showRemoveDoc && (
-        <div style={overlayStyle}>
-          <div style={{ ...modalStyle, width: 360 }}>
-            <h2 style={{ color: COLORS.textPrimary, fontSize: 17, fontWeight: 500, margin: '0 0 12px' }}>
-              Remove document?
-            </h2>
-            <p style={{ color: COLORS.textMuted, fontSize: 13, margin: '0 0 22px', lineHeight: 1.6 }}>
-              This will permanently delete the PM document and all its version history.
-            </p>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button style={styles.ghostBtn} onClick={() => setShowRemoveDoc(false)} disabled={removingDoc}>
-                Cancel
-              </button>
-              <button
-                style={{ ...styles.commitBtn, background: COLORS.red }}
-                onClick={() => void handleRemoveDocument()}
-                disabled={removingDoc}
-              >
+        <Modal
+          title="Remove document?"
+          width={380}
+          onClose={() => !removingDoc && setShowRemoveDoc(false)}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setShowRemoveDoc(false)} disabled={removingDoc}>Cancel</Button>
+              <Button variant="danger" onClick={() => void handleRemoveDocument()} disabled={removingDoc}>
                 {removingDoc ? 'Removing…' : 'Remove'}
-              </button>
-            </div>
-          </div>
-        </div>
+              </Button>
+            </>
+          }
+        >
+          <p style={{ color: COLORS.textMuted, fontSize: 13, margin: 0, lineHeight: 1.6 }}>
+            This permanently deletes the PM document and its entire version history. This can't be undone.
+          </p>
+        </Modal>
       )}
     </div>
   )
 }
 
-// ─── PatchCard ─────────────────────────────────────────────────────────────────
+// ─── ProposedChange (inline review) ──────────────────────────────────────────
 
-function PatchCard({
+function ProposedChange({
   review, onApprove, onReject, onToggleEdit, onContent,
 }: {
   review: PatchReview
@@ -459,43 +501,43 @@ function PatchCard({
 }) {
   const { patch, decision, content, editing } = review
   const priorityColor = PRIORITY_COLOR[patch.review_priority ?? 'LOW'] ?? COLORS.textMuted
-  const border =
-    decision === 'approved' ? COLORS.teal : decision === 'rejected' ? COLORS.red : COLORS.border
+  const accent =
+    decision === 'approved' ? COLORS.teal : decision === 'rejected' ? COLORS.red : COLORS.amber
 
   return (
-    <div style={{ ...styles.patchCard, borderColor: border }}>
-      <div style={styles.patchHead}>
-        <span style={styles.patchOp}>
-          {patch.operation.replace(/_/g, ' ')} · {patch.section_title}
+    <div style={{ ...styles.proposed, borderColor: `${accent}66`, opacity: decision === 'rejected' ? 0.6 : 1 }}>
+      <div style={styles.proposedHead}>
+        <span style={{ ...styles.proposedTag, color: accent, background: `${accent}1f` }}>
+          {decision === 'approved' ? 'Approved' : decision === 'rejected' ? 'Rejected' : 'Proposed change'}
+          {' · '}
+          {patch.operation.replace(/_/g, ' ')}
         </span>
         {patch.review_priority && (
-          <span style={{ ...styles.patchPriority, color: priorityColor }}>
-            {patch.review_priority}
-          </span>
+          <span style={{ ...styles.proposedPriority, color: priorityColor }}>{patch.review_priority}</span>
         )}
       </div>
 
       {editing ? (
-        <textarea
-          style={styles.patchEditor}
-          value={content}
-          onChange={(e) => onContent(e.target.value)}
-        />
+        <textarea style={styles.proposedEditor} value={content} onChange={(e) => onContent(e.target.value)} />
       ) : (
-        <p style={styles.patchContent}>{content}</p>
+        <Markdown>{content}</Markdown>
       )}
 
-      {patch.reason && <p style={styles.patchReason}>why: {patch.reason}</p>}
+      {patch.reason && <p style={styles.proposedReason}>Why: {patch.reason}</p>}
 
-      <div style={styles.patchActions}>
-        <button style={{ ...styles.smallBtn, color: COLORS.teal, borderColor: COLORS.teal }} onClick={onApprove}>
-          {decision === 'approved' ? '✓ approved' : 'approve'}
+      <div style={styles.proposedActions}>
+        <button
+          style={{ ...styles.reviewBtn, color: COLORS.teal, borderColor: `${COLORS.teal}66` }}
+          onClick={onApprove}
+        >
+          {decision === 'approved' ? '✓ Approved' : 'Approve'}
         </button>
-        <button style={styles.smallBtn} onClick={onToggleEdit}>
-          {editing ? 'done' : 'edit'}
-        </button>
-        <button style={{ ...styles.smallBtn, color: COLORS.red, borderColor: COLORS.red }} onClick={onReject}>
-          {decision === 'rejected' ? '✕ rejected' : 'reject'}
+        <button style={styles.reviewBtn} onClick={onToggleEdit}>{editing ? 'Done' : 'Edit'}</button>
+        <button
+          style={{ ...styles.reviewBtn, color: COLORS.red, borderColor: `${COLORS.red}66` }}
+          onClick={onReject}
+        >
+          {decision === 'rejected' ? '✕ Rejected' : 'Reject'}
         </button>
       </div>
     </div>
@@ -507,100 +549,119 @@ function formatDate(value: string): string {
   return Number.isNaN(d.getTime()) ? value : d.toLocaleString()
 }
 
-const overlayStyle: React.CSSProperties = {
-  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
-  display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200,
-}
-
-const modalStyle: React.CSSProperties = {
-  width: 480, background: COLORS.surface,
-  border: `1px solid ${COLORS.border}`, borderRadius: 12, padding: 24,
-}
-
-const textareaStyle: React.CSSProperties = {
-  width: '100%', background: COLORS.bg, border: `1px solid ${COLORS.border}`,
-  color: COLORS.textPrimary, borderRadius: 6, padding: '10px 12px',
-  fontSize: 13, fontFamily: 'inherit', resize: 'vertical', outline: 'none',
-}
-
 const styles: Record<string, React.CSSProperties> = {
-  page:      { padding: '40px 60px', overflowY: 'auto', flex: 1, color: COLORS.textPrimary },
-  header:    { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 28 },
-  title:     { fontSize: 22, fontWeight: 600, margin: 0, color: COLORS.textPrimary },
-  subtitle:  { fontSize: 13, color: COLORS.textMuted, margin: '6px 0 0' },
-  dim:       { color: COLORS.textMuted },
+  page: { padding: '40px 60px', overflowY: 'auto', flex: 1, color: COLORS.textPrimary },
+  shell: { display: 'flex', flex: 1, minHeight: 0, background: COLORS.bg },
+
+  // ToC
+  toc: {
+    width: 248,
+    flexShrink: 0,
+    borderRight: `1px solid ${COLORS.border}`,
+    padding: '40px 20px',
+    overflowY: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  tocLabel: {
+    fontSize: 10, fontWeight: 700, letterSpacing: 1, color: COLORS.textDim,
+    textTransform: 'uppercase', marginBottom: 12,
+  },
+  tocLink: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    background: 'transparent', border: 'none', borderRadius: RADIUS.sm,
+    padding: '7px 10px', fontSize: 13, color: COLORS.textMuted, cursor: 'pointer',
+  },
+  tocDot: { width: 6, height: 6, borderRadius: '50%', background: COLORS.amber, flexShrink: 0 },
   backBtn: {
     background: 'transparent', border: 'none', color: COLORS.accent,
-    cursor: 'pointer', fontSize: 12, padding: 0, marginBottom: 8,
+    cursor: 'pointer', fontSize: 12, padding: 0, marginBottom: 22, textAlign: 'left',
   },
-  ghostBtn: {
-    padding: '6px 12px', fontSize: 12, fontWeight: 500, borderRadius: 6,
+
+  // Article
+  articleScroll: { flex: 1, overflowY: 'auto', minWidth: 0 },
+  article: { maxWidth: 760, margin: '0 auto', padding: '48px 40px 80px' },
+  articleHeader: {
+    display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+    gap: 16, marginBottom: 28,
+  },
+  kicker: { fontSize: 10, fontWeight: 700, letterSpacing: 1.2, color: COLORS.accent, marginBottom: 10 },
+  bigTitle: { fontSize: 32, fontWeight: 700, margin: 0, color: COLORS.textPrimary, lineHeight: 1.15, letterSpacing: -0.5 },
+  subtitle: { fontSize: 13, color: COLORS.textMuted, margin: '10px 0 0' },
+  dim: { color: COLORS.textMuted },
+
+  errorBox: {
+    background: COLORS.redBg, border: `1px solid ${COLORS.red}`, color: COLORS.textPrimary,
+    borderRadius: RADIUS.md, padding: '10px 14px', fontSize: 13, marginBottom: 20,
+  },
+
+  reviewBanner: {
+    display: 'flex', alignItems: 'center', gap: 16,
+    background: COLORS.amberSubtle, border: `1px solid ${COLORS.amber}55`,
+    borderRadius: RADIUS.lg, padding: '14px 16px', marginBottom: 32,
+  },
+  reviewBannerTitle: { fontSize: 13, fontWeight: 600, color: COLORS.amber },
+  reviewBannerSummary: { fontSize: 12, color: COLORS.textMuted, marginTop: 4, lineHeight: 1.5 },
+  noChanges: {
+    background: COLORS.surfaceMuted, border: `1px solid ${COLORS.border}`,
+    borderRadius: RADIUS.md, padding: '12px 16px', marginBottom: 32,
+    fontSize: 13, color: COLORS.textMuted,
+  },
+
+  section: { marginBottom: 40, scrollMarginTop: 24 },
+  sectionHead: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    gap: 12, marginBottom: 12, paddingBottom: 10, borderBottom: `1px solid ${COLORS.border}`,
+  },
+  sectionTitle: { fontSize: 20, fontWeight: 700, margin: 0, color: COLORS.textPrimary, letterSpacing: -0.2 },
+  editLink: {
+    background: 'transparent', border: 'none', color: COLORS.textMuted,
+    fontSize: 12, cursor: 'pointer', padding: '2px 6px', borderRadius: 4,
+  },
+
+  // Proposed change card
+  proposed: {
+    background: COLORS.surface, border: '1px solid', borderRadius: RADIUS.md,
+    padding: '14px 16px', marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8,
+  },
+  proposedHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  proposedTag: {
+    fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase',
+    padding: '3px 9px', borderRadius: RADIUS.pill,
+  },
+  proposedPriority: { fontSize: 10, fontWeight: 700 },
+  proposedReason: { fontSize: 12, color: COLORS.textMuted, margin: 0, fontStyle: 'italic' },
+  proposedEditor: {
+    width: '100%', minHeight: 120, background: COLORS.bg,
+    border: `1px solid ${COLORS.border}`, color: COLORS.textPrimary,
+    borderRadius: RADIUS.sm, padding: 10, fontSize: 13, fontFamily: 'inherit',
+    resize: 'vertical', outline: 'none', lineHeight: 1.6,
+  },
+  proposedActions: { display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 2 },
+  reviewBtn: {
+    padding: '4px 11px', fontSize: 11, fontWeight: 600, borderRadius: RADIUS.sm,
     border: `1px solid ${COLORS.border}`, background: 'transparent',
     color: COLORS.textMuted, cursor: 'pointer',
   },
-  editSectionBtn: {
-    padding: '3px 9px', fontSize: 11, fontWeight: 500, borderRadius: 5,
-    border: `1px solid ${COLORS.border}`, background: 'transparent',
-    color: COLORS.textMuted, cursor: 'pointer',
-  },
-  pickerList:  { display: 'flex', flexDirection: 'column', gap: 10 },
+
+  // Picker
+  pickerList: { display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 640 },
   pickerRow: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     background: COLORS.surface, border: `1px solid ${COLORS.border}`,
-    borderRadius: 10, padding: '14px 16px', cursor: 'pointer', textAlign: 'left',
+    borderRadius: RADIUS.lg, padding: '16px 18px', cursor: 'pointer', textAlign: 'left',
   },
-  pickerName:  { fontSize: 14, fontWeight: 600, color: COLORS.textPrimary },
-  errorBox: {
-    background: COLORS.redBg, border: `1px solid ${COLORS.red}`, color: COLORS.textPrimary,
-    borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 20,
+  pickerName: { fontSize: 15, fontWeight: 600, color: COLORS.textPrimary },
+
+  // History (ToC)
+  historyRow: { display: 'flex', gap: 8, alignItems: 'flex-start' },
+  historyVersion: { fontSize: 11, fontWeight: 700, color: COLORS.accent, minWidth: 24 },
+  historySummary: { fontSize: 12, color: COLORS.textMuted, lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis' },
+  historyDate: { fontSize: 10, color: COLORS.textDim, marginTop: 2 },
+
+  textarea: {
+    width: '100%', background: COLORS.bg, border: `1px solid ${COLORS.border}`,
+    color: COLORS.textPrimary, borderRadius: RADIUS.sm, padding: '10px 12px',
+    fontSize: 13, fontFamily: 'inherit', resize: 'vertical', outline: 'none', lineHeight: 1.6,
   },
-  columns:     { display: 'flex', gap: 28, alignItems: 'flex-start' },
-  docCol:      { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 22 },
-  sideCol:     { width: 380, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 20 },
-  section: {
-    background: COLORS.surface, border: `1px solid ${COLORS.border}`,
-    borderRadius: 10, padding: '16px 18px',
-  },
-  sectionTitle: { fontSize: 14, fontWeight: 600, margin: 0, color: COLORS.accent },
-  sectionBody:  { fontSize: 13, lineHeight: 1.6, color: COLORS.textPrimary, margin: 0, whiteSpace: 'pre-wrap' },
-  reviewPanel: {
-    background: COLORS.surfaceMuted, border: `1px solid ${COLORS.border}`,
-    borderRadius: 10, padding: 16, display: 'flex', flexDirection: 'column', gap: 12,
-  },
-  panelHead:     { fontSize: 13, fontWeight: 600, color: COLORS.textPrimary },
-  changeSummary: { fontSize: 12, color: COLORS.textMuted, margin: 0, lineHeight: 1.5 },
-  patchCard: {
-    background: COLORS.surface, border: '1px solid', borderRadius: 8,
-    padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6,
-  },
-  patchHead:     { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
-  patchOp:       { fontSize: 11, fontWeight: 600, color: COLORS.textMuted, textTransform: 'capitalize' },
-  patchPriority: { fontSize: 10, fontWeight: 700 },
-  patchContent:  { fontSize: 12, lineHeight: 1.5, color: COLORS.textPrimary, margin: 0, whiteSpace: 'pre-wrap' },
-  patchEditor: {
-    width: '100%', minHeight: 80, background: COLORS.bg,
-    border: `1px solid ${COLORS.border}`, color: COLORS.textPrimary,
-    borderRadius: 6, padding: 8, fontSize: 12, fontFamily: 'inherit',
-    resize: 'vertical', outline: 'none',
-  },
-  patchReason:   { fontSize: 11, color: COLORS.textMuted, margin: 0, fontStyle: 'italic' },
-  patchActions:  { display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 2 },
-  smallBtn: {
-    padding: '3px 9px', fontSize: 11, fontWeight: 500, borderRadius: 5,
-    border: `1px solid ${COLORS.border}`, background: 'transparent',
-    color: COLORS.textMuted, cursor: 'pointer',
-  },
-  commitBtn: {
-    marginTop: 4, padding: '9px 12px', fontSize: 13, fontWeight: 600,
-    borderRadius: 7, border: 'none', background: COLORS.accent,
-    color: '#0a0a0a', cursor: 'pointer',
-  },
-  historyPanel: {
-    background: COLORS.surfaceMuted, border: `1px solid ${COLORS.border}`,
-    borderRadius: 10, padding: 16, display: 'flex', flexDirection: 'column', gap: 10,
-  },
-  historyRow:     { display: 'flex', gap: 10, alignItems: 'flex-start' },
-  historyVersion: { fontSize: 12, fontWeight: 700, color: COLORS.accent, minWidth: 28 },
-  historySummary: { fontSize: 12, color: COLORS.textPrimary, margin: 0, lineHeight: 1.4 },
-  historyDate:    { fontSize: 10, color: COLORS.textDim, margin: '2px 0 0' },
 }

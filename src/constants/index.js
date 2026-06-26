@@ -1,24 +1,6 @@
-export const COLORS = {
-  bg: "#0a0a0a",
-  surface: "#111111",
-  surfaceHover: "#1a1a1a",
-  border: "#222222",
-  borderLight: "#2a2a2a",
-  text: "#e8e8e8",
-  textMuted: "#666666",
-  textDim: "#444444",
-  accent: "#e8a020",
-  accentDim: "#7a4f08",
-  teal: "#1a8c6e",
-  tealLight: "#0d5c49",
-  tealBg: "#0a2e26",
-  red: "#c0392b",
-  redBg: "#2a0f0d",
-  orange: "#e8520a",
-  orangeBg: "#2a1208",
-  cyan: "#1a9fc0",
-  cyanBg: "#0a2a33",
-};
+// Palette lives in one place — see src/tokens/colors.ts. Re-exported here so the
+// many `import { COLORS } from "../constants"` call sites stay valid.
+export { COLORS } from "../tokens/colors";
 
 export const NAV_ITEMS = [
   { id: "dashboard", icon: "LayoutDashboard", label: "Dashboard" },

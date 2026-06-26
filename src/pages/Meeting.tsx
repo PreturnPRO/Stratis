@@ -11,9 +11,11 @@
 //
 // S1-T04-C will replace manual input with live STT chunks (stub is here).
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Mic, Square, RotateCw } from "lucide-react";
 import { COLORS } from "../constants";
-import { btnAccent, btnGhost } from "../components/ui";
+import { RADIUS } from "../tokens/colors";
+import { Button, IconButton, Chip, Modal } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { SuggestionCardStack } from "../components/SuggestionCardStack";
 import BlockRenderer from "../components/BlockRenderer";
@@ -94,6 +96,14 @@ function formatTime(value: string): string {
   }).format(d);
 }
 
+function formatElapsed(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+}
+
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   const chunkSize = 0x8000;
@@ -105,6 +115,47 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   }
 
   return window.btoa(binary);
+}
+
+// Pulsing red dot used in the recording chip.
+function RecDot() {
+  return (
+    <span style={{ position: "relative", display: "inline-flex", width: 9, height: 9 }}>
+      <span
+        style={{
+          position: "absolute",
+          inset: 0,
+          borderRadius: "50%",
+          background: COLORS.red,
+          animation: "recPulse 1.5s ease-out infinite",
+        }}
+      />
+      <span
+        style={{
+          position: "relative",
+          width: 9,
+          height: 9,
+          borderRadius: "50%",
+          background: COLORS.red,
+          boxShadow: `0 0 6px ${COLORS.red}`,
+        }}
+      />
+    </span>
+  );
+}
+
+function StatusDot({ color }: { color: string }) {
+  return (
+    <span
+      style={{
+        width: 6,
+        height: 6,
+        borderRadius: "50%",
+        background: color,
+        display: "inline-block",
+      }}
+    />
+  );
 }
 
 export default function Meeting({ onNav }: MeetingProps) {
@@ -128,6 +179,18 @@ export default function Meeting({ onNav }: MeetingProps) {
   const [error, setError] = useState<string | null>(null);
   const [sendingChunk, setSendingChunk] = useState(false);
   const [ending, setEnding] = useState(false);
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
+
+  // Planned meeting length (minutes) chosen at creation, stored per session.
+  const [durationMin, setDurationMin] = useState<number | null>(null);
+  const [wrapUpDismissed, setWrapUpDismissed] = useState(false);
+
+  // Live meeting timer — anchored to the server start time when known, else to
+  // the moment this session became active in the UI.
+  const [startMs, setStartMs] = useState<number | null>(null);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+
+  const transcriptScrollRef = useRef<HTMLDivElement>(null);
 
   const authHeaders = useMemo((): Record<string, string> => {
     return token ? { Authorization: `Bearer ${token}` } : {};
@@ -267,6 +330,50 @@ export default function Meeting({ onNav }: MeetingProps) {
     void loadTranscript();
   }, [sessionId, loadTranscript]);
 
+  // Anchor the meeting timer.
+  useEffect(() => {
+    if (!sessionId) {
+      setStartMs(null);
+      return;
+    }
+    const serverStart = recovery.session?.started_at
+      ? new Date(recovery.session.started_at).getTime()
+      : NaN;
+    setStartMs((prev) =>
+      Number.isFinite(serverStart) ? serverStart : prev ?? Date.now(),
+    );
+  }, [sessionId, recovery.session?.started_at]);
+
+  // Load the planned duration for this session (set on the dashboard). Default
+  // to 60 min if none was stored.
+  useEffect(() => {
+    if (!sessionId) {
+      setDurationMin(null);
+      return;
+    }
+    const raw = window.localStorage.getItem(`stratis.duration.${sessionId}`);
+    const n = raw ? parseInt(raw, 10) : NaN;
+    setDurationMin(Number.isFinite(n) && n > 0 ? n : 60);
+    setWrapUpDismissed(false);
+  }, [sessionId]);
+
+  // Tick the timer once per second while a session is open.
+  useEffect(() => {
+    if (!sessionId) return;
+    const t = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [sessionId]);
+
+  // Follow the conversation: auto-scroll to newest line if the user is at/near
+  // the bottom (don't yank them back up while they scroll history).
+  useEffect(() => {
+    const el = transcriptScrollRef.current;
+    if (!el) return;
+    const nearBottom =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 140;
+    if (nearBottom) el.scrollTop = el.scrollHeight;
+  }, [transcripts]);
+
   const handleEndMeeting = async () => {
     if (!token || !sessionId) return;
 
@@ -292,6 +399,7 @@ export default function Meeting({ onNav }: MeetingProps) {
       onNav?.("document", { sessionId });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not end meeting");
+      setShowEndConfirm(false);
     } finally {
       setEnding(false);
     }
@@ -299,6 +407,28 @@ export default function Meeting({ onNav }: MeetingProps) {
 
   const isRecording = recorder.status === "recording";
   const canRecord = !!sessionId && !!token && !ending;
+  const elapsed =
+    sessionId && startMs != null
+      ? Math.max(0, Math.floor((nowMs - startMs) / 1000))
+      : null;
+
+  // Countdown against the planned duration. Wrap-up window = final 15 minutes.
+  const WRAP_UP_SEC = 15 * 60;
+  const remainingSec =
+    durationMin != null && elapsed != null ? durationMin * 60 - elapsed : null;
+  const inWrapUp =
+    remainingSec != null && remainingSec <= WRAP_UP_SEC && remainingSec > 0;
+  const overtime = remainingSec != null && remainingSec <= 0;
+  const timeColor = overtime
+    ? COLORS.red
+    : inWrapUp
+      ? COLORS.amber
+      : COLORS.textMuted;
+
+  const meetingTitle = recovery.session?.meeting_title?.trim() || "Live meeting";
+  const sessionShort = sessionId
+    ? `…${sessionId.slice(-6)}`
+    : "";
 
   if (recovery.status === "loading" && !sessionId) {
     return (
@@ -315,7 +445,7 @@ export default function Meeting({ onNav }: MeetingProps) {
           style={{
             color: COLORS.text,
             fontSize: 22,
-            fontWeight: 500,
+            fontWeight: 600,
             margin: "0 0 24px",
           }}
         >
@@ -325,9 +455,9 @@ export default function Meeting({ onNav }: MeetingProps) {
         <EmptyState message="No active meeting session. Start a meeting from Dashboard." />
 
         <div style={{ marginTop: 18 }}>
-          <button style={btnAccent()} onClick={() => onNav?.("dashboard")}>
+          <Button variant="primary" onClick={() => onNav?.("dashboard")}>
             Go to Dashboard
-          </button>
+          </Button>
         </div>
       </div>
     );
@@ -343,74 +473,111 @@ export default function Meeting({ onNav }: MeetingProps) {
           display: "flex",
           flexDirection: "column",
           minWidth: 0,
+          minHeight: 0,
         }}
       >
+        {/* ── Header ─────────────────────────────────────────────────────── */}
         <div
           style={{
             borderBottom: `1px solid ${COLORS.border}`,
-            padding: "18px 24px",
+            padding: "16px 24px",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
             gap: 16,
+            flexWrap: "wrap",
           }}
         >
-          <div>
+          <div style={{ minWidth: 0 }}>
             <h1
               style={{
                 color: COLORS.text,
-                fontSize: 20,
-                fontWeight: 500,
-                margin: "0 0 4px",
+                fontSize: 19,
+                fontWeight: 600,
+                margin: "0 0 8px",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
               }}
             >
-              Live meeting
+              {meetingTitle}
             </h1>
 
-            <div style={{ color: COLORS.textMuted, fontSize: 12 }}>
-              Session: {sessionId}
-              {" · "}
-              Mic: {recorder.status}
-              {" · "}
-              AI: {ai.provider ?? "waiting"}
-              {" · "}
-              Suggestions: {connected ? "connected" : "offline"}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              {isRecording && (
+                <Chip color={COLORS.red} icon={<RecDot />}>
+                  REC
+                </Chip>
+              )}
+
+              {remainingSec != null ? (
+                <Chip
+                  color={timeColor}
+                  icon={<StatusDot color={timeColor} />}
+                >
+                  {overtime
+                    ? `+${formatElapsed(Math.abs(remainingSec))} over`
+                    : `${formatElapsed(remainingSec)} left`}
+                </Chip>
+              ) : (
+                <Chip color={COLORS.textMuted} icon={<StatusDot color={COLORS.textDim} />}>
+                  {elapsed != null ? formatElapsed(elapsed) : "Idle"}
+                </Chip>
+              )}
+
+              <Chip color={COLORS.textMuted}>
+                AI · {ai.provider ?? "waiting"}
+              </Chip>
+
+              <Chip
+                color={connected ? COLORS.teal : COLORS.textMuted}
+                icon={
+                  <StatusDot color={connected ? COLORS.teal : COLORS.textDim} />
+                }
+              >
+                {connected ? "Suggestions live" : "Offline"}
+              </Chip>
+
+              <Chip color={COLORS.textDim} mono>
+                {sessionShort}
+              </Chip>
             </div>
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {!isRecording ? (
-              <button
-                style={btnAccent()}
+              <Button
+                variant="primary"
                 onClick={() => void recorder.start()}
                 disabled={!canRecord}
+                iconLeft={<Mic size={15} strokeWidth={2} />}
               >
                 Start mic
-              </button>
+              </Button>
             ) : (
-              <button
-                style={{
-                  ...btnGhost(),
-                  color: COLORS.red,
-                  borderColor: `${COLORS.red}66`,
-                }}
+              <Button
+                variant="danger"
                 onClick={recorder.stop}
+                iconLeft={<Square size={13} strokeWidth={2.5} />}
               >
                 Stop mic
-              </button>
+              </Button>
             )}
 
-            <button
-              style={{
-                ...btnGhost(),
-                color: COLORS.red,
-                borderColor: `${COLORS.red}66`,
-              }}
-              onClick={() => void handleEndMeeting()}
+            <Button
+              variant="ghost"
+              onClick={() => setShowEndConfirm(true)}
               disabled={ending}
             >
-              {ending ? "Ending..." : "End meeting"}
-            </button>
+              {ending ? "Ending…" : "End meeting"}
+            </Button>
           </div>
         </div>
 
@@ -442,32 +609,83 @@ export default function Meeting({ onNav }: MeetingProps) {
           </div>
         )}
 
-        <div
-          style={{
-            flex: 1,
-            overflow: "auto",
-            padding: "24px",
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 24,
-            alignItems: "start",
-          }}
-        >
-          <section>
+        {inWrapUp && !wrapUpDismissed && (
+          <div
+            style={{
+              background: COLORS.amberSubtle,
+              borderBottom: `1px solid ${COLORS.amber}`,
+              color: COLORS.amber,
+              padding: "10px 24px",
+              fontSize: 13,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              animation: "fadeIn 0.2s ease",
+            }}
+          >
+            <span style={{ fontWeight: 600 }}>
+              ⏰ {formatElapsed(remainingSec!)} left — start wrapping up open
+              questions and confirm decisions.
+            </span>
+            <button
+              onClick={() => setWrapUpDismissed(true)}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: COLORS.amber,
+                fontSize: 16,
+                lineHeight: 1,
+                padding: "0 4px",
+              }}
+              title="Dismiss"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
+        {overtime && (
+          <div
+            style={{
+              background: COLORS.redBg,
+              borderBottom: `1px solid ${COLORS.red}`,
+              color: COLORS.red,
+              padding: "10px 24px",
+              fontSize: 13,
+              fontWeight: 600,
+            }}
+          >
+            Over the planned {durationMin} min by {formatElapsed(Math.abs(remainingSec!))}.
+          </div>
+        )}
+
+        {/* ── Body ───────────────────────────────────────────────────────── */}
+        <div className="meeting-grid" style={{ flex: 1, padding: 24 }}>
+          <section
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              minHeight: 0,
+              overflow: "hidden",
+            }}
+          >
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
                 marginBottom: 14,
+                flexShrink: 0,
               }}
             >
               <h2
                 style={{
                   color: COLORS.text,
-                  fontSize: 14,
-                  fontWeight: 500,
+                  fontSize: 13,
+                  fontWeight: 600,
                   margin: 0,
+                  letterSpacing: 0.3,
                 }}
               >
                 Transcript
@@ -475,89 +693,122 @@ export default function Meeting({ onNav }: MeetingProps) {
 
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 {sendingChunk && (
-                  <span style={{ color: COLORS.textDim, fontSize: 12 }}>
-                    Processing audio...
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      color: COLORS.textDim,
+                      fontSize: 12,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 11,
+                        height: 11,
+                        border: `2px solid ${COLORS.border}`,
+                        borderTopColor: COLORS.accent,
+                        borderRadius: "50%",
+                        animation: "spin 0.7s linear infinite",
+                      }}
+                    />
+                    Transcribing…
                   </span>
                 )}
-                <button
-                  style={btnGhost()}
+                <IconButton
+                  title="Reload transcript"
                   onClick={() => void loadTranscript()}
                 >
-                  Refresh
-                </button>
+                  <RotateCw size={14} strokeWidth={2} />
+                </IconButton>
               </div>
             </div>
 
-            {loadingTranscript ? (
-              <LoadingState count={3} persist />
-            ) : transcripts.length === 0 ? (
-              <EmptyState message="Transcript will appear here after you start speaking." />
-            ) : (
-              <div
-                style={{ display: "flex", flexDirection: "column", gap: 10 }}
-              >
-                {transcripts.map((row) => (
-                  <div
-                    key={row.id}
-                    style={{
-                      background: COLORS.surface,
-                      border: `1px solid ${COLORS.border}`,
-                      borderRadius: 8,
-                      padding: "12px 14px",
-                    }}
-                  >
+            <div
+              ref={transcriptScrollRef}
+              style={{ flex: 1, overflow: "auto", minHeight: 0, paddingRight: 4 }}
+            >
+              {loadingTranscript ? (
+                <LoadingState count={3} persist />
+              ) : transcripts.length === 0 ? (
+                <EmptyState message="Transcript will appear here after you start speaking." />
+              ) : (
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 10 }}
+                >
+                  {transcripts.map((row) => (
                     <div
+                      key={row.id}
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        marginBottom: 6,
+                        background: COLORS.surface,
+                        border: `1px solid ${COLORS.border}`,
+                        borderRadius: RADIUS.md,
+                        padding: "12px 14px",
+                        animation: "cardIn 0.2s ease",
                       }}
                     >
-                      <span
+                      <div
                         style={{
-                          color: COLORS.teal,
-                          fontSize: 12,
-                          fontWeight: 600,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          marginBottom: 6,
                         }}
                       >
-                        {row.speaker}
-                      </span>
-                      <span style={{ color: COLORS.textDim, fontSize: 11 }}>
-                        {formatTime(row.timestamp)}
-                      </span>
-                    </div>
+                        <span
+                          style={{
+                            color: COLORS.teal,
+                            fontSize: 12,
+                            fontWeight: 600,
+                          }}
+                        >
+                          {row.speaker}
+                        </span>
+                        <span style={{ color: COLORS.textDim, fontSize: 11 }}>
+                          {formatTime(row.timestamp)}
+                        </span>
+                      </div>
 
-                    <div
-                      style={{
-                        color: COLORS.textMuted,
-                        fontSize: 13,
-                        lineHeight: 1.6,
-                      }}
-                    >
-                      {row.text}
+                      <div
+                        style={{
+                          color: COLORS.textMuted,
+                          fontSize: 13,
+                          lineHeight: 1.6,
+                        }}
+                      >
+                        {row.text}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
           </section>
 
-          <section>
+          <section
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              minHeight: 0,
+              overflow: "hidden",
+            }}
+          >
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
                 marginBottom: 14,
+                flexShrink: 0,
               }}
             >
               <h2
                 style={{
                   color: COLORS.text,
-                  fontSize: 14,
-                  fontWeight: 500,
+                  fontSize: 13,
+                  fontWeight: 600,
                   margin: 0,
+                  letterSpacing: 0.3,
                 }}
               >
                 AI notes
@@ -568,27 +819,29 @@ export default function Meeting({ onNav }: MeetingProps) {
               </span>
             </div>
 
-            {ai.error && (
-              <div
-                style={{
-                  background: COLORS.redBg,
-                  border: `1px solid ${COLORS.red}`,
-                  color: COLORS.red,
-                  borderRadius: 8,
-                  padding: "10px 12px",
-                  marginBottom: 12,
-                  fontSize: 13,
-                }}
-              >
-                {ai.error}
-              </div>
-            )}
+            <div style={{ flex: 1, overflow: "auto", minHeight: 0, paddingRight: 4 }}>
+              {ai.error && (
+                <div
+                  style={{
+                    background: COLORS.redBg,
+                    border: `1px solid ${COLORS.red}`,
+                    color: COLORS.red,
+                    borderRadius: RADIUS.md,
+                    padding: "10px 12px",
+                    marginBottom: 12,
+                    fontSize: 13,
+                  }}
+                >
+                  {ai.error}
+                </div>
+              )}
 
-            {ai.blocks.length === 0 ? (
-              <EmptyState message="AI notes will appear when the transcript has enough signal." />
-            ) : (
-              <BlockRenderer nodes={ai.blocks} />
-            )}
+              {ai.blocks.length === 0 ? (
+                <EmptyState message="AI notes will appear when the transcript has enough signal." />
+              ) : (
+                <BlockRenderer nodes={ai.blocks} />
+              )}
+            </div>
           </section>
         </div>
       </div>
@@ -599,6 +852,38 @@ export default function Meeting({ onNav }: MeetingProps) {
           onMarkAnswered={markAnswered}
           onMarkActive={markActive}
         />
+      )}
+
+      {showEndConfirm && (
+        <Modal
+          title="End this meeting?"
+          width={400}
+          onClose={() => !ending && setShowEndConfirm(false)}
+          footer={
+            <>
+              <Button
+                variant="ghost"
+                onClick={() => setShowEndConfirm(false)}
+                disabled={ending}
+              >
+                Keep going
+              </Button>
+              <Button
+                variant="danger"
+                onClick={() => void handleEndMeeting()}
+                disabled={ending}
+              >
+                {ending ? "Ending…" : "End meeting"}
+              </Button>
+            </>
+          }
+        >
+          <p style={{ color: COLORS.textMuted, fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+            Recording will stop and the session will close. Stratis will generate
+            the post-meeting summary and document patches from the transcript.
+            This can't be undone.
+          </p>
+        </Modal>
       )}
     </div>
   );

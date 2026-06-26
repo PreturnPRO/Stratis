@@ -31,7 +31,7 @@ function renderPage(
 ) {
   switch (active) {
     case "projects":
-      return <Projects />;
+      return <Projects onNav={handleNav} />;
     case "meeting":
       return <Meeting onNav={handleNav} />;
     case "dashboard":
