@@ -458,7 +458,7 @@ transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
       });
     }
 
-    const text = stt.text.trim();
+    const text = stt.text.replace(/([\u0E00-\u0E7F])\s+(?=[\u0E00-\u0E7F])/g, '$1').trim();
 
     if (!text) {
       return res.json({
@@ -473,7 +473,7 @@ transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
     }
 
     let row: TranscriptRow;
-    
+
     // Strict block: Abort AI integration if the database insert fails
     try {
       row = await saveTranscriptChunk({

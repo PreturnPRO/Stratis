@@ -272,7 +272,7 @@ documentRouter.post("/session/:sessionId/commit", requireAuth, async (req, res, 
     // Surface on the dashboard recent-summaries feed (kind='summary').
     await db.query(
       `INSERT INTO notifications (id, user_id, session_id, kind, title, body, read, created_at)
-       VALUES ($1, $2, $3, 'summary', $4, $5, 0, $6)`,
+       VALUES ($1, $2, $3, 'summary', $4, $5, FALSE, $6)`,
       [
         newId("ntf"),
         req.auth!.sub,
