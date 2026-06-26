@@ -6,7 +6,7 @@ export interface TranscribeInput {
 }
 
 export interface TranscribeResult {
-  provider: "typhoon" | "mock";
+  provider: "deepgram" | "mock";
   text: string;
   raw?: unknown;
 }
@@ -29,27 +29,29 @@ async function fetchWithTimeout(
 function mockTranscribe(input: TranscribeInput): TranscribeResult {
   return {
     provider: "mock",
-    text: `[mock transcript] received ${input.audio.length} bytes of ${input.mimeType}. Set STT_PROVIDER=typhoon and HF_TOKEN for real STT.`,
+    text: `[mock transcript] received ${input.audio.length} bytes of ${input.mimeType}. Set STT_PROVIDER=deepgram and DEEPGRAM_API_KEY for real STT.`,
     raw: { mock: true, bytes: input.audio.length, mimeType: input.mimeType },
   };
 }
 
-async function typhoonTranscribe(
+async function deepgramTranscribe(
   input: TranscribeInput,
 ): Promise<TranscribeResult> {
-  const { hfToken, baseUrl } = env.stt.typhoon;
+  const { apiKey, baseUrl, model } = env.stt.deepgram;
 
-  if (!hfToken) {
+  if (!apiKey) {
     return mockTranscribe(input);
   }
 
   try {
+    const url = `${baseUrl}?model=${encodeURIComponent(model)}&smart_format=true&punctuate=true&language=th`;
+    
     const res = await fetchWithTimeout(
-      baseUrl,
+      url,
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${hfToken}`,
+          Authorization: `Token ${apiKey}`,
           "Content-Type": input.mimeType,
         },
         body: input.audio,
@@ -57,7 +59,6 @@ async function typhoonTranscribe(
       env.stt.timeoutMs,
     );
 
-    // Read raw text first so we can parse errors that might be thrown in HTML or non-standard JSON during a 503
     const rawText = await res.text();
     let parsedRaw: any = {};
     
@@ -68,26 +69,18 @@ async function typhoonTranscribe(
     }
 
     if (!res.ok) {
-      // Cold-start safeguard 
-      const isLoadingStr = JSON.stringify(parsedRaw).toLowerCase().includes("currently loading");
-      
-      if (res.status === 503 || isLoadingStr) {
-        console.warn(`[stt] Typhoon model loading (503). Skipping chunk gracefully.`);
-        return { provider: "typhoon", text: "", raw: { skipped: true, reason: "cold-start", ...parsedRaw } };
-      }
-      
-      console.warn(`[stt] Typhoon error ${res.status}`);
-      return { provider: "typhoon", text: "", raw: { skipped: true, error: parsedRaw } };
+      console.warn(`[stt] Deepgram error ${res.status}`);
+      return { provider: "deepgram", text: "", raw: { skipped: true, error: parsedRaw } };
     }
 
-    // Hugging Face standard text response extraction
-    const text = parsedRaw?.text ?? "";
-    return { provider: "typhoon", text, raw: parsedRaw };
+    // Safely extract Deepgram's nested transcription text
+    const text = parsedRaw?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? "";
+    return { provider: "deepgram", text, raw: parsedRaw };
     
   } catch (error) {
     // Graceful fallback for any network/timeout errors to keep the meeting pipeline alive
-    console.warn(`[stt] Network or timeout error during Typhoon transcription.`);
-    return { provider: "typhoon", text: "", raw: { skipped: true, error } };
+    console.warn(`[stt] Network or timeout error during Deepgram transcription.`);
+    return { provider: "deepgram", text: "", raw: { skipped: true, error } };
   }
 }
 
@@ -95,8 +88,8 @@ export async function transcribeAudio(
   input: TranscribeInput,
 ): Promise<TranscribeResult> {
   switch (env.stt.provider) {
-    case "typhoon":
-      return typhoonTranscribe(input);
+    case "deepgram":
+      return deepgramTranscribe(input);
     case "mock":
       return mockTranscribe(input);
     default:

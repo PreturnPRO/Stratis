@@ -51,11 +51,12 @@ export const env = {
   },
 
   stt: {
-    provider: (process.env.STT_PROVIDER ?? "mock") as "typhoon" | "mock",
+    provider: (process.env.STT_PROVIDER ?? "mock") as "deepgram" | "mock",
     timeoutMs: Number(process.env.STT_TIMEOUT_MS ?? 15000),
-    typhoon: {
-      hfToken: process.env.HF_TOKEN ?? "",
-      baseUrl: "https://api-inference.huggingface.co/models/typhoon-ai/typhoon-whisper-turbo",
+    deepgram: {
+      apiKey: process.env.DEEPGRAM_API_KEY ?? "",
+      model: process.env.DEEPGRAM_MODEL ?? "nova-3",
+      baseUrl: "https://api.deepgram.com/v1/listen",
     },
   },
 };
