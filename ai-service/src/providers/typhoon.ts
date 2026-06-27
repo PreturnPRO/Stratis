@@ -1,13 +1,13 @@
-// Groq provider (S1-T03-B) — free hosted Llama 3.3 70B via the OpenAI-compatible
-// chat completions endpoint. Uses native fetch (Node 18+), no SDK dependency.
+// Typhoon provider (S1-T03-B) — OpenTyphoon API using their latest 30B flagship model.
+// OpenAI-compatible chat completions endpoint. Uses native fetch (Node 18+).
 import { env } from "../../../backend/src/config/env";
 import { fetchWithTimeout, type AIProvider, type ChatMessage, type CompletionResult } from "./types";
 
-export const groqProvider: AIProvider = {
-  name: "groq",
+export const typhoonProvider: AIProvider = {
+  name: "typhoon",
   async complete(messages: ChatMessage[]): Promise<CompletionResult> {
-    const { apiKey, model, baseUrl } = env.ai.groq;
-    if (!apiKey) throw new Error("GROQ_API_KEY is not set");
+    const { apiKey, model, baseUrl } = env.ai.typhoon;
+    if (!apiKey) throw new Error("TYPHOON_API_KEY is not set");
 
     const res = await fetchWithTimeout(
       `${baseUrl}/chat/completions`,
@@ -17,8 +17,8 @@ export const groqProvider: AIProvider = {
           "Content-Type": "application/json",
           Authorization: `Bearer ${apiKey}`,
         },
-        // response_format json_object: Groq/Llama returns bare JSON instead of
-        // prose-wrapped or fenced text, so parseStructured/parseDocumentPatch don't fail.
+        // OpenTyphoon supports the OpenAI-compatible response_format 
+        // to guarantee JSON struct returned without prose wrapping.
         body: JSON.stringify({
           model,
           messages,
@@ -31,9 +31,9 @@ export const groqProvider: AIProvider = {
 
     const raw: any = await res.json();
     if (!res.ok) {
-      throw new Error(`Groq error ${res.status}: ${JSON.stringify(raw)}`);
+      throw new Error(`Typhoon error ${res.status}: ${JSON.stringify(raw)}`);
     }
     const text: string = raw?.choices?.[0]?.message?.content ?? "";
-    return { text, provider: "groq", raw };
+    return { text, provider: "typhoon", raw };
   },
 };

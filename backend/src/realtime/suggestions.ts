@@ -5,7 +5,7 @@
 //
 // In-memory by design: a meeting's stack is ephemeral. Persistence to the
 // `nodes`/`notifications` tables is a later task — this owns live state only.
-import type { AIBlock, AnsweredSource, SuggestionCard } from "@shared/types";
+import type { AIBlock, AnsweredSource, LiveCardDTO, SuggestionCard } from "@shared/types";
 import { newId, now } from "../lib/ids";
 
 // sessionId -> (cardId -> card)
@@ -33,6 +33,28 @@ export function createFromBlocks(sessionId: string, blocks: AIBlock[]): Suggesti
       reason: b.content,
       answered: false,
       createdAt: now(),
+    };
+    m.set(card.id, card);
+    created.push(card);
+  }
+  return created;
+}
+
+/** Turn a live_card_output's cards (schema spec §6) into stored cards. */
+export function createFromLiveCards(sessionId: string, cards: LiveCardDTO[]): SuggestionCard[] {
+  const m = sessionMap(sessionId);
+  const created: SuggestionCard[] = [];
+  for (const c of cards) {
+    const card: SuggestionCard = {
+      id: newId("sug"),
+      sessionId,
+      question: c.suggested_question?.trim() || c.title,
+      reason: c.brief_description,
+      answered: false,
+      createdAt: now(),
+      cardType: c.card_type,
+      urgency: c.urgency,
+      confidence: c.confidence,
     };
     m.set(card.id, card);
     created.push(card);

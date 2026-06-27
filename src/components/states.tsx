@@ -41,6 +41,8 @@ function SkeletonCard() {
   );
 }
 
+const APPEAR_DELAY_MS = 500;
+
 export function LoadingState({
   count = 3,
   delayMs = 1500,
@@ -52,7 +54,13 @@ export function LoadingState({
   onDone?: () => void;
   persist?: boolean;
 }) {
+  const [shown, setShown]     = useState(false);
   const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const appearTimer = setTimeout(() => setShown(true), APPEAR_DELAY_MS);
+    return () => clearTimeout(appearTimer);
+  }, []);
 
   useEffect(() => {
     if (persist) return;
@@ -65,7 +73,7 @@ export function LoadingState({
     return () => clearTimeout(t);
   }, [delayMs, onDone, persist]);
 
-  if (!visible) return null;
+  if (!visible || !shown) return null;
 
   return (
     <div style={{

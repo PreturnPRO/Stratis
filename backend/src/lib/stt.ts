@@ -14,7 +14,7 @@ export interface TranscribeResult {
 async function fetchWithTimeout(
   url: string,
   init: RequestInit,
-  timeoutMs: number
+  timeoutMs: number,
 ): Promise<Response> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -34,48 +34,68 @@ function mockTranscribe(input: TranscribeInput): TranscribeResult {
   };
 }
 
-async function deepgramTranscribe(input: TranscribeInput): Promise<TranscribeResult> {
-  const { apiKey, model, baseUrl } = env.stt.deepgram;
+async function deepgramTranscribe(
+  input: TranscribeInput,
+): Promise<TranscribeResult> {
+  const { apiKey, baseUrl, model } = env.stt.deepgram;
 
   if (!apiKey) {
     return mockTranscribe(input);
   }
 
-  const url = `${baseUrl}?model=${encodeURIComponent(model)}&smart_format=true&punctuate=true`;
-
-  const res = await fetchWithTimeout(
-    url,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Token ${apiKey}`,
-        "Content-Type": input.mimeType,
+  try {
+    const url = `${baseUrl}?model=${encodeURIComponent(model)}&smart_format=true&punctuate=true&language=th`;
+    
+    const res = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Token ${apiKey}`,
+          "Content-Type": input.mimeType,
+        },
+        body: input.audio,
       },
-      body: input.audio,
-    },
-    env.stt.timeoutMs
-  );
+      env.stt.timeoutMs,
+    );
 
-  const raw: any = await res.json();
+    const rawText = await res.text();
+    let parsedRaw: any = {};
+    
+    try {
+      parsedRaw = JSON.parse(rawText);
+    } catch (e) {
+      parsedRaw = { unparseableResponse: rawText };
+    }
 
-  if (!res.ok) {
-    throw new Error(`Deepgram error ${res.status}: ${JSON.stringify(raw)}`);
+    if (!res.ok) {
+      console.warn(`[stt] Deepgram error ${res.status}`);
+      return { provider: "deepgram", text: "", raw: { skipped: true, error: parsedRaw } };
+    }
+
+    // Safely extract Deepgram's nested transcription text
+    const text = parsedRaw?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? "";
+    return { provider: "deepgram", text, raw: parsedRaw };
+    
+  } catch (error) {
+    // Graceful fallback for any network/timeout errors to keep the meeting pipeline alive
+    console.warn(`[stt] Network or timeout error during Deepgram transcription.`);
+    return { provider: "deepgram", text: "", raw: { skipped: true, error } };
   }
-
-  const text =
-    raw?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? "";
-
-  return {
-    provider: "deepgram",
-    text,
-    raw,
-  };
 }
 
-export async function transcribeAudio(input: TranscribeInput): Promise<TranscribeResult> {
-  if (env.stt.provider === "deepgram") {
-    return deepgramTranscribe(input);
+export async function transcribeAudio(
+  input: TranscribeInput,
+): Promise<TranscribeResult> {
+  switch (env.stt.provider) {
+    case "deepgram":
+      return deepgramTranscribe(input);
+    case "mock":
+      return mockTranscribe(input);
+    default:
+      console.warn(
+        `[stt] Unknown provider ${env.stt.provider}, falling back to mock`,
+      );
+      return mockTranscribe(input);
   }
-
-  return mockTranscribe(input);
 }

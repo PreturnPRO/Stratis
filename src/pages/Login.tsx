@@ -7,48 +7,45 @@ interface Props {
   onNavigate: (page: 'landing' | 'register' | 'app') => void
 }
 
-interface LoginErrors {
-  email?: string
-  password?: string
-  form?: string
+import { API_BASE } from '../lib/api'
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-function validateLogin(email: string, password: string): LoginErrors {
-  const errors: LoginErrors = {}
+function validateLogin(email: string, password: string): string | null {
   const cleanEmail = email.trim()
 
-  if (!cleanEmail) {
-    errors.email = 'Email is required'
-  } else if (!EMAIL_RE.test(cleanEmail)) {
-    errors.email = 'Enter a valid email address'
-  }
+  if (!cleanEmail) return 'Email is required'
+  if (!isValidEmail(cleanEmail)) return 'Enter a valid email address'
+  if (!password) return 'Password is required'
 
-  if (!password) {
-    errors.password = 'Password is required'
-  }
-
-  return errors
+  return null
 }
 
 export default function Login({ onNavigate }: Props) {
   const { login } = useAuth()
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [errors, setErrors] = useState<LoginErrors>({})
+  const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async () => {
-    const nextErrors = validateLogin(email, password)
-    setErrors(nextErrors)
+    if (loading) return
 
-    if (Object.keys(nextErrors).length > 0) return
+    const validationError = validateLogin(email, password)
 
+    if (validationError) {
+      setError(validationError)
+      return
+    }
+
+    setError(null)
     setLoading(true)
 
     try {
-      const res = await fetch('http://localhost:3001/api/auth/login', {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -59,8 +56,13 @@ export default function Login({ onNavigate }: Props) {
 
       const data = await res.json()
 
-      if (!data.ok) {
-        setErrors({ form: data.error ?? 'Login failed' })
+      if (!res.ok || !data.ok) {
+        setError(data.error ?? 'Invalid email or password')
+        return
+      }
+
+      if (!data.data?.token || !data.data?.user) {
+        setError('Login response was missing user session data')
         return
       }
 
@@ -94,53 +96,83 @@ export default function Login({ onNavigate }: Props) {
           width: 360,
         }}
       >
-        <div style={{ fontSize: 11, color: COLORS.accent, letterSpacing: 2, marginBottom: 24 }}>
+        <div
+          style={{
+            fontSize: 11,
+            color: COLORS.accent,
+            letterSpacing: 2,
+            marginBottom: 24,
+          }}
+        >
           STRATIS
         </div>
 
-        <h2 style={{ color: COLORS.text, fontSize: 20, fontWeight: 500, margin: '0 0 28px' }}>
+        <h2
+          style={{
+            color: COLORS.text,
+            fontSize: 20,
+            fontWeight: 500,
+            margin: '0 0 28px',
+          }}
+        >
           Sign in
         </h2>
 
-        {errors.form && (
-          <div style={errorBoxStyle}>
-            {errors.form}
+        {error && (
+          <div
+            style={{
+              background: COLORS.redBg,
+              border: `1px solid ${COLORS.red}`,
+              borderRadius: 6,
+              padding: '8px 12px',
+              fontSize: 13,
+              color: COLORS.red,
+              marginBottom: 16,
+            }}
+          >
+            {error}
           </div>
         )}
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: 24 }}>
-          <div>
-            <input
-              type="email"
-              placeholder="Email"
-              value={email}
-              autoComplete="email"
-              onChange={(e) => {
-                setEmail(e.target.value)
-                setErrors((prev) => ({ ...prev, email: undefined, form: undefined }))
-              }}
-              style={inputStyle(!!errors.email)}
-            />
-            {errors.email && <FieldError message={errors.email} />}
-          </div>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 14,
+            marginBottom: 24,
+          }}
+        >
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value)
+              if (error) setError(null)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void handleSubmit()
+            }}
+            autoComplete="email"
+            disabled={loading}
+            style={inputStyle()}
+          />
 
-          <div>
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
-              autoComplete="current-password"
-              onChange={(e) => {
-                setPassword(e.target.value)
-                setErrors((prev) => ({ ...prev, password: undefined, form: undefined }))
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void handleSubmit()
-              }}
-              style={inputStyle(!!errors.password)}
-            />
-            {errors.password && <FieldError message={errors.password} />}
-          </div>
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value)
+              if (error) setError(null)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void handleSubmit()
+            }}
+            autoComplete="current-password"
+            disabled={loading}
+            style={inputStyle()}
+          />
         </div>
 
         <button
@@ -150,24 +182,41 @@ export default function Login({ onNavigate }: Props) {
             justifyContent: 'center',
             fontSize: 14,
             padding: '10px',
-            opacity: canSubmit ? 1 : 0.6,
-            cursor: canSubmit ? 'pointer' : 'not-allowed',
+            opacity: loading ? 0.6 : 1,
+            cursor: loading ? 'not-allowed' : 'pointer',
           }}
-          onClick={handleSubmit}
-          disabled={!canSubmit}
+          onClick={() => void handleSubmit()}
+          disabled={loading}
         >
           {loading ? 'Signing in...' : 'Sign in'}
         </button>
 
-        <div style={{ marginTop: 20, textAlign: 'center', fontSize: 13, color: COLORS.textMuted }}>
+        <div
+          style={{
+            marginTop: 20,
+            textAlign: 'center',
+            fontSize: 13,
+            color: COLORS.textMuted,
+          }}
+        >
           No account?{' '}
-          <span style={{ color: COLORS.accent, cursor: 'pointer' }} onClick={() => onNavigate('register')}>
+          <span
+            style={{ color: COLORS.accent, cursor: 'pointer' }}
+            onClick={() => !loading && onNavigate('register')}
+          >
             Register
           </span>
         </div>
 
         <div style={{ marginTop: 8, textAlign: 'center' }}>
-          <span style={{ fontSize: 12, color: COLORS.textDim, cursor: 'pointer' }} onClick={() => onNavigate('landing')}>
+          <span
+            style={{
+              fontSize: 12,
+              color: COLORS.textDim,
+              cursor: 'pointer',
+            }}
+            onClick={() => !loading && onNavigate('landing')}
+          >
             ← Back
           </span>
         </div>
@@ -176,27 +225,9 @@ export default function Login({ onNavigate }: Props) {
   )
 }
 
-function FieldError({ message }: { message: string }) {
-  return (
-    <div style={{ color: COLORS.red, fontSize: 12, marginTop: 6 }}>
-      {message}
-    </div>
-  )
-}
-
-const errorBoxStyle: CSSProperties = {
-  background: COLORS.redBg,
-  border: `1px solid ${COLORS.red}`,
-  borderRadius: 6,
-  padding: '8px 12px',
-  fontSize: 13,
-  color: COLORS.red,
-  marginBottom: 16,
-}
-
-const inputStyle = (hasError = false): CSSProperties => ({
+const inputStyle = (): React.CSSProperties => ({
   background: COLORS.bg,
-  border: `1px solid ${hasError ? COLORS.red : COLORS.border}`,
+  border: `1px solid ${COLORS.border}`,
   borderRadius: 6,
   padding: '10px 12px',
   fontSize: 14,

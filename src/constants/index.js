@@ -1,33 +1,12 @@
-export const COLORS = {
-  bg: "#0a0a0a",
-  surface: "#111111",
-  surfaceHover: "#1a1a1a",
-  border: "#222222",
-  borderLight: "#2a2a2a",
-  text: "#e8e8e8",
-  textMuted: "#666666",
-  textDim: "#444444",
-  accent: "#e8a020",
-  accentDim: "#7a4f08",
-  teal: "#1a8c6e",
-  tealLight: "#0d5c49",
-  tealBg: "#0a2e26",
-  red: "#c0392b",
-  redBg: "#2a0f0d",
-  orange: "#e8520a",
-  orangeBg: "#2a1208",
-  cyan: "#1a9fc0",
-  cyanBg: "#0a2a33",
-};
+// Palette lives in one place — see src/tokens/colors.ts. Re-exported here so the
+// many `import { COLORS } from "../constants"` call sites stay valid.
+export { COLORS } from "../tokens/colors";
 
 export const NAV_ITEMS = [
-  { id: "dashboard", icon: "⌂", label: "Dashboard" },
-  { id: "projects", icon: "⊞", label: "Projects" },
-  { id: "map",      icon: "⌥", label: "Map" },
-  { id: "meeting",  icon: "⏺", label: "Meeting" },
-  { id: "decisions",icon: "☑", label: "Decisions" },
-  { id: "inbox",    icon: "✉", label: "Inbox" },
-  { id: "settings", icon: "⚙", label: "Settings" },
+  { id: "dashboard", icon: "LayoutDashboard", label: "Dashboard" },
+  { id: "projects",  icon: "FolderKanban",    label: "Projects" },
+  { id: "meeting",   icon: "Video",            label: "Meeting" },
+  { id: "document",  icon: "FileText",         label: "Document" },
 ];
 
 export const INITIAL_NODES = [
@@ -59,14 +38,62 @@ export const PROJECTS = [
 ];
 
 export const MEETING_MESSAGES = [
-  { user: "Sarah K.", initials: "SK", color: "#c0392b", time: "00:00", text: "Okay, let's look at the Q2 numbers. We missed by 12%, and I think the root cause is clear — our enterprise pricing is misaligned with value delivery." },
-  { user: "Mike R.",  initials: "MR", color: "#2e86c1", time: "00:41", text: "I agree the miss is real, but I'm not convinced pricing is the only factor. Sales cycle lengthening and competitive pressure played a role too." },
-  { user: "Alex T.",  initials: "AT", color: "#1a7a4a", time: "01:12", text: "The data from the churn interviews is pretty clear though — 8 of 12 churned customers cited pricing as a top-3 reason. That's signal, not noise." },
-  { user: "Sarah K.", initials: "SK", color: "#c0392b", time: "01:48", text: "Exactly. So the core decision is: how do we restructure pricing? I've mapped three options on the canvas." },
-  { user: "Mike R.",  initials: "MR", color: "#2e86c1", time: "02:05", text: "Option A — seat-based with overages — feels safest. It's closest to what we have now and engineering can implement it faster." },
-  { user: "Alex T.",  initials: "AT", color: "#1a7a4a", time: "03:38", text: "But Option B, pure usage-based, is what the AI model flagged as highest-confidence. And the Intercom 2022 pattern matches — they saw 23% uplift switching to usage." },
-  { user: "Sarah K.", initials: "SK", color: "#c0392b", time: "04:00", text: "The Intercom data is compelling, but we need to validate that our SMB segment accepts metered billing. That's a big assumption." },
-  { user: "Mike R.",  initials: "MR", color: "#2e86c1", time: "04:21", text: "I'll flag that — the assumption about engineering shipping in 6 weeks is looking shaky. Mobile launch is taking more capacity than planned." },
+  {
+    user: "Sarah K.",
+    initials: "SK",
+    color: "#c0392b",
+    time: "00:00",
+    text: "Okay, let's look at the Q2 numbers. We missed by 12%, and I think the root cause is clear — our enterprise pricing is misaligned with value delivery.",
+  },
+  {
+    user: "Mike R.",
+    initials: "MR",
+    color: "#2e86c1",
+    time: "00:41",
+    text: "I agree the miss is real, but I'm not convinced pricing is the only factor. Sales cycle lengthening and competitive pressure played a role too.",
+  },
+  {
+    user: "Alex T.",
+    initials: "AT",
+    color: "#1a7a4a",
+    time: "01:12",
+    text: "The data from the churn interviews is pretty clear though — 8 of 12 churned customers cited pricing as a top-3 reason. That's signal, not noise.",
+  },
+  {
+    user: "Sarah K.",
+    initials: "SK",
+    color: "#c0392b",
+    time: "01:48",
+    text: "Exactly. So the core decision is: how do we restructure pricing? I've mapped three options on the canvas.",
+  },
+  {
+    user: "Mike R.",
+    initials: "MR",
+    color: "#2e86c1",
+    time: "02:05",
+    text: "Option A — seat-based with overages — feels safest. It's closest to what we have now and engineering can implement it faster.",
+  },
+  {
+    user: "Alex T.",
+    initials: "AT",
+    color: "#1a7a4a",
+    time: "03:38",
+    text: "But Option B, pure usage-based, is what the AI model flagged as highest-confidence. And the Intercom 2022 pattern matches — they saw 23% uplift switching to usage.",
+  },
+  {
+    user: "Sarah K.",
+    initials: "SK",
+    color: "#c0392b",
+    time: "01:48",
+    text: "The Intercom data is compelling, but we need to validate that our SMB segment accepts metered billing. That's a big assumption.",
+  },
+  {
+    user: "Mike R.",
+    initials: "MR",
+    color: "#2e86c1",
+    time: "04:21",
+    text: "I'll flag that — the assumption about engineering shipping in 6 weeks is looking shaky. Mobile launch is taking more capacity than planned.",
+  },
 ];
 
 export const DECISIONS = [
@@ -80,10 +107,58 @@ export const DECISIONS = [
 ];
 
 export const SIGNALS = [
-  { icon: "AI", iconBg: "#1a1a6a", title: "Intercom 2022 pricing switch analysis",       desc: "Intercom saw 23% revenue uplift after switching to usage-based pricing. Pattern confidence: 78%.", tag: "historical", date: "2026-07-25", unread: true },
-  { icon: "S",  iconBg: "#2c1060", title: "Slack: #pricing-discuss — churn interview notes", desc: "8 of 12 churned customers cited pricing as a top-3 reason for leaving.",                           tag: "signal",     date: "2026-05-24", unread: true },
-  { icon: "!",  iconBg: "#6a1a1a", title: "Risk flag: Engineering capacity at 95%",      desc: "Engineering team operating at 95% capacity. Mobile launch blocking pricing work.",                    tag: "risk",       date: "2026-05-23", unread: true },
-  { icon: "N",  iconBg: "#1a3a2a", title: "Notion: Product strategy doc — pricing options", desc: "Document outlines 3 pricing options with pros/cons analysis.",                                     tag: "doc",        date: "2026-07-22", unread: false },
-  { icon: "C",  iconBg: "#1a2a4a", title: "Calendar: Executive review scheduled",        desc: "Board review of pricing decision scheduled for June 10.",                                              tag: "signal",     date: "2026-07-21", unread: false },
-  { icon: "J",  iconBg: "#2a1a0a", title: "Jira: PRICE-24 — billing infrastructure",    desc: "Billing infrastructure ticket moved to In Progress. ETA: 4 weeks.",                                   tag: "signal",     date: "2026-05-28", unread: true },
+  {
+    icon: "AI",
+    iconBg: "#1a1a6a",
+    title: "Intercom 2022 pricing switch analysis",
+    desc: "Intercom saw 23% revenue uplift after switching to usage-based pricing. Pattern confidence: 78%.",
+    tag: "historical",
+    date: "2026-07-25",
+    unread: true,
+  },
+  {
+    icon: "S",
+    iconBg: "#2c1060",
+    title: "Slack: #pricing-discuss — churn interview notes",
+    desc: "8 of 12 churned customers cited pricing as a top-3 reason for leaving.",
+    tag: "signal",
+    date: "2026-05-24",
+    unread: true,
+  },
+  {
+    icon: "!",
+    iconBg: "#6a1a1a",
+    title: "Risk flag: Engineering capacity at 95%",
+    desc: "Engineering team operating at 95% capacity. Mobile launch blocking pricing work.",
+    tag: "risk",
+    date: "2026-05-23",
+    unread: true,
+  },
+  {
+    icon: "N",
+    iconBg: "#1a3a2a",
+    title: "Notion: Product strategy doc — pricing options",
+    desc: "Document outlines 3 pricing options with pros/cons analysis.",
+    tag: "doc",
+    date: "2026-07-22",
+    unread: false,
+  },
+  {
+    icon: "C",
+    iconBg: "#1a2a4a",
+    title: "Calendar: Executive review scheduled",
+    desc: "Board review of pricing decision scheduled for June 10.",
+    tag: "signal",
+    date: "2026-07-21",
+    unread: false,
+  },
+  {
+    icon: "J",
+    iconBg: "#2a1a0a",
+    title: "Jira: PRICE-24 — billing infrastructure",
+    desc: "Billing infrastructure ticket moved to In Progress. ETA: 4 weeks.",
+    tag: "signal",
+    date: "2026-05-28",
+    unread: true,
+  },
 ];

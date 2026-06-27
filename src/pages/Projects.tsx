@@ -1,60 +1,194 @@
-import { COLORS, PROJECTS } from "../constants";
-import { btnAccent, btnGhost } from "../components/ui";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { COLORS, RADIUS } from "../tokens/colors";
+import { Button, Modal } from "../components/ui";
+import { useAuth } from "../context/AuthContext";
+import { API_BASE } from "../lib/api";
 
-export default function Projects() {
+interface Props {
+  onNav?: (id: string, params?: Record<string, string>) => void;
+}
+
+interface Project {
+  id: string;
+  name: string;
+  meetingCount: number;
+  lastMeetingAt?: string | null;
+}
+
+function formatDate(value?: string | null): string {
+  if (!value) return "No meetings yet";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(d);
+}
+
+// Stable-ish dot color derived from the project name.
+const DOT_COLORS = [COLORS.accent, COLORS.teal, COLORS.cyan, COLORS.orange, COLORS.red];
+function colorFor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return DOT_COLORS[Math.abs(hash) % DOT_COLORS.length];
+}
+
+export default function Projects({ onNav }: Props) {
+  const { token, user } = useAuth();
+
+  const authHeaders = useMemo(
+    (): Record<string, string> => (token ? { Authorization: `Bearer ${token}` } : {}),
+    [token],
+  );
+
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [showNew, setShowNew] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/meeting/projects`, { headers: authHeaders });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setError(data.error ?? "Could not load projects");
+        return;
+      }
+      setProjects(data.data?.projects ?? []);
+    } catch {
+      setError("Could not reach the server");
+    } finally {
+      setLoading(false);
+    }
+  }, [token, authHeaders]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const handleCreate = async () => {
+    const name = newName.trim();
+    if (!name) return;
+    setCreating(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/meeting/projects`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setError(data.error ?? "Could not create project");
+        return;
+      }
+      setShowNew(false);
+      setNewName("");
+      await load();
+    } catch {
+      setError("Could not reach the server");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const owner = user?.name ?? "You";
+
   return (
     <div style={{ padding: "40px 60px", overflowY: "auto", flex: 1 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 32 }}>
-        <h1 style={{ color: COLORS.text, fontSize: 22, fontWeight: 500, margin: 0 }}>All projects</h1>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button style={btnGhost()}>⚌</button>
-          <button style={btnAccent()}>+ New project</button>
+        <h1 style={{ color: COLORS.text, fontSize: 22, fontWeight: 600, margin: 0 }}>All projects</h1>
+        <Button variant="primary" onClick={() => setShowNew(true)}>+ New project</Button>
+      </div>
+
+      {error && (
+        <div style={{
+          background: COLORS.redBg, border: `1px solid ${COLORS.red}`, color: COLORS.red,
+          borderRadius: RADIUS.md, padding: "10px 14px", fontSize: 13, marginBottom: 18,
+        }}>
+          {error}
         </div>
-      </div>
+      )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        {PROJECTS.map((p) => (
-          <div
-            key={p.id}
+      {loading ? (
+        <p style={{ color: COLORS.textMuted, fontSize: 13 }}>Loading projects…</p>
+      ) : projects.length === 0 ? (
+        <div style={{
+          border: `1px dashed ${COLORS.border}`, borderRadius: RADIUS.lg, padding: "48px 24px",
+          textAlign: "center", color: COLORS.textMuted, fontSize: 14,
+        }}>
+          No projects yet. Create one, or start a meeting from the dashboard.
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
+          {projects.map((p) => {
+            const dot = colorFor(p.name);
+            return (
+              <button
+                key={p.id}
+                onClick={() => onNav?.("document", { projectId: p.id })}
+                style={{
+                  background: COLORS.surface,
+                  border: `1px solid ${COLORS.border}`,
+                  borderRadius: RADIUS.lg,
+                  padding: "20px 22px",
+                  textAlign: "left",
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: dot, flexShrink: 0 }} />
+                    <span style={{ color: COLORS.text, fontWeight: 600, fontSize: 15 }}>{p.name}</span>
+                  </div>
+                  <span style={{ color: COLORS.textMuted, fontSize: 13 }}>↗</span>
+                </div>
+
+                <div style={{ color: COLORS.textMuted, fontSize: 13, marginBottom: 12, paddingLeft: 16 }}>
+                  {owner}
+                </div>
+
+                <div style={{ display: "flex", gap: 16, paddingLeft: 16, fontSize: 12, color: COLORS.textMuted }}>
+                  <span><span style={{ color: COLORS.text }}>{p.meetingCount}</span> meeting{p.meetingCount === 1 ? "" : "s"}</span>
+                  <span style={{ color: COLORS.textDim }}>Last: {formatDate(p.lastMeetingAt)}</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {showNew && (
+        <Modal
+          title="New project"
+          width={420}
+          onClose={() => !creating && setShowNew(false)}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setShowNew(false)} disabled={creating}>Cancel</Button>
+              <Button variant="primary" onClick={() => void handleCreate()} disabled={creating || !newName.trim()}>
+                {creating ? "Creating…" : "Create project"}
+              </Button>
+            </>
+          }
+        >
+          <label style={{ color: COLORS.textDim, fontSize: 11, letterSpacing: 0.3, display: "block", marginBottom: 6 }}>
+            Project name
+          </label>
+          <input
+            autoFocus
             style={{
-              background: COLORS.surface,
-              border: `1px solid ${COLORS.border}`,
-              borderRadius: 10,
-              padding: "20px 22px",
-              cursor: "pointer",
-              transition: "border-color 0.15s",
+              width: "100%", background: COLORS.bg, border: `1px solid ${COLORS.border}`,
+              color: COLORS.text, borderRadius: RADIUS.sm, padding: "10px 12px", fontSize: 14, outline: "none",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.borderColor = COLORS.borderLight)}
-            onMouseLeave={(e) => (e.currentTarget.style.borderColor = COLORS.border)}
-          >
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 6 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ width: 8, height: 8, borderRadius: "50%", background: p.color, marginTop: 2 }} />
-                <span style={{ color: COLORS.text, fontWeight: 500, fontSize: 15 }}>{p.name}</span>
-              </div>
-              <span style={{ color: COLORS.textMuted, fontSize: 13 }}>↗</span>
-            </div>
-
-            <div style={{ color: COLORS.textMuted, fontSize: 13, marginBottom: 10, paddingLeft: 16 }}>
-              {p.owner} · {p.status}
-            </div>
-
-            <div style={{ display: "flex", gap: 16, paddingLeft: 16, marginBottom: 12 }}>
-              {[["decisions", p.decisions], ["assumptions", p.assumptions], ["risks", p.risks]].map(([k, v]) => (
-                <span key={k} style={{ color: COLORS.textMuted, fontSize: 12 }}>
-                  <span style={{ color: COLORS.textDim }}>{v}</span> {k}
-                </span>
-              ))}
-            </div>
-
-            {p.last && (
-              <div style={{ paddingLeft: 16, fontSize: 12, color: COLORS.cyan }}>
-                Last: {p.last}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") void handleCreate(); }}
+            placeholder="e.g. Pricing v2"
+          />
+        </Modal>
+      )}
     </div>
   );
 }

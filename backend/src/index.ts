@@ -41,7 +41,8 @@ app.use(errorHandler);
 const server = createServer(app);
 attachHub(server);
 
-server.listen(env.port, () => {
-  console.log(`[stratis] backend listening on http://localhost:${env.port} (${env.nodeEnv})`);
-  console.log(`[stratis] websocket hub on ws://localhost:${env.port}/ws`);
+
+server.listen(env.port, "0.0.0.0", () => {
+  console.log(`[stratis] backend listening on port ${env.port} (${env.nodeEnv})`);
+  console.log(`[stratis] websocket hub on ws://0.0.0.0:${env.port}/ws`);
 });

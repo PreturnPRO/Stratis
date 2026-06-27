@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { COLORS } from '../tokens/colors'
+import type { LiveCardType, LiveCardUrgency } from '../../shared/types'
 
 export type CardStatus = 'active' | 'answered'
 
@@ -8,7 +9,22 @@ export interface SuggestionCard {
   question: string
   reason: string
   status: CardStatus
-  type?: 'suggestion' | 'drift'
+  cardType?: LiveCardType
+  urgency?: LiveCardUrgency
+}
+
+// Card-type accent + label (schema spec §6.2). Colors pulled from the theme.
+const TYPE_META: Record<LiveCardType, { color: string; label: string }> = {
+  QUESTION_SUGGESTION: { color: COLORS.accent, label: 'Question' },
+  DRIFT_ALERT: { color: COLORS.orange, label: 'Drift' },
+  MISSING_DECISION: { color: COLORS.cyan, label: 'Missing decision' },
+  UNRESOLVED_ASSUMPTION: { color: COLORS.teal, label: 'Assumption' },
+}
+
+const URGENCY_COLOR: Record<LiveCardUrgency, string> = {
+  LOW: COLORS.textMuted,
+  MEDIUM: COLORS.amber,
+  HIGH: COLORS.red,
 }
 
 interface Props {
@@ -76,14 +92,34 @@ function ActiveCard({
   card: SuggestionCard
   onMarkAnswered: () => void
 }) {
-  const isDrift = card.type === 'drift'
+  const meta = card.cardType ? TYPE_META[card.cardType] : null
+  const accent = meta?.color ?? COLORS.accent
 
   return (
     <div style={{
       ...styles.card,
-      borderLeft: `3px solid ${isDrift ? COLORS.amber : COLORS.accent}`,
-      background: isDrift ? COLORS.amberSubtle : COLORS.surface,
+      borderLeft: `3px solid ${accent}`,
+      background: COLORS.surface,
     }}>
+      {meta && (
+        <div style={styles.tagRow}>
+          <span style={styles.tag}>
+            <span style={{ ...styles.dot, background: accent }} />
+            <span style={{ ...styles.tagLabel, color: accent }}>{meta.label}</span>
+          </span>
+          {card.urgency && (
+            <span
+              style={{
+                ...styles.urgency,
+                color: URGENCY_COLOR[card.urgency],
+                background: `${URGENCY_COLOR[card.urgency]}1f`,
+              }}
+            >
+              {card.urgency.toLowerCase()}
+            </span>
+          )}
+        </div>
+      )}
       <p style={styles.question}>{card.question}</p>
       <p style={styles.reason}>{card.reason}</p>
       <button style={styles.answerBtn} onClick={onMarkAnswered}>
@@ -127,12 +163,45 @@ const styles: Record<string, React.CSSProperties> = {
     animation: 'slideUp 0.3s ease forwards',
   },
   card: {
-    borderRadius: 10,
+    borderRadius: 12,
     padding: '12px 14px',
     display: 'flex',
     flexDirection: 'column',
     gap: 6,
-    boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+    border: `1px solid ${COLORS.border}`,
+    boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
+    animation: 'cardIn 0.22s ease',
+  },
+  tagRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  tag: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 5,
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: '50%',
+    display: 'inline-block',
+  },
+  tagLabel: {
+    fontSize: 10,
+    fontWeight: 700,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  urgency: {
+    fontSize: 9,
+    fontWeight: 700,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    padding: '2px 7px',
+    borderRadius: 999,
   },
   question: {
     margin: 0,

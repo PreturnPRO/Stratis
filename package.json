@@ -1,5 +1,5 @@
 {
-  "name": "kimi-strategy-app",
+  "name": "Stratis",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -9,10 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "lucide-react": "^1.21.0",
+    "pg": "^8.22.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@types/pg": "^8.20.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.2.0",

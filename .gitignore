@@ -22,9 +22,10 @@ data/
 *.db-shm
 *.db-wal
 
-# IDE
+# IDE / local tooling
 .vscode/
 .idea/
+.claude/
 *.swp
 *.swo
 

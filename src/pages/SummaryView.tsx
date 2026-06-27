@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { COLORS } from '../tokens/colors';
 import { NodeBadge as _NodeBadge } from '../components/NodeTypes';
-import { MOCK_SUMMARY, MOCK_SUMMARIES_MAP, ParticipantSummaryOutput, SummaryBlock, ActionItem } from '../mocks/summaryMock';
+import { ParticipantSummaryOutput, SummaryBlock, ActionItem } from '../mocks/summaryMock';
+import { useAuth } from '../context/AuthContext';
 
-
+import { API_BASE } from '../lib/api';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type UserRole = 'facilitator' | 'participant';
@@ -269,18 +270,82 @@ const ActionItemsSection: React.FC<{ items: ActionItem[] }> = ({ items }) => (
 // ─── SummaryView (main) ───────────────────────────────────────────────────────
 
 const SummaryView: React.FC<SummaryViewProps> = ({
-  sessionId: _sessionId,
+  sessionId,
   role = 'participant',
   autoSendCountdownSeconds = 300,
 }) => {
-  // Wire-up point: swap MOCK_SUMMARY for live fetch when GET /api/summary/:sessionId is ready
-  const [summary] = useState<ParticipantSummaryOutput>(
-    (_sessionId && MOCK_SUMMARIES_MAP[_sessionId]) ? MOCK_SUMMARIES_MAP[_sessionId] : MOCK_SUMMARY
-  );
+  const { token } = useAuth();
+
+  const [summary, setSummary] = useState<ParticipantSummaryOutput | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [countdown, setCountdown] = useState(autoSendCountdownSeconds);
   const [sent, setSent] = useState(false);
 
   const isFacilitator = role === 'facilitator';
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSummary() {
+      if (!sessionId) {
+        setError('Missing session ID for summary');
+        setLoading(false);
+        return;
+      }
+
+      if (!token) {
+        setError('You must be signed in to view this summary');
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const res = await fetch(`${API_BASE}/api/summary/${sessionId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        const data: {
+          ok: boolean;
+          error?: string;
+          data?: {
+            summary: ParticipantSummaryOutput;
+            provider?: string;
+            transcriptCount?: number;
+          };
+        } = await res.json();
+
+        if (cancelled) return;
+
+        if (!res.ok || !data.ok || !data.data?.summary) {
+          setError(data.error ?? 'Could not load summary');
+          return;
+        }
+
+        setSummary(data.data.summary);
+      } catch {
+        if (!cancelled) {
+          setError('Could not reach summary endpoint');
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadSummary();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, token]);
 
   useEffect(() => {
     if (!isFacilitator || sent) return;
@@ -288,9 +353,64 @@ const SummaryView: React.FC<SummaryViewProps> = ({
       setSent(true);
       return;
     }
-    const t = setTimeout(() => setCountdown(c => c - 1), 1000);
+
+    const t = setTimeout(() => setCountdown(s => s - 1), 1000);
     return () => clearTimeout(t);
   }, [countdown, isFacilitator, sent]);
+
+  if (loading) {
+    return (
+      <div
+        style={{
+          background: COLORS.bg,
+          minHeight: '100vh',
+          padding: '32px 24px',
+          color: COLORS.textMuted,
+          fontFamily: 'inherit',
+        }}
+      >
+        <div style={{ maxWidth: 720, margin: '0 auto' }}>
+          Generating summary from meeting transcript...
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div
+        style={{
+          background: COLORS.bg,
+          minHeight: '100vh',
+          padding: '32px 24px',
+          color: COLORS.red,
+          fontFamily: 'inherit',
+        }}
+      >
+        <div style={{ maxWidth: 720, margin: '0 auto' }}>
+          {error}
+        </div>
+      </div>
+    );
+  }
+
+  if (!summary) {
+    return (
+      <div
+        style={{
+          background: COLORS.bg,
+          minHeight: '100vh',
+          padding: '32px 24px',
+          color: COLORS.textMuted,
+          fontFamily: 'inherit',
+        }}
+      >
+        <div style={{ maxWidth: 720, margin: '0 auto' }}>
+          No summary available.
+        </div>
+      </div>
+    );
+  }
 
   const visibleBlocks = summary.summary_blocks.filter(
     b => b.block_type !== 'ACTION_ITEMS' && (isFacilitator || b.visible_to_participants)

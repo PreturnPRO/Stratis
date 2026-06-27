@@ -31,12 +31,8 @@ export const env = {
   jwtSecret: process.env.JWT_SECRET ?? "dev-insecure-secret-change-me",
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "7d",
 
-  // AI provider (S1-T03-B). Free + self-trainable options:
-  //   groq   → free hosted Llama 3.3 70B (needs GROQ_API_KEY)
-  //   ollama → fully local + fine-tunable open model (run Ollama, no key)
-  //   mock   → deterministic offline stub (no network). Auto-used if groq has no key.
   ai: {
-    provider: (process.env.AI_PROVIDER ?? "groq") as "groq" | "ollama" | "mock",
+    provider: (process.env.AI_PROVIDER ?? "groq") as "groq" | "ollama" | "mock" | "typhoon",
     timeoutMs: Number(process.env.AI_TIMEOUT_MS ?? 10000),
     groq: {
       apiKey: process.env.GROQ_API_KEY ?? "",
@@ -47,20 +43,20 @@ export const env = {
       baseUrl: process.env.OLLAMA_BASE_URL ?? "http://localhost:11434",
       model: process.env.OLLAMA_MODEL ?? "llama3.1",
     },
+    typhoon: {
+      apiKey: process.env.TYPHOON_API_KEY ?? "",
+      model: "typhoon-v1.5x-70b-instruct",
+      baseUrl: "https://api.opentyphoon.ai/v1",
+    }
   },
+
   stt: {
     provider: (process.env.STT_PROVIDER ?? "mock") as "deepgram" | "mock",
     timeoutMs: Number(process.env.STT_TIMEOUT_MS ?? 15000),
     deepgram: {
       apiKey: process.env.DEEPGRAM_API_KEY ?? "",
-      model: process.env.DEEPGRAM_MODEL ?? "nova-2",
+      model: process.env.DEEPGRAM_MODEL ?? "nova-3",
       baseUrl: "https://api.deepgram.com/v1/listen",
     },
   },
-
-  // NOTE: speech-to-text config (S1-T04) is added later.
-
-  repoRoot,
 };
-
-export type Env = typeof env;
