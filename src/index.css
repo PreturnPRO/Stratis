@@ -133,6 +133,72 @@ input:focus-visible, textarea:focus-visible {
   }
 }
 
+/* ── Landing hero (animated grid + drifting amber glow) ───────────────────── */
+
+.landing-hero {
+  position: relative;
+  min-height: 100vh;
+  overflow: hidden;
+  background: #09090b;
+}
+
+.landing-grid {
+  position: absolute;
+  inset: -2px;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 46px 46px;
+  animation: gridDrift 7s linear infinite;
+}
+
+@keyframes gridDrift {
+  from { background-position: 0 0, 0 0; }
+  to   { background-position: 46px 46px, 46px 46px; }
+}
+
+.landing-glow {
+  position: absolute;
+  top: 28%;
+  left: 50%;
+  width: 920px;
+  height: 920px;
+  max-width: 130vw;
+  background: radial-gradient(circle,
+    rgba(245, 166, 35, 0.20) 0%,
+    rgba(245, 166, 35, 0.07) 32%,
+    transparent 62%);
+  filter: blur(14px);
+  pointer-events: none;
+  animation: glowDrift 16s ease-in-out infinite alternate;
+}
+
+@keyframes glowDrift {
+  0%   { transform: translate(-60%, -55%) scale(1); }
+  50%  { transform: translate(-42%, -46%) scale(1.16); }
+  100% { transform: translate(-56%, -50%) scale(1.04); }
+}
+
+/* Vignette so the grid fades toward the edges and the headline stays legible */
+.landing-fade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 34%,
+    transparent 28%,
+    rgba(9, 9, 11, 0.62) 72%,
+    #09090b 100%);
+}
+
+.scroll-cue {
+  animation: scrollBounce 1.8s ease-in-out infinite;
+}
+
+@keyframes scrollBounce {
+  0%, 100% { transform: translateY(0); opacity: 0.55; }
+  50%      { transform: translateY(7px); opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;

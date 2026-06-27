@@ -21,7 +21,7 @@ import { SuggestionCardStack } from "../components/SuggestionCardStack";
 import BlockRenderer from "../components/BlockRenderer";
 import { useAiBlocks } from "../hooks/useAiBlocks";
 import { useSuggestionSocket } from "../hooks/useSuggestionSocket";
-/* import { useMediaRecorder } from "../hooks/useMediaRecorder"; */
+import { useMediaRecorder } from "../hooks/useMediaRecorder";
 import { useAuth } from "../context/AuthContext";
 import { useSessionRecovery } from "../hooks/useSessionRecovery";
 import type { AIBlock } from "../../shared/types";
@@ -29,7 +29,6 @@ import type { AIBlock } from "../../shared/types";
 import { API_BASE } from "../lib/api";
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 
-/*
 const MIN_AUDIO_CHUNK_BYTES = 2048;
 
 function getPreferredRecorderMimeType(): string | undefined {
@@ -45,7 +44,6 @@ function getPreferredRecorderMimeType(): string | undefined {
 }
 
 const RECORDER_MIME_TYPE = getPreferredRecorderMimeType();
-*/
 
 interface MeetingProps {
   onNav?: (id: string, params?: Record<string, string>) => void;
@@ -106,7 +104,6 @@ function formatElapsed(totalSeconds: number): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 }
 
-/*
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   const chunkSize = 0x8000;
@@ -119,7 +116,6 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 
   return window.btoa(binary);
 }
-*/
 
 // Pulsing red dot used in the recording chip.
 function RecDot() {
@@ -185,11 +181,6 @@ export default function Meeting({ onNav }: MeetingProps) {
   const [ending, setEnding] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
 
-  // Web Speech API Native Recoding State
-  const [isRecording, setIsRecording] = useState(false);
-  const isRecordingRef = useRef(false);
-  const recognitionRef = useRef<any>(null);
-
   // Planned meeting length (minutes) chosen at creation, stored per session.
   const [durationMin, setDurationMin] = useState<number | null>(null);
   const [wrapUpDismissed, setWrapUpDismissed] = useState(false);
@@ -215,7 +206,6 @@ export default function Meeting({ onNav }: MeetingProps) {
     });
   }, []);
 
-  /* // --- OLD AUDIO CHUNKING LOGIC ---
   const sendAudioChunk = useCallback(
     async (blob: Blob) => {
       if (!token || !sessionId) return;
@@ -299,131 +289,6 @@ export default function Meeting({ onNav }: MeetingProps) {
     chunkIntervalMs: 8000,
     mimeType: RECORDER_MIME_TYPE,
   });
-  */
-
-  // --- NEW WEB SPEECH API TEXT CHUNKING LOGIC ---
-  const sendTextChunk = useCallback(async (text: string) => {
-    if (!token || !sessionId || !text.trim()) return;
-
-    setSendingChunk(true);
-    setError(null);
-
-    try {
-      const res = await fetch(`${API_BASE}/api/transcript/chunk`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...authHeaders,
-        },
-        body: JSON.stringify({
-          sessionId,
-          session_id: sessionId,
-          speaker: user?.name ?? "Facilitator",
-          text
-        }),
-      });
-
-      const data = await res.json();
-      if (!data.ok) {
-        setError(data.error ?? "Text chunk failed");
-        return;
-      }
-
-      if (data.data?.transcript) {
-        appendTranscript(data.data.transcript);
-      }
-
-      if (data.data?.ai?.blocks?.length) {
-        ai.append(data.data.ai.blocks, data.data.ai.provider);
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not send text chunk");
-    } finally {
-      setSendingChunk(false);
-    }
-  }, [token, sessionId, authHeaders, user?.name, appendTranscript, ai]);
-
-  // Initialise the Web Speech API engine exactly once on mount.
-  // No dependency on sendTextChunk — handlers are re-wired via refs so the
-  // engine instance is never recreated (eliminates the memory leak caused by
-  // re-running this effect every time sendTextChunk changed).
-  const sendTextChunkRef = useRef(sendTextChunk);
-  useEffect(() => { sendTextChunkRef.current = sendTextChunk; }, [sendTextChunk]);
-
-  useEffect(() => {
-    const SpeechRecognitionEngine =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognitionEngine) {
-      setError("Your browser does not support the Web Speech API.");
-      return;
-    }
-
-    const recognition = new SpeechRecognitionEngine();
-    recognition.continuous = true;
-    recognition.interimResults = false;
-    recognition.lang = "th-TH";
-
-    // Call through the ref so this handler always uses the latest
-    // sendTextChunk without needing the effect to re-run.
-    recognition.onresult = (event: any) => {
-      const last = event.results.length - 1;
-      const text = event.results[last][0].transcript;
-      if (text) sendTextChunkRef.current(text);
-    };
-
-    // Auto-restart after silence timeouts while the meeting is still active.
-    recognition.onend = () => {
-      if (isRecordingRef.current) {
-        try {
-          recognition.start();
-        } catch (e) {
-          console.warn("[speech] restart collision — already running", e);
-        }
-      }
-    };
-
-    recognition.onerror = (event: any) => {
-      // 'aborted' and 'no-speech' are normal silence-timeout events;
-      // onend fires next and restarts the engine automatically.
-      const expected = new Set(["aborted", "no-speech"]);
-      if (!expected.has(event.error)) {
-        console.warn("[speech] unexpected error:", event.error);
-        setError(`Microphone error: ${event.error}`);
-      }
-    };
-
-    recognitionRef.current = recognition;
-
-    // Cleanup: stop the engine when the component unmounts.
-    // Do NOT call .stop() mid-session — stopListening() handles that.
-    return () => {
-      isRecordingRef.current = false;
-      recognition.onend = null; // prevent auto-restart during teardown
-      recognition.stop();
-    };
-  }, []); // empty deps — one instance for the lifetime of the component
-
-  const startListening = () => {
-    if (!recognitionRef.current) return;
-    setIsRecording(true);
-    isRecordingRef.current = true;
-    try {
-      recognitionRef.current.start();
-    } catch (e) {
-      // Engine may already be running if onend restarted it just before the
-      // user clicked; safe to ignore.
-      console.warn("[speech] start collision — already running", e);
-    }
-  };
-
-  const stopListening = () => {
-    if (!recognitionRef.current) return;
-    // Clear flag BEFORE .stop() so the onend guard does not restart.
-    setIsRecording(false);
-    isRecordingRef.current = false;
-    recognitionRef.current.stop();
-  };
 
   const loadTranscript = useCallback(async () => {
     if (!token || !sessionId) return;
@@ -512,8 +377,7 @@ export default function Meeting({ onNav }: MeetingProps) {
   const handleEndMeeting = async () => {
     if (!token || !sessionId) return;
 
-    // recorder.stop();
-    stopListening();
+    recorder.stop();
     setEnding(true);
     setError(null);
 
@@ -541,6 +405,7 @@ export default function Meeting({ onNav }: MeetingProps) {
     }
   };
 
+  const isRecording = recorder.status === "recording";
   const canRecord = !!sessionId && !!token && !ending;
   const elapsed =
     sessionId && startMs != null
@@ -690,7 +555,7 @@ export default function Meeting({ onNav }: MeetingProps) {
             {!isRecording ? (
               <Button
                 variant="primary"
-                onClick={startListening}
+                onClick={() => void recorder.start()}
                 disabled={!canRecord}
                 iconLeft={<Mic size={15} strokeWidth={2} />}
               >
@@ -699,7 +564,7 @@ export default function Meeting({ onNav }: MeetingProps) {
             ) : (
               <Button
                 variant="danger"
-                onClick={stopListening}
+                onClick={recorder.stop}
                 iconLeft={<Square size={13} strokeWidth={2.5} />}
               >
                 Stop mic
@@ -730,7 +595,6 @@ export default function Meeting({ onNav }: MeetingProps) {
           </div>
         )}
 
-        {/* recorder error fallback commented out
         {recorder.error && (
           <div
             style={{
@@ -744,7 +608,6 @@ export default function Meeting({ onNav }: MeetingProps) {
             {recorder.error}
           </div>
         )}
-        */}
 
         {inWrapUp && !wrapUpDismissed && (
           <div

@@ -272,7 +272,7 @@ documentRouter.post("/session/:sessionId/commit", requireAuth, async (req, res, 
     // Surface on the dashboard recent-summaries feed (kind='summary').
     await db.query(
       `INSERT INTO notifications (id, user_id, session_id, kind, title, body, read, created_at)
-       VALUES ($1, $2, $3, 'summary', $4, $5, FALSE, $6)`,
+       VALUES ($1, $2, $3, 'summary', $4, $5, 0, $6)`,
       [
         newId("ntf"),
         req.auth!.sub,
@@ -356,58 +356,71 @@ documentRouter.delete("/:projectId", requireAuth, async (req, res, next) => {
   }
 });
 
+/** GET /api/document/:projectId/version/:version — a historical version's full state. */
+documentRouter.get("/:projectId/version/:version", requireAuth, async (req, res, next) => {
+  try {
+    const row = await getDocumentRow(req.auth!.orgId, req.params.projectId);
+    if (!row) return res.status(404).json({ ok: false, error: "No document for this project" });
+
+    const versionNum = Number(req.params.version);
+    const vres = await db.query<{ state_json: string | any; version: number; created_at: string }>(
+      `SELECT state_json, version, created_at FROM document_versions WHERE document_id = $1 AND version = $2`,
+      [row.id, versionNum],
+    );
+    const v = vres.rows[0];
+    if (!v) return res.status(404).json({ ok: false, error: "Version not found" });
+
+    const state = typeof v.state_json === "string" ? JSON.parse(v.state_json) : v.state_json;
+    res.json({ ok: true, data: { version: v.version, state, createdAt: v.created_at } });
+  } catch (err) {
+    next(err);
+  }
+});
+
 /**
- * POST /api/document/:projectId/restore — facilitator reverts the document to a
- * past version. Git-style: writes the old state as a NEW version, keeping history.
- * body: { version: number }
+ * POST /api/document/:projectId/restore { version }
+ * Facilitator rolls the document back to a past version. Non-destructive: it
+ * commits the chosen version's content as a NEW version, so history is preserved.
  */
 documentRouter.post("/:projectId/restore", requireAuth, async (req, res, next) => {
   try {
     if (req.auth!.role === "participant") {
-      return res.status(403).json({ ok: false, error: "Only a facilitator can restore a version" });
+      return res.status(403).json({ ok: false, error: "Only a facilitator can change the document version" });
     }
 
     const targetVersion = Number(req.body?.version);
-    if (!Number.isInteger(targetVersion) || targetVersion < 1) {
-      return res.status(400).json({ ok: false, error: "Invalid version" });
+    if (!Number.isFinite(targetVersion)) {
+      return res.status(400).json({ ok: false, error: "body.version (number) is required" });
     }
 
     const row = await getDocumentRow(req.auth!.orgId, req.params.projectId);
     if (!row) return res.status(404).json({ ok: false, error: "No document for this project" });
 
-    const verResult = await db.query<{ state_json: string | any }>(
+    const vres = await db.query<{ state_json: string | any }>(
       `SELECT state_json FROM document_versions WHERE document_id = $1 AND version = $2`,
-      [row.id, targetVersion]
+      [row.id, targetVersion],
     );
-    const ver = verResult.rows[0];
-    if (!ver) return res.status(404).json({ ok: false, error: "Version not found" });
+    const v = vres.rows[0];
+    if (!v) return res.status(404).json({ ok: false, error: "Version not found" });
 
-    const restoredState =
-      typeof ver.state_json === "string" ? ver.state_json : JSON.stringify(ver.state_json);
+    const stateObj = typeof v.state_json === "string" ? JSON.parse(v.state_json) : v.state_json;
+    const stateJson = JSON.stringify(stateObj);
     const nextVersion = row.version + 1;
-    const timestamp = now();
-    const summary = `Restored content from v${targetVersion}`;
+    const ts = now();
+    const summary = `Restored from v${targetVersion}`;
 
     await db.query(
       `UPDATE documents SET state_json = $1, version = $2, updated_at = $3 WHERE id = $4`,
-      [restoredState, nextVersion, timestamp, row.id]
+      [stateJson, nextVersion, ts, row.id],
     );
     await db.query(
       `INSERT INTO document_versions (id, document_id, session_id, version, state_json, patch_json, created_by, created_at)
-       VALUES ($1, $2, NULL, $3, $4, $5, $6, $7)`,
-      [
-        newId("dver"),
-        row.id,
-        nextVersion,
-        restoredState,
-        JSON.stringify({ overall_change_summary: summary, patches: [] }),
-        req.auth!.sub,
-        timestamp,
-      ]
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [newId("dver"), row.id, null, nextVersion, stateJson, JSON.stringify({ overall_change_summary: summary }), req.auth!.sub, ts],
     );
 
     const updated = await getDocumentRow(req.auth!.orgId, req.params.projectId);
-    const versions = await getVersions(row.id);
+    const versions = await getVersions(updated!.id);
     res.json({ ok: true, data: { document: rowToDocument(updated!), versions } });
   } catch (err) {
     next(err);
