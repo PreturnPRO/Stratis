@@ -1,16 +1,3 @@
-// S1-T03-D/E: wires AI pipeline to BlockRenderer + suggestion card stack.
-//
-// E2E: user types → POST /api/ai/structure → validated blocks → BlockRenderer.
-//
-// S1-T03-E: a second call, POST /api/ai/suggest (facilitator-only), turns any
-// QuestionSuggestion blocks into cards on the server and pushes them over
-// /ws to the facilitator's stack — never to BlockRenderer / the transcript
-// panel, and never to participants. A third call, POST /api/ai/suggest/scan,
-// runs auto-detect: if this chunk answers an already-open card, the server
-// strikes it through over the same socket.
-//
-// S1-T04-C will replace manual input with live STT chunks (stub is here).
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Mic, Square, RotateCw } from "lucide-react";
 import { COLORS } from "../constants";
@@ -21,31 +8,12 @@ import { SuggestionCardStack } from "../components/SuggestionCardStack";
 import BlockRenderer from "../components/BlockRenderer";
 import { useAiBlocks } from "../hooks/useAiBlocks";
 import { useSuggestionSocket } from "../hooks/useSuggestionSocket";
-/* import { useMediaRecorder } from "../hooks/useMediaRecorder"; */
 import { useAuth } from "../context/AuthContext";
 import { useSessionRecovery } from "../hooks/useSessionRecovery";
 import type { AIBlock } from "../../shared/types";
 
 import { API_BASE } from "../lib/api";
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
-
-/*
-const MIN_AUDIO_CHUNK_BYTES = 2048;
-
-function getPreferredRecorderMimeType(): string | undefined {
-  if (typeof MediaRecorder === "undefined") return undefined;
-
-  const candidates = [
-    "audio/webm;codecs=opus",
-    "audio/webm",
-    "audio/ogg;codecs=opus",
-  ];
-
-  return candidates.find((type) => MediaRecorder.isTypeSupported(type));
-}
-
-const RECORDER_MIME_TYPE = getPreferredRecorderMimeType();
-*/
 
 interface MeetingProps {
   onNav?: (id: string, params?: Record<string, string>) => void;
@@ -57,23 +25,6 @@ interface TranscriptRow {
   speaker: string;
   text: string;
   timestamp: string;
-}
-
-interface AudioChunkResponse {
-  ok: boolean;
-  error?: string;
-  data?: {
-    transcript?: TranscriptRow;
-    stt?: {
-      provider: string;
-      text: string;
-    };
-    ai?: {
-      provider: string;
-      blocks: AIBlock[];
-    };
-    answered?: string[];
-  };
 }
 
 function isRealSessionId(value: string | null | undefined): value is string {
@@ -105,21 +56,6 @@ function formatElapsed(totalSeconds: number): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 }
-
-/*
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  let binary = "";
-
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-
-  return window.btoa(binary);
-}
-*/
 
 // Pulsing red dot used in the recording chip.
 function RecDot() {
@@ -190,12 +126,8 @@ export default function Meeting({ onNav }: MeetingProps) {
   const isRecordingRef = useRef(false);
   const recognitionRef = useRef<any>(null);
 
-  // Planned meeting length (minutes) chosen at creation, stored per session.
   const [durationMin, setDurationMin] = useState<number | null>(null);
   const [wrapUpDismissed, setWrapUpDismissed] = useState(false);
-
-  // Live meeting timer — anchored to the server start time when known, else to
-  // the moment this session became active in the UI.
   const [startMs, setStartMs] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
@@ -214,92 +146,6 @@ export default function Meeting({ onNav }: MeetingProps) {
       return [...prev, row];
     });
   }, []);
-
-  /* // --- OLD AUDIO CHUNKING LOGIC ---
-  const sendAudioChunk = useCallback(
-    async (blob: Blob) => {
-      if (!token || !sessionId) return;
-
-      if (blob.size < MIN_AUDIO_CHUNK_BYTES) {
-        console.warn("[meeting] skipped tiny audio chunk", {
-          size: blob.size,
-          type: blob.type,
-        });
-        return;
-      }
-
-      const chunkMimeType = blob.type || RECORDER_MIME_TYPE || "audio/webm";
-
-      console.log("[meeting] audio chunk", {
-        size: blob.size,
-        type: chunkMimeType,
-      });
-
-      setSendingChunk(true);
-      setError(null);
-
-      try {
-        const buffer = await blob.arrayBuffer();
-        const audioBase64 = arrayBufferToBase64(buffer);
-
-        const res = await fetch(`${API_BASE}/api/transcript/audio-chunk`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...authHeaders,
-          },
-          body: JSON.stringify({
-            sessionId,
-            session_id: sessionId,
-            speaker: user?.name ?? "Facilitator",
-            mimeType: chunkMimeType,
-            mime_type: chunkMimeType,
-            audioBase64,
-            audio_base64: audioBase64,
-          }),
-        });
-
-        const data: AudioChunkResponse = await res.json();
-
-        if (!data.ok) {
-          setError(data.error ?? "Audio chunk failed");
-          return;
-        }
-
-        if (data.data?.transcript?.text?.trim()) {
-          appendTranscript(data.data.transcript);
-        } else if (data.data?.stt?.text?.trim()) {
-          appendTranscript({
-            id: `local_${Date.now()}`,
-            session_id: sessionId,
-            speaker: user?.name ?? "Facilitator",
-            text: data.data.stt.text,
-            timestamp: new Date().toISOString(),
-          });
-        }
-
-        if (data.data?.ai?.blocks?.length) {
-          ai.append(data.data.ai.blocks, data.data.ai.provider);
-        }
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Could not send audio chunk",
-        );
-      } finally {
-        setSendingChunk(false);
-      }
-    },
-    [token, sessionId, authHeaders, user?.name, appendTranscript, ai],
-  );
-
-  const recorder = useMediaRecorder({
-    onChunk: (chunk) => {
-      void sendAudioChunk(chunk);
-    },
-    chunkIntervalMs: 8000,
-    mimeType: RECORDER_MIME_TYPE,
-  });
-  */
 
   // --- NEW WEB SPEECH API TEXT CHUNKING LOGIC ---
   const sendTextChunk = useCallback(async (text: string) => {
@@ -343,10 +189,6 @@ export default function Meeting({ onNav }: MeetingProps) {
     }
   }, [token, sessionId, authHeaders, user?.name, appendTranscript, ai]);
 
-  // Initialise the Web Speech API engine exactly once on mount.
-  // No dependency on sendTextChunk — handlers are re-wired via refs so the
-  // engine instance is never recreated (eliminates the memory leak caused by
-  // re-running this effect every time sendTextChunk changed).
   const sendTextChunkRef = useRef(sendTextChunk);
   useEffect(() => { sendTextChunkRef.current = sendTextChunk; }, [sendTextChunk]);
 
@@ -364,15 +206,12 @@ export default function Meeting({ onNav }: MeetingProps) {
     recognition.interimResults = false;
     recognition.lang = "th-TH";
 
-    // Call through the ref so this handler always uses the latest
-    // sendTextChunk without needing the effect to re-run.
     recognition.onresult = (event: any) => {
       const last = event.results.length - 1;
       const text = event.results[last][0].transcript;
       if (text) sendTextChunkRef.current(text);
     };
 
-    // Auto-restart after silence timeouts while the meeting is still active.
     recognition.onend = () => {
       if (isRecordingRef.current) {
         try {
@@ -384,8 +223,6 @@ export default function Meeting({ onNav }: MeetingProps) {
     };
 
     recognition.onerror = (event: any) => {
-      // 'aborted' and 'no-speech' are normal silence-timeout events;
-      // onend fires next and restarts the engine automatically.
       const expected = new Set(["aborted", "no-speech"]);
       if (!expected.has(event.error)) {
         console.warn("[speech] unexpected error:", event.error);
@@ -395,14 +232,12 @@ export default function Meeting({ onNav }: MeetingProps) {
 
     recognitionRef.current = recognition;
 
-    // Cleanup: stop the engine when the component unmounts.
-    // Do NOT call .stop() mid-session — stopListening() handles that.
     return () => {
       isRecordingRef.current = false;
-      recognition.onend = null; // prevent auto-restart during teardown
+      recognition.onend = null; 
       recognition.stop();
     };
-  }, []); // empty deps — one instance for the lifetime of the component
+  }, []); 
 
   const startListening = () => {
     if (!recognitionRef.current) return;
@@ -411,15 +246,12 @@ export default function Meeting({ onNav }: MeetingProps) {
     try {
       recognitionRef.current.start();
     } catch (e) {
-      // Engine may already be running if onend restarted it just before the
-      // user clicked; safe to ignore.
       console.warn("[speech] start collision — already running", e);
     }
   };
 
   const stopListening = () => {
     if (!recognitionRef.current) return;
-    // Clear flag BEFORE .stop() so the onend guard does not restart.
     setIsRecording(false);
     isRecordingRef.current = false;
     recognitionRef.current.stop();
@@ -447,7 +279,6 @@ export default function Meeting({ onNav }: MeetingProps) {
       }
 
       const rows = data.data?.transcripts ?? data.data?.rows ?? [];
-
       setTranscripts(rows);
     } catch {
       setError("Could not reach transcript endpoint");
@@ -465,7 +296,6 @@ export default function Meeting({ onNav }: MeetingProps) {
     void loadTranscript();
   }, [sessionId, loadTranscript]);
 
-  // Anchor the meeting timer.
   useEffect(() => {
     if (!sessionId) {
       setStartMs(null);
@@ -479,8 +309,6 @@ export default function Meeting({ onNav }: MeetingProps) {
     );
   }, [sessionId, recovery.session?.started_at]);
 
-  // Load the planned duration for this session (set on the dashboard). Default
-  // to 60 min if none was stored.
   useEffect(() => {
     if (!sessionId) {
       setDurationMin(null);
@@ -492,15 +320,12 @@ export default function Meeting({ onNav }: MeetingProps) {
     setWrapUpDismissed(false);
   }, [sessionId]);
 
-  // Tick the timer once per second while a session is open.
   useEffect(() => {
     if (!sessionId) return;
     const t = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(t);
   }, [sessionId]);
 
-  // Follow the conversation: auto-scroll to newest line if the user is at/near
-  // the bottom (don't yank them back up while they scroll history).
   useEffect(() => {
     const el = transcriptScrollRef.current;
     if (!el) return;
@@ -512,7 +337,6 @@ export default function Meeting({ onNav }: MeetingProps) {
   const handleEndMeeting = async () => {
     if (!token || !sessionId) return;
 
-    // recorder.stop();
     stopListening();
     setEnding(true);
     setError(null);
@@ -547,7 +371,6 @@ export default function Meeting({ onNav }: MeetingProps) {
       ? Math.max(0, Math.floor((nowMs - startMs) / 1000))
       : null;
 
-  // Countdown against the planned duration. Wrap-up window = final 15 minutes.
   const WRAP_UP_SEC = 15 * 60;
   const remainingSec =
     durationMin != null && elapsed != null ? durationMin * 60 - elapsed : null;
@@ -729,22 +552,6 @@ export default function Meeting({ onNav }: MeetingProps) {
             {error}
           </div>
         )}
-
-        {/* recorder error fallback commented out
-        {recorder.error && (
-          <div
-            style={{
-              background: COLORS.redBg,
-              borderBottom: `1px solid ${COLORS.red}`,
-              color: COLORS.red,
-              padding: "10px 24px",
-              fontSize: 13,
-            }}
-          >
-            {recorder.error}
-          </div>
-        )}
-        */}
 
         {inWrapUp && !wrapUpDismissed && (
           <div

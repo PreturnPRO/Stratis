@@ -356,6 +356,27 @@ documentRouter.delete("/:projectId", requireAuth, async (req, res, next) => {
   }
 });
 
+/** GET /api/document/:projectId/version/:version — a historical version's full state. */
+documentRouter.get("/:projectId/version/:version", requireAuth, async (req, res, next) => {
+  try {
+    const row = await getDocumentRow(req.auth!.orgId, req.params.projectId);
+    if (!row) return res.status(404).json({ ok: false, error: "No document for this project" });
+
+    const versionNum = Number(req.params.version);
+    const vres = await db.query<{ state_json: string | any; version: number; created_at: string }>(
+      `SELECT state_json, version, created_at FROM document_versions WHERE document_id = $1 AND version = $2`,
+      [row.id, versionNum],
+    );
+    const v = vres.rows[0];
+    if (!v) return res.status(404).json({ ok: false, error: "Version not found" });
+
+    const state = typeof v.state_json === "string" ? JSON.parse(v.state_json) : v.state_json;
+    res.json({ ok: true, data: { version: v.version, state, createdAt: v.created_at } });
+  } catch (err) {
+    next(err);
+  }
+});
+
 /**
  * POST /api/document/:projectId/restore — facilitator reverts the document to a
  * past version. Git-style: writes the old state as a NEW version, keeping history.

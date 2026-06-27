@@ -70,6 +70,12 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
   const [showRemoveDoc, setShowRemoveDoc] = useState(false)
   const [removingDoc, setRemovingDoc] = useState(false)
 
+  // Version history viewing / restore UI states
+  const [viewingVersion, setViewingVersion] = useState<number | null>(null)
+  const [viewState, setViewState] = useState<PmDocumentState | null>(null)
+  const [showRestore, setShowRestore] = useState<number | null>(null)
+  const [restoring, setRestoring] = useState(false)
+
   // ─── loaders ────────────────────────────────────────────────────────────────
 
   const loadProject = useCallback(
@@ -265,32 +271,56 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
     }
   }
 
-  const [restoring, setRestoring] = useState<number | null>(null)
+  const scrollToSection = (key: string) => {
+    document.getElementById(`sec-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
-  const handleRestore = async (targetVersion: number) => {
-    if (!activeProjectId || restoring !== null) return
-    setRestoring(targetVersion)
+  // ─── version history viewing / restore ──────────────────────────────────────
+
+  const loadVersion = useCallback(
+    async (v: number) => {
+      if (!activeProjectId) return
+      setError(null)
+      try {
+        const res = await fetch(`${API_BASE}/api/document/${activeProjectId}/version/${v}`, { headers: authHeaders })
+        const data = await res.json()
+        if (!res.ok || !data.ok) { setError(data.error ?? 'Could not load that version'); return }
+        setViewState(data.data.state)
+        setViewingVersion(v)
+      } catch {
+        setError('Could not reach the server')
+      }
+    },
+    [activeProjectId, authHeaders],
+  )
+
+  const exitVersionView = () => {
+    setViewingVersion(null)
+    setViewState(null)
+  }
+
+  const handleRestore = async (v: number) => {
+    if (!activeProjectId) return
+    setRestoring(true)
     setError(null)
     try {
       const res = await fetch(`${API_BASE}/api/document/${activeProjectId}/restore`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
-        body: JSON.stringify({ version: targetVersion }),
+        body: JSON.stringify({ version: v }), // Matches working logic target fetch
       })
       const data = await res.json()
-      if (!res.ok || !data.ok) { setError(data.error ?? 'Could not restore version'); return }
+      if (!res.ok || !data.ok) { setError(data.error ?? 'Could not restore that version'); return }
       setDocState(data.data.document.state)
       setVersion(data.data.document.version)
       setVersions(data.data.versions ?? [])
+      setShowRestore(null)
+      exitVersionView()
     } catch {
       setError('Could not reach the server')
     } finally {
-      setRestoring(null)
+      setRestoring(false)
     }
-  }
-
-  const scrollToSection = (key: string) => {
-    document.getElementById(`sec-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   // ─── render ─────────────────────────────────────────────────────────────────
@@ -325,6 +355,8 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
 
   const title = humanizeProjectId(activeProjectId ?? proposed?.project_id)
   const proposedCount = reviews.length
+  const isHistorical = viewingVersion != null
+  const displayState = isHistorical ? viewState : docState
 
   return (
     <div style={styles.shell}>
@@ -360,26 +392,26 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
 
         {versions.length > 0 && (
           <div style={{ marginTop: 28 }}>
-            <div style={styles.tocLabel}>History</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {versions.slice(0, 6).map((v) => (
-                <div key={v.id} style={styles.historyRow}>
-                  <span style={styles.historyVersion}>v{v.version}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={styles.historySummary}>{v.changeSummary || '(no summary)'}</div>
-                    <div style={styles.historyDate}>{formatDate(v.createdAt)}</div>
-                    {isFacilitator && v.version !== version && (
-                      <button
-                        style={styles.restoreLink}
-                        disabled={restoring !== null}
-                        onClick={() => void handleRestore(v.version)}
-                      >
-                        {restoring === v.version ? 'Restoring…' : 'Restore this version'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+            <div style={styles.tocLabel}>Version history</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {versions.slice(0, 8).map((v) => {
+                const active = viewingVersion === v.version
+                const isLatest = v.version === version
+                return (
+                  <button
+                    key={v.id}
+                    style={{ ...styles.historyRow, ...(active ? styles.historyRowActive : {}) }}
+                    onClick={() => (isLatest ? exitVersionView() : void loadVersion(v.version))}
+                    title={isLatest ? 'Current version' : 'View this version'}
+                  >
+                    <span style={styles.historyVersion}>v{v.version}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={styles.historySummary}>{v.changeSummary || (isLatest ? 'Current document' : '(no summary)')}</div>
+                      <div style={styles.historyDate}>{formatDate(v.createdAt)}{isLatest ? ' · latest' : ''}</div>
+                    </div>
+                  </button>
+                )
+              })}
             </div>
           </div>
         )}
@@ -393,11 +425,12 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
               <div style={styles.kicker}>PM DOCUMENT · SOURCE OF TRUTH</div>
               <h1 style={styles.bigTitle}>{title}</h1>
               <p style={styles.subtitle}>
-                Version {version}
-                {proposed ? ` · reviewing ${proposedCount} change${proposedCount === 1 ? '' : 's'} for v${version + 1}` : ''}
+                {isHistorical
+                  ? `Viewing version ${viewingVersion} · read-only snapshot`
+                  : `Version ${version}${proposed ? ` · reviewing ${proposedCount} change${proposedCount === 1 ? '' : 's'} for v${version + 1}` : ''}`}
               </p>
             </div>
-            {isFacilitator && docState && (
+            {isFacilitator && docState && !isHistorical && (
               <Button variant="danger" size="sm" onClick={() => setShowRemoveDoc(true)}>
                 Remove document
               </Button>
@@ -406,8 +439,27 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
 
           {error && <div style={styles.errorBox}>{error}</div>}
 
+          {/* Viewing a past version */}
+          {isHistorical && (
+            <div style={styles.historyBanner}>
+              <div style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: COLORS.cyan }}>
+                You're viewing version {viewingVersion} — the current document is v{version}.
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                {isFacilitator && viewingVersion !== version && (
+                  <Button variant="primary" size="sm" onClick={() => setShowRestore(viewingVersion)}>
+                    Restore this version
+                  </Button>
+                )}
+                <Button variant="ghost" size="sm" onClick={exitVersionView}>
+                  Back to latest (v{version})
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Slim review banner */}
-          {proposed && proposedCount > 0 && (
+          {!isHistorical && proposed && proposedCount > 0 && (
             <div style={styles.reviewBanner}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={styles.reviewBannerTitle}>
@@ -431,19 +483,19 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
             </div>
           )}
 
-          {proposed && proposedCount === 0 && (
+          {!isHistorical && proposed && proposedCount === 0 && (
             <div style={styles.noChanges}>This meeting didn't change the project's state.</div>
           )}
 
           {/* Sections */}
-          {docState && PM_SECTIONS.map((s) => {
-            const sec = docState.sections[s.key]
-            const secReviews = reviewsBySection[s.key] ?? []
+          {displayState && PM_SECTIONS.map((s) => {
+            const sec = displayState.sections[s.key]
+            const secReviews = isHistorical ? [] : (reviewsBySection[s.key] ?? [])
             return (
               <section key={s.key} id={`sec-${s.key}`} style={styles.section}>
                 <div style={styles.sectionHead}>
                   <h2 style={styles.sectionTitle}>{sec?.title ?? s.title}</h2>
-                  {isFacilitator && !secReviews.length && (
+                  {isFacilitator && !isHistorical && !secReviews.length && (
                     <button style={styles.editLink} onClick={() => openEditSection(s.key, sec?.content ?? '')}>
                       Edit
                     </button>
@@ -517,6 +569,28 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
           </p>
         </Modal>
       )}
+
+      {/* ── Restore version confirm ──────────────────────────────────────── */}
+      {showRestore != null && (
+        <Modal
+          title={`Restore version ${showRestore}?`}
+          width={400}
+          onClose={() => !restoring && setShowRestore(null)}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setShowRestore(null)} disabled={restoring}>Cancel</Button>
+              <Button variant="primary" onClick={() => void handleRestore(showRestore)} disabled={restoring}>
+                {restoring ? 'Restoring…' : `Restore as v${version + 1}`}
+              </Button>
+            </>
+          }
+        >
+          <p style={{ color: COLORS.textMuted, fontSize: 13, margin: 0, lineHeight: 1.6 }}>
+            This makes version {showRestore}'s content the current document, saved as a new
+            version (v{version + 1}). Nothing is lost — the present version stays in history.
+          </p>
+        </Modal>
+      )}
     </div>
   )
 }
@@ -584,8 +658,6 @@ function formatDate(value: string): string {
 
 const styles: Record<string, React.CSSProperties> = {
   page: { padding: '40px 60px', overflowY: 'auto', flex: 1, color: COLORS.textPrimary },
-  // height:100% is load-bearing — the parent in App.tsx is a plain block, so
-  // flex:1 alone leaves the shell unbounded and articleScroll never scrolls.
   shell: { display: 'flex', flex: 1, height: '100%', minHeight: 0, background: COLORS.bg },
 
   // ToC
@@ -614,7 +686,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   // Article
-  articleScroll: { flex: 1, overflowY: 'auto', minWidth: 0 },
+  articleScroll: { flex: 1, overflowY: 'auto', minWidth: 0, minHeight: 0 },
   article: { maxWidth: 760, margin: '0 auto', padding: '48px 40px 80px' },
   articleHeader: {
     display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
@@ -689,14 +761,22 @@ const styles: Record<string, React.CSSProperties> = {
   pickerName: { fontSize: 15, fontWeight: 600, color: COLORS.textPrimary },
 
   // History (ToC)
-  historyRow: { display: 'flex', gap: 8, alignItems: 'flex-start' },
+  historyRow: {
+    display: 'flex', gap: 8, alignItems: 'flex-start', width: '100%',
+    background: 'transparent', border: '1px solid transparent', borderRadius: RADIUS.sm,
+    padding: '7px 8px', cursor: 'pointer', textAlign: 'left',
+  },
+  historyRowActive: {
+    background: COLORS.cyanBg, border: `1px solid ${COLORS.cyan}55`,
+  },
+  historyBanner: {
+    display: 'flex', alignItems: 'center', gap: 16,
+    background: COLORS.cyanBg, border: `1px solid ${COLORS.cyan}55`,
+    borderRadius: RADIUS.lg, padding: '14px 16px', marginBottom: 32,
+  },
   historyVersion: { fontSize: 11, fontWeight: 700, color: COLORS.accent, minWidth: 24 },
   historySummary: { fontSize: 12, color: COLORS.textMuted, lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis' },
   historyDate: { fontSize: 10, color: COLORS.textDim, marginTop: 2 },
-  restoreLink: {
-    background: 'transparent', border: 'none', color: COLORS.accent,
-    fontSize: 11, cursor: 'pointer', padding: '2px 0', marginTop: 2, textAlign: 'left',
-  },
 
   textarea: {
     width: '100%', background: COLORS.bg, border: `1px solid ${COLORS.border}`,
