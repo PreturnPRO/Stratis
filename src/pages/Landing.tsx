@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Zap, ChevronDown } from 'lucide-react'
-import { COLORS } from '../tokens/colors'
+import { COLORS, FONT, LETTER_SPACING } from '../tokens/colors'
 import { Button } from '../components/ui'
 
 interface Props {
@@ -22,19 +22,42 @@ const CARDS = [
 // Step timeline (loops): 0 reset · 1 line0 · 2 line1 · 3 card0 · 4 line2 · 5 card1 · 6 card0 answered · 7 hold
 const STEP_COUNT = 8
 const STEP_MS = 1700
+// The "settled" end state — everything shown, first card answered. Used as a
+// static frame for prefers-reduced-motion so the demo still reads correctly
+// without the endless auto-playing loop (WCAG 2.2.2: auto-updating content
+// that runs longer than 5s needs a way to stop it).
+const SETTLED_STEP = STEP_COUNT - 1
+
+function usePrefersReducedMotion(): boolean {
+  const [reduced, setReduced] = useState(
+    () => window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  )
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const onChange = () => setReduced(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+
+  return reduced
+}
 
 export default function Landing({ onNavigate }: Props) {
+  const reducedMotion = usePrefersReducedMotion()
   const [step, setStep] = useState(0)
 
   useEffect(() => {
+    if (reducedMotion) return
     const t = setInterval(() => setStep((s) => (s + 1) % STEP_COUNT), STEP_MS)
     return () => clearInterval(t)
-  }, [])
+  }, [reducedMotion])
 
-  const linesVisible = step >= 4 ? 3 : step >= 2 ? 2 : step >= 1 ? 1 : 0
-  const card0Visible = step >= 3
-  const card1Visible = step >= 5
-  const card0Answered = step >= 6
+  const effectiveStep = reducedMotion ? SETTLED_STEP : step
+  const linesVisible = effectiveStep >= 4 ? 3 : effectiveStep >= 2 ? 2 : effectiveStep >= 1 ? 1 : 0
+  const card0Visible = effectiveStep >= 3
+  const card1Visible = effectiveStep >= 5
+  const card0Answered = effectiveStep >= 6
 
   return (
     <div style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', background: COLORS.bg }}>
@@ -63,7 +86,7 @@ export default function Landing({ onNavigate }: Props) {
               alignItems: 'center',
               gap: 7,
               color: COLORS.accent,
-              fontSize: 12,
+              fontSize: FONT.size.label,
               letterSpacing: 2.5,
               fontWeight: 600,
               marginBottom: 22,
@@ -101,10 +124,10 @@ export default function Landing({ onNavigate }: Props) {
           </p>
 
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-            <Button variant="primary" size="md" style={{ padding: '11px 26px', fontSize: 14 }} onClick={() => onNavigate('register')}>
+            <Button variant="primary" size="md" style={{ padding: '11px 26px', fontSize: FONT.size.body }} onClick={() => onNavigate('register')}>
               Get started
             </Button>
-            <Button variant="ghost" size="md" style={{ padding: '11px 26px', fontSize: 14 }} onClick={() => onNavigate('login')}>
+            <Button variant="ghost" size="md" style={{ padding: '11px 26px', fontSize: FONT.size.body }} onClick={() => onNavigate('login')}>
               Sign in
             </Button>
           </div>
@@ -124,8 +147,8 @@ export default function Landing({ onNavigate }: Props) {
             alignItems: 'center',
             gap: 4,
             color: COLORS.textMuted,
-            fontSize: 11,
-            letterSpacing: 1,
+            fontSize: FONT.size.caption,
+            letterSpacing: LETTER_SPACING.wide,
           }}
         >
           See it live
@@ -151,7 +174,7 @@ export default function Landing({ onNavigate }: Props) {
           card1Visible={card1Visible}
           card0Answered={card0Answered}
         />
-        <p style={{ color: COLORS.textMuted, fontSize: 14, marginTop: 26, textAlign: 'center', maxWidth: 520, lineHeight: 1.6 }}>
+        <p style={{ color: COLORS.textMuted, fontSize: FONT.size.body, marginTop: 26, textAlign: 'center', maxWidth: 520, lineHeight: 1.6 }}>
           As the conversation unfolds, Stratis surfaces the question nobody thought to
           ask — privately, to the facilitator — and marks it answered when the room
           gets there.
@@ -194,13 +217,15 @@ function MeetingDemo({
           background: COLORS.surfaceMuted,
         }}
       >
-        <span style={{ width: 11, height: 11, borderRadius: '50%', background: '#e0533f' }} />
-        <span style={{ width: 11, height: 11, borderRadius: '50%', background: '#f5a623' }} />
-        <span style={{ width: 11, height: 11, borderRadius: '50%', background: '#2ec27e' }} />
-        <span style={{ marginLeft: 10, color: COLORS.textMuted, fontSize: 12, fontWeight: 500 }}>
+        <span aria-hidden="true" style={{ display: 'inline-flex', gap: 8 }}>
+          <span style={{ width: 11, height: 11, borderRadius: '50%', background: COLORS.red }} />
+          <span style={{ width: 11, height: 11, borderRadius: '50%', background: COLORS.accent }} />
+          <span style={{ width: 11, height: 11, borderRadius: '50%', background: COLORS.green }} />
+        </span>
+        <span style={{ marginLeft: 2, color: COLORS.textMuted, fontSize: FONT.size.label, fontWeight: 500 }}>
           Stratis — Live meeting
         </span>
-        <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, color: COLORS.red, fontSize: 11, fontWeight: 600 }}>
+        <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, color: COLORS.red, fontSize: FONT.size.caption, fontWeight: 600 }}>
           <span style={{ width: 7, height: 7, borderRadius: '50%', background: COLORS.red }} />
           REC
         </span>
@@ -208,7 +233,7 @@ function MeetingDemo({
 
       {/* body: transcript + floating suggestion stack */}
       <div style={{ position: 'relative', height: 320, padding: 20 }}>
-        <div style={{ color: COLORS.textDim, fontSize: 11, fontWeight: 600, letterSpacing: 1, marginBottom: 14 }}>
+        <div style={{ color: COLORS.textMuted, fontSize: FONT.size.caption, fontWeight: 600, letterSpacing: LETTER_SPACING.label, marginBottom: 14 }}>
           TRANSCRIPT
         </div>
 
@@ -225,10 +250,10 @@ function MeetingDemo({
                   maxWidth: 440,
                 }}
               >
-                <div style={{ color: line.color, fontSize: 12, fontWeight: 600, marginBottom: 3 }}>
+                <div style={{ color: line.color, fontSize: FONT.size.label, fontWeight: 600, marginBottom: 3 }}>
                   {line.who}
                 </div>
-                <div style={{ color: COLORS.textMuted, fontSize: 13, lineHeight: 1.55 }}>
+                <div style={{ color: COLORS.textMuted, fontSize: FONT.size.body, lineHeight: 1.55 }}>
                   {line.text}
                 </div>
               </div>
@@ -267,7 +292,6 @@ function DemoCard({
       style={{
         background: COLORS.surfaceElevated,
         border: `1px solid ${COLORS.border}`,
-        borderLeft: `3px solid ${card.color}`,
         borderRadius: 10,
         padding: '10px 12px',
         boxShadow: '0 10px 26px rgba(0,0,0,0.4)',
@@ -278,31 +302,33 @@ function DemoCard({
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 5 }}>
         <span style={{ width: 5, height: 5, borderRadius: '50%', background: card.color }} />
-        <span style={{ color: card.color, fontSize: 9, fontWeight: 700, letterSpacing: 0.5 }}>
+        <span style={{ color: card.color, fontSize: FONT.size.micro, fontWeight: 700, letterSpacing: LETTER_SPACING.wide }}>
           {card.tag}
         </span>
       </div>
 
       <div style={{ position: 'relative', display: 'inline-block' }}>
-        <span style={{ color: answered ? COLORS.textMuted : COLORS.textPrimary, fontSize: 12, fontWeight: 600, lineHeight: 1.4 }}>
+        <span style={{ color: answered ? COLORS.textMuted : COLORS.textPrimary, fontSize: FONT.size.body, fontWeight: 600, lineHeight: 1.4 }}>
           {card.q}
         </span>
-        {/* animated strike line */}
+        {/* animated strike line — transform, not width, to avoid layout thrash */}
         <span
           style={{
             position: 'absolute',
             left: 0,
             top: '50%',
+            width: '100%',
             height: 1,
             background: COLORS.textMuted,
-            width: answered ? '100%' : '0%',
-            transition: 'width 0.4s ease',
+            transform: `scaleX(${answered ? 1 : 0})`,
+            transformOrigin: 'left',
+            transition: 'transform 0.4s ease',
           }}
         />
       </div>
 
       {!answered && (
-        <div style={{ color: COLORS.textMuted, fontSize: 11, lineHeight: 1.4, marginTop: 4 }}>
+        <div style={{ color: COLORS.textMuted, fontSize: FONT.size.label, lineHeight: 1.4, marginTop: 4 }}>
           {card.r}
         </div>
       )}

@@ -1,4 +1,4 @@
-import { COLORS } from "../constants";
+import { COLORS, FONT } from "../constants";
 import { useEffect, useState } from "react";
 
 export function EmptyState({ message = "Nothing here yet" }) {
@@ -11,12 +11,12 @@ export function EmptyState({ message = "Nothing here yet" }) {
       padding: "48px 24px",
       border: `1px dashed ${COLORS.border}`,
       borderRadius: 8,
-      color: COLORS.textDim,
-      fontSize: 13,
+      color: COLORS.textMuted,
+      fontSize: FONT.size.body,
       textAlign: "center",
       gap: 8,
     }}>
-      <div style={{ fontSize: 20, opacity: 0.4 }}>⊘</div>
+      <div style={{ fontSize: FONT.size.heading, opacity: 0.4 }}>⊘</div>
       <div>{message}</div>
     </div>
   );
@@ -88,8 +88,8 @@ export function LoadingState({
         justifyContent: "center",
         gap: 8,
         padding: "4px 0 8px",
-        color: COLORS.textDim,
-        fontSize: 12,
+        color: COLORS.textMuted,
+        fontSize: FONT.size.label,
       }}>
         <div style={{
           width: 14,

@@ -1,4 +1,4 @@
-export declare const COLORS: Record<string, string>;
+export { COLORS, FONT, LETTER_SPACING, SPACE, RADIUS, SHADOW, TRANSITION, GRADIENT, GLASS } from "../tokens/colors";
 export declare const NAV_ITEMS: { id: string; icon: string; label: string }[];
 export declare const INITIAL_NODES: {
   id: string; x: number; y: number; w: number; h: number;

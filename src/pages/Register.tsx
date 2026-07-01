@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { COLORS } from '../constants'
-import { btnAccent } from '../components/ui'
+import { COLORS, FONT } from '../constants'
+import { Button } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 
 interface Props {
@@ -107,7 +107,7 @@ export default function Register({ onNavigate }: Props) {
       >
         <div
           style={{
-            fontSize: 11,
+            fontSize: FONT.size.caption,
             color: COLORS.accent,
             letterSpacing: 2,
             marginBottom: 24,
@@ -116,25 +116,26 @@ export default function Register({ onNavigate }: Props) {
           STRATIS
         </div>
 
-        <h2
+        <h1
           style={{
             color: COLORS.text,
-            fontSize: 20,
-            fontWeight: 500,
+            fontSize: FONT.size.heading,
+            fontWeight: 600,
             margin: '0 0 28px',
           }}
         >
           Create account
-        </h2>
+        </h1>
 
         {error && (
           <div
+            role="alert"
             style={{
               background: COLORS.redBg,
               border: `1px solid ${COLORS.red}`,
               borderRadius: 6,
               padding: '8px 12px',
-              fontSize: 13,
+              fontSize: FONT.size.body,
               color: COLORS.red,
               marginBottom: 16,
             }}
@@ -143,112 +144,118 @@ export default function Register({ onNavigate }: Props) {
           </div>
         )}
 
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 14,
-            marginBottom: 24,
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            void handleSubmit()
           }}
         >
-          <input
-            type="text"
-            placeholder="Full name"
-            value={name}
-            onChange={(e) => {
-              setName(e.target.value)
-              if (error) setError(null)
-            }}
-            autoComplete="name"
-            disabled={loading}
-            style={inputStyle()}
-          />
-
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => {
-              setEmail(e.target.value)
-              if (error) setError(null)
-            }}
-            autoComplete="email"
-            disabled={loading}
-            style={inputStyle()}
-          />
-
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => {
-              setPassword(e.target.value)
-              if (error) setError(null)
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void handleSubmit()
-            }}
-            autoComplete="new-password"
-            disabled={loading}
-            style={inputStyle()}
-          />
-
           <div
             style={{
-              color: COLORS.textDim,
-              fontSize: 11,
-              lineHeight: 1.5,
-              marginTop: -4,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 14,
+              marginBottom: 24,
             }}
           >
-            Password must be at least 8 characters and include one letter and one number.
-          </div>
-        </div>
+            <div>
+              <label htmlFor="register-name" className="sr-only">Full name</label>
+              <input
+                id="register-name"
+                type="text"
+                placeholder="Full name"
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value)
+                  if (error) setError(null)
+                }}
+                autoComplete="name"
+                disabled={loading}
+                style={inputStyle()}
+              />
+            </div>
 
-        <button
-          style={{
-            ...btnAccent(),
-            width: '100%',
-            justifyContent: 'center',
-            fontSize: 14,
-            padding: '10px',
-            opacity: loading ? 0.6 : 1,
-            cursor: loading ? 'not-allowed' : 'pointer',
-          }}
-          onClick={() => void handleSubmit()}
-          disabled={loading}
-        >
-          {loading ? 'Creating account...' : 'Create account'}
-        </button>
+            <div>
+              <label htmlFor="register-email" className="sr-only">Email</label>
+              <input
+                id="register-email"
+                type="email"
+                placeholder="Email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value)
+                  if (error) setError(null)
+                }}
+                autoComplete="email"
+                disabled={loading}
+                style={inputStyle()}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="register-password" className="sr-only">Password</label>
+              <input
+                id="register-password"
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value)
+                  if (error) setError(null)
+                }}
+                autoComplete="new-password"
+                disabled={loading}
+                aria-describedby="register-password-hint"
+                style={inputStyle()}
+              />
+            </div>
+
+            <div
+              id="register-password-hint"
+              style={{
+                color: COLORS.textMuted,
+                fontSize: FONT.size.caption,
+                lineHeight: 1.5,
+                marginTop: -4,
+              }}
+            >
+              Password must be at least 8 characters and include one letter and one number.
+            </div>
+          </div>
+
+          <Button type="submit" variant="primary" fullWidth disabled={loading} style={{ fontSize: FONT.size.body, padding: '10px' }}>
+            {loading ? 'Creating account...' : 'Create account'}
+          </Button>
+        </form>
 
         <div
           style={{
             marginTop: 20,
             textAlign: 'center',
-            fontSize: 13,
+            fontSize: FONT.size.body,
             color: COLORS.textMuted,
           }}
         >
           Already have an account?{' '}
-          <span
-            style={{ color: COLORS.accent, cursor: 'pointer' }}
+          <button
+            type="button"
+            style={linkStyle}
             onClick={() => !loading && onNavigate('login')}
+            disabled={loading}
           >
             Sign in
-          </span>
+          </button>
         </div>
 
         <div style={{ marginTop: 8, textAlign: 'center' }}>
-          <span
-            style={{
-              fontSize: 12,
-              color: COLORS.textDim,
-              cursor: 'pointer',
-            }}
+          <button
+            type="button"
+            style={{ ...linkStyle, fontSize: FONT.size.label, color: COLORS.textMuted }}
             onClick={() => !loading && onNavigate('landing')}
+            disabled={loading}
           >
             ← Back
-          </span>
+          </button>
         </div>
       </div>
     </div>
@@ -260,9 +267,18 @@ const inputStyle = (): React.CSSProperties => ({
   border: `1px solid ${COLORS.border}`,
   borderRadius: 6,
   padding: '10px 12px',
-  fontSize: 14,
+  fontSize: FONT.size.body,
   color: COLORS.text,
   outline: 'none',
   width: '100%',
   boxSizing: 'border-box',
 })
+
+const linkStyle: React.CSSProperties = {
+  background: 'transparent',
+  border: 'none',
+  padding: 0,
+  font: 'inherit',
+  color: COLORS.accent,
+  cursor: 'pointer',
+}

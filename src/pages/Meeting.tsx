@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Mic, Square, RotateCw } from "lucide-react";
-import { COLORS } from "../constants";
+import { COLORS, FONT } from "../constants";
 import { RADIUS } from "../tokens/colors";
 import { Button, IconButton, Chip, Modal } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
@@ -10,7 +10,6 @@ import { useAiBlocks } from "../hooks/useAiBlocks";
 import { useSuggestionSocket } from "../hooks/useSuggestionSocket";
 import { useAuth } from "../context/AuthContext";
 import { useSessionRecovery } from "../hooks/useSessionRecovery";
-import type { AIBlock } from "../../shared/types";
 
 import { API_BASE } from "../lib/api";
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
@@ -402,7 +401,7 @@ export default function Meeting({ onNav }: MeetingProps) {
         <h1
           style={{
             color: COLORS.text,
-            fontSize: 22,
+            fontSize: FONT.size.title,
             fontWeight: 600,
             margin: "0 0 24px",
           }}
@@ -450,7 +449,7 @@ export default function Meeting({ onNav }: MeetingProps) {
             <h1
               style={{
                 color: COLORS.text,
-                fontSize: 19,
+                fontSize: FONT.size.heading,
                 fontWeight: 600,
                 margin: "0 0 8px",
                 whiteSpace: "nowrap",
@@ -546,7 +545,7 @@ export default function Meeting({ onNav }: MeetingProps) {
               borderBottom: `1px solid ${COLORS.red}`,
               color: COLORS.red,
               padding: "10px 24px",
-              fontSize: 13,
+              fontSize: FONT.size.body,
             }}
           >
             {error}
@@ -560,7 +559,7 @@ export default function Meeting({ onNav }: MeetingProps) {
               borderBottom: `1px solid ${COLORS.amber}`,
               color: COLORS.amber,
               padding: "10px 24px",
-              fontSize: 13,
+              fontSize: FONT.size.body,
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
@@ -578,7 +577,7 @@ export default function Meeting({ onNav }: MeetingProps) {
                 background: "transparent",
                 border: "none",
                 color: COLORS.amber,
-                fontSize: 16,
+                fontSize: FONT.size.subheading,
                 lineHeight: 1,
                 padding: "0 4px",
               }}
@@ -596,7 +595,7 @@ export default function Meeting({ onNav }: MeetingProps) {
               borderBottom: `1px solid ${COLORS.red}`,
               color: COLORS.red,
               padding: "10px 24px",
-              fontSize: 13,
+              fontSize: FONT.size.body,
               fontWeight: 600,
             }}
           >
@@ -605,7 +604,8 @@ export default function Meeting({ onNav }: MeetingProps) {
         )}
 
         {/* ── Body ───────────────────────────────────────────────────────── */}
-        <div className="meeting-grid" style={{ flex: 1, padding: 24 }}>
+        <div className="meeting-body" style={{ flex: 1, display: "flex", gap: 24, padding: 24, minHeight: 0, overflow: "hidden" }}>
+        <div className="meeting-grid" style={{ flex: 1 }}>
           <section
             style={{
               display: "flex",
@@ -619,17 +619,16 @@ export default function Meeting({ onNav }: MeetingProps) {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                marginBottom: 14,
+                marginBottom: 16,
                 flexShrink: 0,
               }}
             >
               <h2
                 style={{
                   color: COLORS.text,
-                  fontSize: 13,
+                  fontSize: FONT.size.subheading,
                   fontWeight: 600,
                   margin: 0,
-                  letterSpacing: 0.3,
                 }}
               >
                 Transcript
@@ -642,8 +641,8 @@ export default function Meeting({ onNav }: MeetingProps) {
                       display: "inline-flex",
                       alignItems: "center",
                       gap: 6,
-                      color: COLORS.textDim,
-                      fontSize: 12,
+                      color: COLORS.textMuted,
+                      fontSize: FONT.size.label,
                     }}
                   >
                     <span
@@ -702,13 +701,13 @@ export default function Meeting({ onNav }: MeetingProps) {
                         <span
                           style={{
                             color: COLORS.teal,
-                            fontSize: 12,
+                            fontSize: FONT.size.label,
                             fontWeight: 600,
                           }}
                         >
                           {row.speaker}
                         </span>
-                        <span style={{ color: COLORS.textDim, fontSize: 11 }}>
+                        <span style={{ color: COLORS.textMuted, fontSize: FONT.size.caption }}>
                           {formatTime(row.timestamp)}
                         </span>
                       </div>
@@ -716,7 +715,7 @@ export default function Meeting({ onNav }: MeetingProps) {
                       <div
                         style={{
                           color: COLORS.textMuted,
-                          fontSize: 13,
+                          fontSize: FONT.size.body,
                           lineHeight: 1.6,
                         }}
                       >
@@ -742,23 +741,22 @@ export default function Meeting({ onNav }: MeetingProps) {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                marginBottom: 14,
+                marginBottom: 16,
                 flexShrink: 0,
               }}
             >
               <h2
                 style={{
                   color: COLORS.text,
-                  fontSize: 13,
+                  fontSize: FONT.size.subheading,
                   fontWeight: 600,
                   margin: 0,
-                  letterSpacing: 0.3,
                 }}
               >
                 AI notes
               </h2>
 
-              <span style={{ color: COLORS.textDim, fontSize: 12 }}>
+              <span style={{ color: COLORS.textMuted, fontSize: FONT.size.label }}>
                 {ai.status}
               </span>
             </div>
@@ -773,7 +771,7 @@ export default function Meeting({ onNav }: MeetingProps) {
                     borderRadius: RADIUS.md,
                     padding: "10px 12px",
                     marginBottom: 12,
-                    fontSize: 13,
+                    fontSize: FONT.size.body,
                   }}
                 >
                   {ai.error}
@@ -788,15 +786,28 @@ export default function Meeting({ onNav }: MeetingProps) {
             </div>
           </section>
         </div>
-      </div>
 
-      {role === "facilitator" && (
-        <SuggestionCardStack
-          cards={cards}
-          onMarkAnswered={markAnswered}
-          onMarkActive={markActive}
-        />
-      )}
+          {role === "facilitator" && (
+            <div
+              className="suggestion-gutter"
+              style={{
+                width: 320,
+                flexShrink: 0,
+                display: "flex",
+                flexDirection: "column",
+                minHeight: 0,
+              }}
+            >
+              <SuggestionCardStack
+                cards={cards}
+                thinking={sendingChunk}
+                onMarkAnswered={markAnswered}
+                onMarkActive={markActive}
+              />
+            </div>
+          )}
+        </div>
+      </div>
 
       {showEndConfirm && (
         <Modal
@@ -822,7 +833,7 @@ export default function Meeting({ onNav }: MeetingProps) {
             </>
           }
         >
-          <p style={{ color: COLORS.textMuted, fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+          <p style={{ color: COLORS.textMuted, fontSize: FONT.size.body, lineHeight: 1.6, margin: 0 }}>
             Recording will stop and the session will close. Stratis will generate
             the post-meeting summary and document patches from the transcript.
             This can't be undone.

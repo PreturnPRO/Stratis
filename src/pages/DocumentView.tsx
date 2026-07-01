@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { COLORS, RADIUS } from '../tokens/colors'
+import { COLORS, RADIUS, FONT, LETTER_SPACING, SHADOW, GRADIENT } from '../tokens/colors'
 import { useAuth } from '../context/AuthContext'
 import { Button, Modal } from '../components/ui'
 import { Markdown } from '../components/Markdown'
@@ -359,7 +359,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
   const displayState = isHistorical ? viewState : docState
 
   return (
-    <div style={styles.shell}>
+    <div className="document-shell" style={styles.shell}>
       {/* ── Left ToC sidebar ─────────────────────────────────────────────── */}
       <nav style={styles.toc}>
         {!sessionId && (docState || error) && (
@@ -442,7 +442,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
           {/* Viewing a past version */}
           {isHistorical && (
             <div style={styles.historyBanner}>
-              <div style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: COLORS.cyan }}>
+              <div style={{ flex: 1, minWidth: 0, fontSize: FONT.size.body, fontWeight: 600, color: COLORS.cyan }}>
                 You're viewing version {viewingVersion} — the current document is v{version}.
               </div>
               <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
@@ -539,12 +539,13 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
             </>
           }
         >
-          <p style={{ ...styles.dim, fontSize: 12, margin: '0 0 8px' }}>Markdown supported (#, **bold**, - lists).</p>
+          <p style={{ ...styles.dim, fontSize: FONT.size.label, margin: '0 0 8px' }}>Markdown supported (#, **bold**, - lists).</p>
           <textarea
             style={styles.textarea}
             value={editContent}
             onChange={(e) => setEditContent(e.target.value)}
             rows={10}
+            aria-label="Section content"
           />
         </Modal>
       )}
@@ -564,7 +565,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
             </>
           }
         >
-          <p style={{ color: COLORS.textMuted, fontSize: 13, margin: 0, lineHeight: 1.6 }}>
+          <p style={{ color: COLORS.textMuted, fontSize: FONT.size.body, margin: 0, lineHeight: 1.6 }}>
             This permanently deletes the PM document and its entire version history. This can't be undone.
           </p>
         </Modal>
@@ -585,7 +586,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
             </>
           }
         >
-          <p style={{ color: COLORS.textMuted, fontSize: 13, margin: 0, lineHeight: 1.6 }}>
+          <p style={{ color: COLORS.textMuted, fontSize: FONT.size.body, margin: 0, lineHeight: 1.6 }}>
             This makes version {showRestore}'s content the current document, saved as a new
             version (v{version + 1}). Nothing is lost — the present version stays in history.
           </p>
@@ -610,9 +611,21 @@ function ProposedChange({
   const priorityColor = PRIORITY_COLOR[patch.review_priority ?? 'LOW'] ?? COLORS.textMuted
   const accent =
     decision === 'approved' ? COLORS.teal : decision === 'rejected' ? COLORS.red : COLORS.amber
+  const [hovered, setHovered] = useState(false)
 
   return (
-    <div style={{ ...styles.proposed, borderColor: `${accent}66`, opacity: decision === 'rejected' ? 0.6 : 1 }}>
+    <div
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        ...styles.proposed,
+        borderColor: `${accent}66`,
+        opacity: decision === 'rejected' ? 0.6 : 1,
+        backgroundImage: `linear-gradient(${accent}0d, ${accent}0d)`,
+        boxShadow: hovered ? SHADOW.xs : 'none',
+        transition: 'box-shadow 0.18s ease',
+      }}
+    >
       <div style={styles.proposedHead}>
         <span style={{ ...styles.proposedTag, color: accent, background: `${accent}1f` }}>
           {decision === 'approved' ? 'Approved' : decision === 'rejected' ? 'Rejected' : 'Proposed change'}
@@ -625,7 +638,12 @@ function ProposedChange({
       </div>
 
       {editing ? (
-        <textarea style={styles.proposedEditor} value={content} onChange={(e) => onContent(e.target.value)} />
+        <textarea
+          style={styles.proposedEditor}
+          value={content}
+          onChange={(e) => onContent(e.target.value)}
+          aria-label="Proposed change content"
+        />
       ) : (
         <Markdown>{content}</Markdown>
       )}
@@ -671,18 +689,21 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
   },
   tocLabel: {
-    fontSize: 10, fontWeight: 700, letterSpacing: 1, color: COLORS.textDim,
+    fontSize: FONT.size.label, fontWeight: 700, letterSpacing: LETTER_SPACING.label, color: COLORS.textMuted,
     textTransform: 'uppercase', marginBottom: 12,
   },
   tocLink: {
     display: 'flex', alignItems: 'center', gap: 8,
     background: 'transparent', border: 'none', borderRadius: RADIUS.sm,
-    padding: '7px 10px', fontSize: 13, color: COLORS.textMuted, cursor: 'pointer',
+    padding: '7px 10px', fontSize: FONT.size.body, color: COLORS.textMuted, cursor: 'pointer',
   },
-  tocDot: { width: 6, height: 6, borderRadius: '50%', background: COLORS.amber, flexShrink: 0 },
+  tocDot: {
+    width: 6, height: 6, borderRadius: '50%', background: COLORS.amber, flexShrink: 0,
+    animation: 'pulse 2.4s ease-in-out infinite',
+  },
   backBtn: {
     background: 'transparent', border: 'none', color: COLORS.accent,
-    cursor: 'pointer', fontSize: 12, padding: 0, marginBottom: 22, textAlign: 'left',
+    cursor: 'pointer', fontSize: FONT.size.label, padding: 0, marginBottom: 22, textAlign: 'left',
   },
 
   // Article
@@ -692,27 +713,30 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
     gap: 16, marginBottom: 28,
   },
-  kicker: { fontSize: 10, fontWeight: 700, letterSpacing: 1.2, color: COLORS.accent, marginBottom: 10 },
-  bigTitle: { fontSize: 32, fontWeight: 700, margin: 0, color: COLORS.textPrimary, lineHeight: 1.15, letterSpacing: -0.5 },
-  subtitle: { fontSize: 13, color: COLORS.textMuted, margin: '10px 0 0' },
+  kicker: { fontSize: FONT.size.micro, fontWeight: 700, letterSpacing: LETTER_SPACING.eyebrow, color: COLORS.accent, marginBottom: 10 },
+  bigTitle: { fontSize: FONT.size.display, fontWeight: 700, margin: 0, color: COLORS.textPrimary, lineHeight: 1.15, letterSpacing: -0.5 },
+  subtitle: { fontSize: FONT.size.body, color: COLORS.textMuted, margin: '10px 0 0' },
   dim: { color: COLORS.textMuted },
 
   errorBox: {
     background: COLORS.redBg, border: `1px solid ${COLORS.red}`, color: COLORS.textPrimary,
-    borderRadius: RADIUS.md, padding: '10px 14px', fontSize: 13, marginBottom: 20,
+    borderRadius: RADIUS.md, padding: '10px 14px', fontSize: FONT.size.body, marginBottom: 20,
   },
 
   reviewBanner: {
     display: 'flex', alignItems: 'center', gap: 16,
-    background: COLORS.amberSubtle, border: `1px solid ${COLORS.amber}55`,
+    background: COLORS.amberSubtle,
+    backgroundImage: GRADIENT.surfaceSheen,
+    border: `1px solid ${COLORS.amber}55`,
     borderRadius: RADIUS.lg, padding: '14px 16px', marginBottom: 32,
+    boxShadow: SHADOW.xs,
   },
-  reviewBannerTitle: { fontSize: 13, fontWeight: 600, color: COLORS.amber },
-  reviewBannerSummary: { fontSize: 12, color: COLORS.textMuted, marginTop: 4, lineHeight: 1.5 },
+  reviewBannerTitle: { fontSize: FONT.size.body, fontWeight: 600, color: COLORS.amber },
+  reviewBannerSummary: { fontSize: FONT.size.label, color: COLORS.textMuted, marginTop: 4, lineHeight: 1.5 },
   noChanges: {
     background: COLORS.surfaceMuted, border: `1px solid ${COLORS.border}`,
     borderRadius: RADIUS.md, padding: '12px 16px', marginBottom: 32,
-    fontSize: 13, color: COLORS.textMuted,
+    fontSize: FONT.size.body, color: COLORS.textMuted,
   },
 
   section: { marginBottom: 40, scrollMarginTop: 24 },
@@ -720,10 +744,10 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     gap: 12, marginBottom: 12, paddingBottom: 10, borderBottom: `1px solid ${COLORS.border}`,
   },
-  sectionTitle: { fontSize: 20, fontWeight: 700, margin: 0, color: COLORS.textPrimary, letterSpacing: -0.2 },
+  sectionTitle: { fontSize: FONT.size.heading, fontWeight: 600, margin: 0, color: COLORS.textPrimary, letterSpacing: -0.2 },
   editLink: {
     background: 'transparent', border: 'none', color: COLORS.textMuted,
-    fontSize: 12, cursor: 'pointer', padding: '2px 6px', borderRadius: 4,
+    fontSize: FONT.size.label, cursor: 'pointer', padding: '2px 6px', borderRadius: 4,
   },
 
   // Proposed change card
@@ -733,20 +757,20 @@ const styles: Record<string, React.CSSProperties> = {
   },
   proposedHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   proposedTag: {
-    fontSize: 10, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase',
+    fontSize: FONT.size.micro, fontWeight: 700, letterSpacing: LETTER_SPACING.wide, textTransform: 'uppercase',
     padding: '3px 9px', borderRadius: RADIUS.pill,
   },
-  proposedPriority: { fontSize: 10, fontWeight: 700 },
-  proposedReason: { fontSize: 12, color: COLORS.textMuted, margin: 0, fontStyle: 'italic' },
+  proposedPriority: { fontSize: FONT.size.micro, fontWeight: 700 },
+  proposedReason: { fontSize: FONT.size.label, color: COLORS.textMuted, margin: 0, fontStyle: 'italic' },
   proposedEditor: {
     width: '100%', minHeight: 120, background: COLORS.bg,
     border: `1px solid ${COLORS.border}`, color: COLORS.textPrimary,
-    borderRadius: RADIUS.sm, padding: 10, fontSize: 13, fontFamily: 'inherit',
+    borderRadius: RADIUS.sm, padding: 10, fontSize: FONT.size.body, fontFamily: 'inherit',
     resize: 'vertical', outline: 'none', lineHeight: 1.6,
   },
   proposedActions: { display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 2 },
   reviewBtn: {
-    padding: '4px 11px', fontSize: 11, fontWeight: 600, borderRadius: RADIUS.sm,
+    padding: '4px 11px', fontSize: FONT.size.caption, fontWeight: 600, borderRadius: RADIUS.sm,
     border: `1px solid ${COLORS.border}`, background: 'transparent',
     color: COLORS.textMuted, cursor: 'pointer',
   },
@@ -758,7 +782,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: COLORS.surface, border: `1px solid ${COLORS.border}`,
     borderRadius: RADIUS.lg, padding: '16px 18px', cursor: 'pointer', textAlign: 'left',
   },
-  pickerName: { fontSize: 15, fontWeight: 600, color: COLORS.textPrimary },
+  pickerName: { fontSize: FONT.size.body, fontWeight: 600, color: COLORS.textPrimary },
 
   // History (ToC)
   historyRow: {
@@ -774,13 +798,13 @@ const styles: Record<string, React.CSSProperties> = {
     background: COLORS.cyanBg, border: `1px solid ${COLORS.cyan}55`,
     borderRadius: RADIUS.lg, padding: '14px 16px', marginBottom: 32,
   },
-  historyVersion: { fontSize: 11, fontWeight: 700, color: COLORS.accent, minWidth: 24 },
-  historySummary: { fontSize: 12, color: COLORS.textMuted, lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis' },
-  historyDate: { fontSize: 10, color: COLORS.textDim, marginTop: 2 },
+  historyVersion: { fontSize: FONT.size.caption, fontWeight: 700, color: COLORS.accent, minWidth: 24 },
+  historySummary: { fontSize: FONT.size.label, color: COLORS.textMuted, lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis' },
+  historyDate: { fontSize: FONT.size.micro, color: COLORS.textMuted, marginTop: 2 },
 
   textarea: {
     width: '100%', background: COLORS.bg, border: `1px solid ${COLORS.border}`,
     color: COLORS.textPrimary, borderRadius: RADIUS.sm, padding: '10px 12px',
-    fontSize: 13, fontFamily: 'inherit', resize: 'vertical', outline: 'none', lineHeight: 1.6,
+    fontSize: FONT.size.body, fontFamily: 'inherit', resize: 'vertical', outline: 'none', lineHeight: 1.6,
   },
 }

@@ -1,6 +1,6 @@
 // Palette lives in one place — see src/tokens/colors.ts. Re-exported here so the
 // many `import { COLORS } from "../constants"` call sites stay valid.
-export { COLORS } from "../tokens/colors";
+export { COLORS, FONT, LETTER_SPACING, SPACE, RADIUS, SHADOW, TRANSITION, GRADIENT, GLASS } from "../tokens/colors";
 
 export const NAV_ITEMS = [
   { id: "dashboard", icon: "LayoutDashboard", label: "Dashboard" },

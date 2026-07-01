@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { COLORS } from '../constants'
-import { btnAccent } from '../components/ui'
+import { COLORS, FONT } from '../constants'
+import { Button } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 
 interface Props {
@@ -96,7 +96,7 @@ export default function Login({ onNavigate }: Props) {
       >
         <div
           style={{
-            fontSize: 11,
+            fontSize: FONT.size.caption,
             color: COLORS.accent,
             letterSpacing: 2,
             marginBottom: 24,
@@ -105,25 +105,26 @@ export default function Login({ onNavigate }: Props) {
           STRATIS
         </div>
 
-        <h2
+        <h1
           style={{
             color: COLORS.text,
-            fontSize: 20,
-            fontWeight: 500,
+            fontSize: FONT.size.heading,
+            fontWeight: 600,
             margin: '0 0 28px',
           }}
         >
           Sign in
-        </h2>
+        </h1>
 
         {error && (
           <div
+            role="alert"
             style={{
               background: COLORS.redBg,
               border: `1px solid ${COLORS.red}`,
               borderRadius: 6,
               padding: '8px 12px',
-              fontSize: 13,
+              fontSize: FONT.size.body,
               color: COLORS.red,
               marginBottom: 16,
             }}
@@ -132,91 +133,88 @@ export default function Login({ onNavigate }: Props) {
           </div>
         )}
 
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 14,
-            marginBottom: 24,
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            void handleSubmit()
           }}
         >
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => {
-              setEmail(e.target.value)
-              if (error) setError(null)
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 14,
+              marginBottom: 24,
             }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void handleSubmit()
-            }}
-            autoComplete="email"
-            disabled={loading}
-            style={inputStyle()}
-          />
+          >
+            <div>
+              <label htmlFor="login-email" className="sr-only">Email</label>
+              <input
+                id="login-email"
+                type="email"
+                placeholder="Email"
+                value={email}
+                onChange={(e) => {
+                  setEmail(e.target.value)
+                  if (error) setError(null)
+                }}
+                autoComplete="email"
+                disabled={loading}
+                style={inputStyle()}
+              />
+            </div>
 
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => {
-              setPassword(e.target.value)
-              if (error) setError(null)
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void handleSubmit()
-            }}
-            autoComplete="current-password"
-            disabled={loading}
-            style={inputStyle()}
-          />
-        </div>
+            <div>
+              <label htmlFor="login-password" className="sr-only">Password</label>
+              <input
+                id="login-password"
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value)
+                  if (error) setError(null)
+                }}
+                autoComplete="current-password"
+                disabled={loading}
+                style={inputStyle()}
+              />
+            </div>
+          </div>
 
-        <button
-          style={{
-            ...btnAccent(),
-            width: '100%',
-            justifyContent: 'center',
-            fontSize: 14,
-            padding: '10px',
-            opacity: loading ? 0.6 : 1,
-            cursor: loading ? 'not-allowed' : 'pointer',
-          }}
-          onClick={() => void handleSubmit()}
-          disabled={loading}
-        >
-          {loading ? 'Signing in...' : 'Sign in'}
-        </button>
+          <Button type="submit" variant="primary" fullWidth disabled={loading} style={{ fontSize: FONT.size.body, padding: '10px' }}>
+            {loading ? 'Signing in...' : 'Sign in'}
+          </Button>
+        </form>
 
         <div
           style={{
             marginTop: 20,
             textAlign: 'center',
-            fontSize: 13,
+            fontSize: FONT.size.body,
             color: COLORS.textMuted,
           }}
         >
           No account?{' '}
-          <span
-            style={{ color: COLORS.accent, cursor: 'pointer' }}
+          <button
+            type="button"
+            style={linkStyle}
             onClick={() => !loading && onNavigate('register')}
+            disabled={loading}
           >
             Register
-          </span>
+          </button>
         </div>
 
         <div style={{ marginTop: 8, textAlign: 'center' }}>
-          <span
-            style={{
-              fontSize: 12,
-              color: COLORS.textDim,
-              cursor: 'pointer',
-            }}
+          <button
+            type="button"
+            style={{ ...linkStyle, fontSize: FONT.size.label, color: COLORS.textMuted }}
             onClick={() => !loading && onNavigate('landing')}
+            disabled={loading}
           >
             ← Back
-          </span>
+          </button>
         </div>
       </div>
     </div>
@@ -228,9 +226,18 @@ const inputStyle = (): React.CSSProperties => ({
   border: `1px solid ${COLORS.border}`,
   borderRadius: 6,
   padding: '10px 12px',
-  fontSize: 14,
+  fontSize: FONT.size.body,
   color: COLORS.text,
   outline: 'none',
   width: '100%',
   boxSizing: 'border-box',
 })
+
+const linkStyle: React.CSSProperties = {
+  background: 'transparent',
+  border: 'none',
+  padding: 0,
+  font: 'inherit',
+  color: COLORS.accent,
+  cursor: 'pointer',
+}

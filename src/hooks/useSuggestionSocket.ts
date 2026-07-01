@@ -44,6 +44,7 @@ function toUICard(card: ServerCard): UICard {
     status: card.answered ? 'answered' : 'active',
     cardType: card.cardType,
     urgency: card.urgency,
+    createdAt: card.createdAt ?? new Date().toISOString(),
   }
 }
 

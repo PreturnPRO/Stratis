@@ -10,11 +10,11 @@ import { documentPatchCall, type DocPatchContext } from "@ai/index";
 import {
   PM_SECTIONS,
   type DocumentPatchDTO,
-  type PmDocument,
   type PmDocumentState,
   type PmDocumentVersion,
   type PmSectionKey,
 } from "@shared/types";
+import { emptyState, rowToDocument, renderDocument, getDocumentRow, type DocumentRow } from "../lib/pmDocument";
 
 export const documentRouter = Router();
 
@@ -26,51 +26,12 @@ interface SessionMetaRow {
   meeting_title: string;
 }
 
-interface DocumentRow {
-  id: string;
-  project_id: string;
-  org_id: string;
-  state_json: string | any; // Type 'any' to handle pg driver auto-parsing JSONB
-  version: number;
-  created_at: string;
-  updated_at: string;
-}
-
 interface VersionRow {
   id: string;
   version: number;
   session_id: string | null;
   patch_json: string | any | null; // Handle pg JSONB auto-parsing
   created_at: string;
-}
-
-/** Empty PM document state with the canonical sections (schema spec §7.3). */
-function emptyState(): PmDocumentState {
-  const sections = {} as PmDocumentState["sections"];
-  for (const s of PM_SECTIONS) sections[s.key] = { title: s.title, content: "" };
-  return { sections };
-}
-
-function rowToDocument(row: DocumentRow): PmDocument {
-  // If the pg driver auto-parses the JSONB column, it will be an object.
-  // If it's retrieved as text, we parse it.
-  const state = typeof row.state_json === "string" ? JSON.parse(row.state_json) : row.state_json;
-  return {
-    id: row.id,
-    projectId: row.project_id,
-    orgId: row.org_id,
-    state: state as PmDocumentState,
-    version: row.version,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-function renderDocument(state: PmDocumentState): string {
-  return PM_SECTIONS.map((s) => {
-    const sec = state.sections[s.key];
-    return `## ${sec?.title ?? s.title}\n${sec?.content?.trim() || "(empty)"}`;
-  }).join("\n\n");
 }
 
 /** Apply approved patches to a document state (schema spec §7.5). */
@@ -99,14 +60,6 @@ async function getSessionMeta(sessionId: string): Promise<SessionMetaRow | undef
     WHERE s.id = $1
     `,
     [sessionId]
-  );
-  return result.rows[0];
-}
-
-async function getDocumentRow(orgId: string, projectId: string): Promise<DocumentRow | undefined> {
-  const result = await db.query<DocumentRow>(
-    `SELECT * FROM documents WHERE org_id = $1 AND project_id = $2`,
-    [orgId, projectId]
   );
   return result.rows[0];
 }
