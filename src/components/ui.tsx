@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { COLORS, RADIUS, SHADOW } from "../tokens/colors";
+import { COLORS, RADIUS, SHADOW, FONT, LETTER_SPACING } from "../tokens/colors";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Legacy style helpers — kept so pages not yet migrated keep working.
@@ -10,10 +10,10 @@ export function btnAccent(extra = {}) {
   return {
     background: COLORS.accent,
     border: `1px solid ${COLORS.accent}`,
-    color: "#000",
+    color: "#10160b",
     borderRadius: 6,
     padding: "7px 14px",
-    fontSize: 13,
+    fontSize: FONT.size.body,
     fontWeight: 600,
     cursor: "pointer",
     ...extra,
@@ -27,7 +27,7 @@ export function btnGhost(extra = {}) {
     color: COLORS.textMuted,
     borderRadius: 6,
     padding: "6px 12px",
-    fontSize: 13,
+    fontSize: FONT.size.body,
     cursor: "pointer",
     ...extra,
   };
@@ -36,7 +36,7 @@ export function btnGhost(extra = {}) {
 export function tagStyle(color: string) {
   return {
     display: "inline-block",
-    fontSize: 11,
+    fontSize: FONT.size.caption,
     padding: "2px 8px",
     borderRadius: 4,
     background: `${color}22`,
@@ -65,7 +65,7 @@ export function Badge({ label, color }: { label: string; color: string }) {
 
 export function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ color: COLORS.textDim, fontSize: 11, letterSpacing: 1, marginBottom: 14 }}>
+    <div style={{ color: COLORS.textMuted, fontSize: FONT.size.label, letterSpacing: LETTER_SPACING.label, marginBottom: 14 }}>
       {children}
     </div>
   );
@@ -88,8 +88,8 @@ interface ButtonProps
 }
 
 const SIZE_STYLE: Record<ButtonSize, React.CSSProperties> = {
-  sm: { padding: "5px 11px", fontSize: 12 },
-  md: { padding: "8px 16px", fontSize: 13 },
+  sm: { padding: "5px 11px", fontSize: FONT.size.label },
+  md: { padding: "8px 16px", fontSize: FONT.size.body },
 };
 
 function variantBase(variant: ButtonVariant, hovered: boolean): React.CSSProperties {
@@ -98,7 +98,7 @@ function variantBase(variant: ButtonVariant, hovered: boolean): React.CSSPropert
       return {
         background: hovered ? COLORS.accentHover : COLORS.accent,
         border: `1px solid ${hovered ? COLORS.accentHover : COLORS.accent}`,
-        color: "#1a1205",
+        color: "#10160b",
         boxShadow: hovered ? SHADOW.glow(COLORS.accent) : "none",
       };
     case "danger":
@@ -224,7 +224,7 @@ export function Chip({
       background: COLORS.surface,
       border: `1px solid ${COLORS.border}`,
       color,
-      fontSize: 11,
+      fontSize: FONT.size.caption,
       fontWeight: 500,
       fontFamily: mono ? "'SF Mono', ui-monospace, Menlo, monospace" : undefined,
       lineHeight: 1.4,
@@ -244,9 +244,9 @@ export function Pill({ label, color }: { label: string; color: string }) {
       borderRadius: RADIUS.pill,
       background: `${color}1f`,
       color,
-      fontSize: 10,
+      fontSize: FONT.size.micro,
       fontWeight: 700,
-      letterSpacing: 0.4,
+      letterSpacing: LETTER_SPACING.wide,
       textTransform: "uppercase",
     }}>
       {label}
@@ -273,14 +273,24 @@ export function Modal({
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
 
+  // Keep the latest onClose in a ref so the effect below can stay mount-only
+  // (empty deps) — depending on `onClose` directly re-ran this effect (and
+  // re-stole focus onto the panel) on every keystroke, since callers pass a
+  // fresh inline arrow function each render.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onCloseRef.current();
     };
     document.addEventListener("keydown", onKey);
     panelRef.current?.focus();
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div
@@ -319,7 +329,7 @@ export function Modal({
         {title && (
           <h2 style={{
             color: COLORS.text,
-            fontSize: 18,
+            fontSize: FONT.size.heading,
             fontWeight: 600,
             margin: "0 0 18px",
           }}>

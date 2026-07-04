@@ -16,6 +16,7 @@ import { Router } from "express";
 import { requireAuth } from "../auth/middleware";
 import { db } from "../db/database";
 import { newId, now } from "../lib/ids";
+import { clearProjectDocCache } from "./transcript";
 
 export const sessionRouter = Router();
 
@@ -601,6 +602,8 @@ sessionRouter.post("/:id/end", requireAuth, async (req, res) => {
       `,
       [timestamp, timestamp, session.id]
     );
+
+    clearProjectDocCache(session.id);
 
     const updated = await getSession(session.id);
 

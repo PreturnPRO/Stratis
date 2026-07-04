@@ -116,19 +116,33 @@ export interface LiveContext {
   rollingSummary?: string | null;
   openQuestions?: string[];
   recentTranscript: string;
+  // Rendered PM document from a prior meeting on this project, when this
+  // meeting continues an existing project rather than starting fresh.
+  projectDocument?: string | null;
 }
 
 function liveContextPrompt(ctx: LiveContext): string {
   const openQs = ctx.openQuestions?.length
     ? ctx.openQuestions.map((q) => `- ${q}`).join("\n")
     : "(none)";
-  return [
+
+  const sections: string[] = [];
+
+  if (ctx.projectDocument?.trim()) {
+    sections.push(
+      `Prior project context (from the project's existing PM document — background only; don't re-decide what's already settled here, only build on or revisit it if the transcript explicitly raises it):\n${ctx.projectDocument.trim()}`,
+    );
+  }
+
+  sections.push(
     `Meeting goal: ${ctx.goal?.trim() || "(not provided)"}`,
     `Agenda / brief: ${ctx.brief?.trim() || "(not provided)"}`,
     `Rolling memory so far: ${ctx.rollingSummary?.trim() || "(empty)"}`,
     `Unresolved questions:\n${openQs}`,
     `Recent transcript (most recent last):\n${ctx.recentTranscript.trim() || "(silence)"}`,
-  ].join("\n\n");
+  );
+
+  return sections.join("\n\n");
 }
 
 /**

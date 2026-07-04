@@ -1,5 +1,5 @@
 import React from "react";
-import { COLORS } from "../tokens/colors";
+import { COLORS, FONT } from "../tokens/colors";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Minimal, dependency-free Markdown renderer for the PM document article view.
@@ -117,20 +117,20 @@ function parseBlocks(src: string): Block[] {
 }
 
 const H_STYLE: Record<number, React.CSSProperties> = {
-  1: { fontSize: 22, fontWeight: 700, color: COLORS.textPrimary, margin: "22px 0 10px" },
-  2: { fontSize: 18, fontWeight: 600, color: COLORS.textPrimary, margin: "20px 0 8px" },
-  3: { fontSize: 15, fontWeight: 600, color: COLORS.textPrimary, margin: "16px 0 6px" },
+  1: { fontSize: FONT.size.heading, fontWeight: 700, color: COLORS.textPrimary, margin: "22px 0 10px" },
+  2: { fontSize: FONT.size.subheading, fontWeight: 600, color: COLORS.textPrimary, margin: "20px 0 8px" },
+  3: { fontSize: FONT.size.body, fontWeight: 600, color: COLORS.textPrimary, margin: "16px 0 6px" },
 };
 
 export function Markdown({ children }: { children: string }) {
   const blocks = parseBlocks(children ?? "");
 
   if (blocks.length === 0) {
-    return <p style={{ color: COLORS.textDim, fontSize: 14, margin: 0 }}>(empty)</p>;
+    return <p style={{ color: COLORS.textMuted, fontSize: FONT.size.body, margin: 0 }}>(empty)</p>;
   }
 
   return (
-    <div style={{ fontSize: 15, lineHeight: 1.75, color: COLORS.textMuted }}>
+    <div style={{ fontSize: FONT.size.body, lineHeight: 1.75, color: COLORS.textMuted }}>
       {blocks.map((b, i) => {
         switch (b.kind) {
           case "h":

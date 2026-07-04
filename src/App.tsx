@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { COLORS } from "./constants";
+import { COLORS, FONT } from "./constants";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Sidebar from "./components/Sidebar";
 import MeetingTransition from "./components/MeetingTransition";
@@ -250,8 +250,8 @@ function AppShell() {
                   {i > 0 && (
                     <span
                       style={{
-                        color: COLORS.textDim,
-                        fontSize: 12,
+                        color: COLORS.textMuted,
+                        fontSize: FONT.size.label,
                         userSelect: "none",
                       }}
                     >
@@ -269,7 +269,7 @@ function AppShell() {
                       background: "transparent",
                       border: "none",
                       padding: "2px 4px",
-                      fontSize: 12,
+                      fontSize: FONT.size.label,
                       fontWeight: isCurrent ? 500 : 400,
                       color: isCurrent ? COLORS.text : COLORS.textMuted,
                       cursor: isClickable ? "pointer" : "default",

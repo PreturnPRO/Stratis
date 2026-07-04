@@ -7,6 +7,7 @@ import { transcribeAudio } from "../lib/stt";
 import * as suggestions from "../realtime/suggestions";
 import { detectAnswered } from "../realtime/autodetect";
 import { pushSuggestion, pushAnswered } from "../realtime/hub";
+import { getDocumentRow, rowToDocument, renderDocument } from "../lib/pmDocument";
 
 export const transcriptRouter = Router();
 
@@ -73,12 +74,46 @@ async function saveTranscriptChunk(input: {
 // last 1-3 minutes, not the whole meeting). Capped to the most recent rows.
 const RECENT_WINDOW_ROWS = 12;
 
+// A project's PM document can only change via the post-meeting commit flow
+// (document.ts), which can't happen mid-session — so it's safe (and avoids a
+// DB round-trip per transcript chunk) to fetch it once per session and reuse
+// it for every live AI call in that session. Mirrors the bySession cache
+// pattern in backend/src/realtime/suggestions.ts.
+const projectDocCache = new Map<string, string | null>();
+
+async function getProjectDocumentForSession(
+  sessionId: string,
+  orgId: string,
+  projectId: string,
+): Promise<string | null> {
+  if (projectDocCache.has(sessionId)) return projectDocCache.get(sessionId)!;
+
+  const row = await getDocumentRow(orgId, projectId);
+  const text = row ? renderDocument(rowToDocument(row).state) : null;
+  projectDocCache.set(sessionId, text);
+  return text;
+}
+
+/** Called when a session ends so a stale/absent cache entry can't leak into a
+ * future session reusing the same id space, and to bound cache growth. */
+export function clearProjectDocCache(sessionId: string): void {
+  projectDocCache.delete(sessionId);
+}
+
 /** Build the live AI context for a session: meeting goal/brief, rolling memory,
- * open questions, and the recent transcript window. */
+ * open questions, the project's existing PM document (if this meeting
+ * continues a prior project), and the recent transcript window. */
 async function buildLiveContext(sessionId: string, latestText: string): Promise<LiveContext> {
-  const metaResult = await db.query<{ rolling_summary: string | null; goal: string | null; brief: string | null }>(
+  const metaResult = await db.query<{
+    rolling_summary: string | null;
+    goal: string | null;
+    brief: string | null;
+    project_id: string;
+    org_id: string;
+  }>(
     `
-    SELECT s.rolling_summary AS rolling_summary, m.goal AS goal, m.brief AS brief
+    SELECT s.rolling_summary AS rolling_summary, m.goal AS goal, m.brief AS brief,
+           m.project_id AS project_id, m.org_id AS org_id
     FROM sessions s
     JOIN meetings m ON m.id = s.meeting_id
     WHERE s.id = $1
@@ -86,6 +121,10 @@ async function buildLiveContext(sessionId: string, latestText: string): Promise<
     [sessionId]
   );
   const meta = metaResult.rows[0];
+
+  const projectDocument = meta
+    ? await getProjectDocumentForSession(sessionId, meta.org_id, meta.project_id)
+    : null;
 
   const recentRowsResult = await db.query<{ speaker: string; text: string }>(
     `
@@ -111,6 +150,7 @@ async function buildLiveContext(sessionId: string, latestText: string): Promise<
     rollingSummary: meta?.rolling_summary ?? null,
     openQuestions: suggestions.openCards(sessionId).map((c) => c.question),
     recentTranscript,
+    projectDocument,
   };
 }
 

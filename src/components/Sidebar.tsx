@@ -7,7 +7,7 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import { COLORS, NAV_ITEMS } from "../constants";
+import { COLORS, NAV_ITEMS, FONT } from "../constants";
 import { useAuth } from "../context/AuthContext";
 
 // ─── Icon registry ─────────────────────────────────────────────────────────────
@@ -104,7 +104,7 @@ export default function Sidebar({
             >
               {IconComp
                 ? <IconComp size={22} strokeWidth={1.75} />
-                : <span style={{ fontSize: 20 }}>{item.icon}</span>
+                : <span style={{ fontSize: FONT.size.heading }}>{item.icon}</span>
               }
             </button>
 
@@ -112,7 +112,7 @@ export default function Sidebar({
               <div style={{
                 position: "absolute", top: 8, right: 8,
                 width: 14, height: 14, borderRadius: "50%",
-                background: COLORS.red, fontSize: 9, fontWeight: 700,
+                background: COLORS.red, fontSize: FONT.size.micro, fontWeight: 700,
                 color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
                 pointerEvents: "none",
               }}>
@@ -139,7 +139,7 @@ export default function Sidebar({
             width: 34, height: 34, borderRadius: "50%",
             background: avatarColor,
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 12, fontWeight: 600, color: "#fff", cursor: "default",
+            fontSize: FONT.size.label, fontWeight: 600, color: "#fff", cursor: "default",
           }}
         >
           {initials}
