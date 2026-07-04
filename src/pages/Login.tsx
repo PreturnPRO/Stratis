@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import { COLORS, FONT } from '../constants'
-import { Button } from '../components/ui'
+import { useState, type CSSProperties } from 'react'
+import { COLORS } from '../constants'
+import { btnAccent } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 
 interface Props {
@@ -69,11 +69,13 @@ export default function Login({ onNavigate }: Props) {
       login(data.data.token, data.data.user)
       onNavigate('app')
     } catch {
-      setError('Could not reach server')
+      setErrors({ form: 'Could not reach server' })
     } finally {
       setLoading(false)
     }
   }
+
+  const canSubmit = email.trim() && password && !loading
 
   return (
     <div
