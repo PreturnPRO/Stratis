@@ -11,6 +11,21 @@ import { newId, now } from "../lib/ids";
 // sessionId -> (cardId -> card)
 const bySession = new Map<string, Map<string, SuggestionCard>>();
 
+// Ceiling on unanswered cards per session — once reached, new live_card
+// suggestions are dropped rather than piling into the stack. Kept close to
+// the UI's VISIBLE_ACTIVE_CAP (SuggestionCardStack.tsx) so the "+N more
+// open" queue stays short instead of growing unbounded.
+const MAX_OPEN_CARDS_PER_SESSION = 4;
+
+// Below this confidence, a suggested card is too speculative to surface.
+// Only applies when the model actually supplied a confidence — cards that
+// omit it are trusted as-is.
+const MIN_CARD_CONFIDENCE = 0.5;
+
+function normalizeQuestion(text: string): string {
+  return text.trim().toLowerCase().replace(/\s+/g, " ").replace(/[?.!]+$/g, "");
+}
+
 function sessionMap(sessionId: string): Map<string, SuggestionCard> {
   let m = bySession.get(sessionId);
   if (!m) {
@@ -40,15 +55,30 @@ export function createFromBlocks(sessionId: string, blocks: AIBlock[]): Suggesti
   return created;
 }
 
-/** Turn a live_card_output's cards (schema spec §6) into stored cards. */
+/** Turn a live_card_output's cards (schema spec §6) into stored cards.
+ *  Filters out low-confidence, duplicate, and over-cap suggestions so the
+ *  stack can't be flooded even if the model over-suggests. */
 export function createFromLiveCards(sessionId: string, cards: LiveCardDTO[]): SuggestionCard[] {
   const m = sessionMap(sessionId);
   const created: SuggestionCard[] = [];
+
+  let openCount = openCards(sessionId).length;
+  const seenQuestions = new Set(
+    openCards(sessionId).map((c) => normalizeQuestion(c.question))
+  );
+
   for (const c of cards) {
+    if (c.confidence !== undefined && c.confidence < MIN_CARD_CONFIDENCE) continue;
+    if (openCount >= MAX_OPEN_CARDS_PER_SESSION) continue;
+
+    const question = c.suggested_question?.trim() || c.title;
+    const normalized = normalizeQuestion(question);
+    if (seenQuestions.has(normalized)) continue;
+
     const card: SuggestionCard = {
       id: newId("sug"),
       sessionId,
-      question: c.suggested_question?.trim() || c.title,
+      question,
       reason: c.brief_description,
       answered: false,
       createdAt: now(),
@@ -58,6 +88,8 @@ export function createFromLiveCards(sessionId: string, cards: LiveCardDTO[]): Su
     };
     m.set(card.id, card);
     created.push(card);
+    seenQuestions.add(normalized);
+    openCount++;
   }
   return created;
 }

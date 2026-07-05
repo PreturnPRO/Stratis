@@ -27,6 +27,7 @@ data/
 .idea/
 .claude/
 /.impeccable/
+.playwright-mcp/
 *.swp
 *.swo
 

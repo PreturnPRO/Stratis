@@ -14,6 +14,10 @@ import { useSessionRecovery } from "../hooks/useSessionRecovery";
 import { API_BASE } from "../lib/api";
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 
+// How often buffered speech-recognition results are flushed to the backend
+// as one transcript chunk, instead of sending on every recognized utterance.
+const CHUNK_FLUSH_MS = 5000;
+
 interface MeetingProps {
   onNav?: (id: string, params?: Record<string, string>) => void;
 }
@@ -191,6 +195,21 @@ export default function Meeting({ onNav }: MeetingProps) {
   const sendTextChunkRef = useRef(sendTextChunk);
   useEffect(() => { sendTextChunkRef.current = sendTextChunk; }, [sendTextChunk]);
 
+  // Batch rapid speech-recognition results into one chunk every
+  // CHUNK_FLUSH_MS instead of firing a full AI round-trip per utterance.
+  const bufferRef = useRef<string>("");
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushBuffer = useCallback(() => {
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+    const text = bufferRef.current.trim();
+    bufferRef.current = "";
+    if (text) sendTextChunkRef.current(text);
+  }, []);
+
   useEffect(() => {
     const SpeechRecognitionEngine =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -208,7 +227,16 @@ export default function Meeting({ onNav }: MeetingProps) {
     recognition.onresult = (event: any) => {
       const last = event.results.length - 1;
       const text = event.results[last][0].transcript;
-      if (text) sendTextChunkRef.current(text);
+      if (!text) return;
+
+      bufferRef.current = bufferRef.current ? `${bufferRef.current} ${text}` : text;
+
+      if (!flushTimerRef.current) {
+        flushTimerRef.current = setTimeout(() => {
+          flushTimerRef.current = null;
+          flushBuffer();
+        }, CHUNK_FLUSH_MS);
+      }
     };
 
     recognition.onend = () => {
@@ -233,10 +261,11 @@ export default function Meeting({ onNav }: MeetingProps) {
 
     return () => {
       isRecordingRef.current = false;
-      recognition.onend = null; 
+      recognition.onend = null;
       recognition.stop();
+      flushBuffer();
     };
-  }, []); 
+  }, [flushBuffer]);
 
   const startListening = () => {
     if (!recognitionRef.current) return;
@@ -254,6 +283,7 @@ export default function Meeting({ onNav }: MeetingProps) {
     setIsRecording(false);
     isRecordingRef.current = false;
     recognitionRef.current.stop();
+    flushBuffer();
   };
 
   const loadTranscript = useCallback(async () => {
