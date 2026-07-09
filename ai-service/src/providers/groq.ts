@@ -1,5 +1,3 @@
-// Groq provider (S1-T03-B) — free hosted Llama 3.3 70B via the OpenAI-compatible
-// chat completions endpoint. Uses native fetch (Node 18+), no SDK dependency.
 import { env } from "../../../backend/src/config/env";
 import { fetchWithTimeout, type AIProvider, type ChatMessage, type CompletionResult } from "./types";
 
@@ -14,26 +12,31 @@ export const groqProvider: AIProvider = {
       {
         method: "POST",
         headers: {
+          "Authorization": `Bearer ${apiKey}`,
           "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
         },
-        // response_format json_object: Groq/Llama returns bare JSON instead of
-        // prose-wrapped or fenced text, so parseStructured/parseDocumentPatch don't fail.
         body: JSON.stringify({
           model,
           messages,
-          temperature: 0.4,
-          response_format: { type: "json_object" },
+          temperature: 0.1, // precision focus: eliminates formatting drift
+          max_tokens: 4096,  // ample token window to prevent JSON structure truncation
+          response_format: { type: "json_object" } // hard constraint for json compliance
         }),
       },
       env.ai.timeoutMs
     );
 
-    const raw: any = await res.json();
     if (!res.ok) {
-      throw new Error(`Groq error ${res.status}: ${JSON.stringify(raw)}`);
+      const errorText = await res.text();
+      throw new Error(`Groq API error: ${res.status} ${errorText}`);
     }
-    const text: string = raw?.choices?.[0]?.message?.content ?? "";
-    return { text, provider: "groq", raw };
+
+    const payload = await res.json();
+    
+    // Bracket-free destructuring safely extracts the first array item
+    const [firstChoice] = payload.choices ?? [];
+    const text = firstChoice?.message?.content ?? "";
+    
+    return { text, provider: "groq", raw: payload };
   },
 };

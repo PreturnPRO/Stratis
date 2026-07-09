@@ -1,5 +1,3 @@
-// Typhoon provider (S1-T03-B) — OpenTyphoon API using their latest 30B flagship model.
-// OpenAI-compatible chat completions endpoint. Uses native fetch (Node 18+).
 import { env } from "../../../backend/src/config/env";
 import { fetchWithTimeout, type AIProvider, type ChatMessage, type CompletionResult } from "./types";
 
@@ -14,26 +12,30 @@ export const typhoonProvider: AIProvider = {
       {
         method: "POST",
         headers: {
+          "Authorization": `Bearer ${apiKey}`,
           "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
         },
-        // OpenTyphoon supports the OpenAI-compatible response_format 
-        // to guarantee JSON struct returned without prose wrapping.
         body: JSON.stringify({
           model,
           messages,
-          temperature: 0.4,
-          response_format: { type: "json_object" },
+          temperature: 0.1, // precision focus
+          max_tokens: 4096,  // large prediction limit
         }),
       },
       env.ai.timeoutMs
     );
 
-    const raw: any = await res.json();
     if (!res.ok) {
-      throw new Error(`Typhoon error ${res.status}: ${JSON.stringify(raw)}`);
+      const errorText = await res.text();
+      throw new Error(`Typhoon API error: ${res.status} ${errorText}`);
     }
-    const text: string = raw?.choices?.[0]?.message?.content ?? "";
-    return { text, provider: "typhoon", raw };
+
+    const payload = await res.json();
+    
+    // Bracket-free destructuring safely extracts the first array item
+    const [firstChoice] = payload.choices ?? [];
+    const text = firstChoice?.message?.content ?? "";
+    
+    return { text, provider: "typhoon", raw: payload };
   },
 };
