@@ -31,7 +31,14 @@ export const groqProvider: AIProvider = {
       throw new Error(`Groq API error: ${res.status} ${errorText}`);
     }
 
-    const payload = await res.json();
+    // Type-assertion cast: satisfies strict compilation parameters by defining the expected envelope shape
+    const payload = (await res.json()) as {
+      choices?: {
+        message?: {
+          content?: string;
+        };
+      }[];
+    };
     
     // Bracket-free destructuring safely extracts the first array item
     const [firstChoice] = payload.choices ?? [];
