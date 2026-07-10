@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Mic, Square, RotateCw } from "lucide-react";
+import { Mic, Square } from "lucide-react";
 import { COLORS, FONT } from "../constants";
 import { RADIUS } from "../tokens/colors";
-import { Button, IconButton, Chip, Modal } from "../components/ui";
+import { Button, Chip, Modal } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { SuggestionCardStack } from "../components/SuggestionCardStack";
 import {
@@ -16,12 +16,9 @@ import { useAiBlocks } from "../hooks/useAiBlocks";
 import { useSuggestionSocket } from "../hooks/useSuggestionSocket";
 import { useAuth } from "../context/AuthContext";
 import { useSessionRecovery } from "../hooks/useSessionRecovery";
-
 import { API_BASE } from "../lib/api";
-const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 
-// How often buffered speech-recognition results are flushed to the backend
-// as one transcript chunk, instead of sending on every recognized utterance.
+const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 const CHUNK_FLUSH_MS = 5000;
 
 interface MeetingProps {
@@ -50,7 +47,6 @@ function isRealSessionId(value: string | null | undefined): value is string {
 function formatTime(value: string): string {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
-
   return new Intl.DateTimeFormat(undefined, {
     hour: "2-digit",
     minute: "2-digit",
@@ -66,7 +62,6 @@ function formatElapsed(totalSeconds: number): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 }
 
-// Pulsing red dot used in the recording chip.
 function RecDot() {
   return (
     <span style={{ position: "relative", display: "inline-flex", width: 9, height: 9 }}>
@@ -113,15 +108,15 @@ export default function Meeting({ onNav }: MeetingProps) {
   const ai = useAiBlocks();
 
   const recoveredSessionId = recovery.sessionId;
-  const [manualSessionId, setManualSessionId] = useState<string | null>(() => {
+  const [manualSessionId] = useState<string | null>(() => {
     return window.localStorage.getItem(ACTIVE_SESSION_KEY);
   });
 
   const sessionId = isRealSessionId(recoveredSessionId)
     ? recoveredSessionId
     : isRealSessionId(manualSessionId)
-      ? manualSessionId
-      : null;
+    ? manualSessionId
+    : null;
 
   const [transcripts, setTranscripts] = useState<TranscriptRow[]>([]);
   const [loadingTranscript, setLoadingTranscript] = useState(false);
@@ -130,13 +125,12 @@ export default function Meeting({ onNav }: MeetingProps) {
   const [ending, setEnding] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
 
-  // Web Speech API Native Recoding State
+  // Web Speech API Native Recording States
   const [isRecording, setIsRecording] = useState(false);
   const isRecordingRef = useRef(false);
   const recognitionRef = useRef<any>(null);
 
   const [durationMin, setDurationMin] = useState<number | null>(null);
-  const [wrapUpDismissed, setWrapUpDismissed] = useState(false);
   const [startMs, setStartMs] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   // Last time speech recognition produced a result — drives the "hearing you"
@@ -149,8 +143,7 @@ export default function Meeting({ onNav }: MeetingProps) {
     return token ? { Authorization: `Bearer ${token}` } : {};
   }, [token]);
 
-  const { cards, role, connected, markAnswered, markActive } =
-    useSuggestionSocket(sessionId);
+  const { cards, connected, markAnswered, markActive } = useSuggestionSocket(sessionId);
 
   const appendTranscript = useCallback((row: TranscriptRow) => {
     setTranscripts((prev) => {
@@ -159,15 +152,12 @@ export default function Meeting({ onNav }: MeetingProps) {
     });
   }, []);
 
-  // --- NEW WEB SPEECH API TEXT CHUNKING LOGIC ---
+  // --- Real-Time STT Chunk Ingestion Pipeline ---
   const sendTextChunk = useCallback(async (text: string) => {
     if (!token || !sessionId || !text.trim()) return;
-
     setSendingChunk(true);
-    setError(null);
-
     try {
-      const res = await fetch(`${API_BASE}/api/transcript/chunk`, {
+      const response = await fetch(`${API_BASE}/api/transcript/chunk`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -176,37 +166,36 @@ export default function Meeting({ onNav }: MeetingProps) {
         body: JSON.stringify({
           sessionId,
           session_id: sessionId,
-          speaker: user?.name ?? "Facilitator",
-          text
+          text: text.trim(),
+          speaker: user?.name || "Facilitator",
+          timestamp: new Date().toISOString(),
         }),
       });
 
-      const data = await res.json();
-      if (!data.ok) {
-        setError(data.error ?? "Text chunk failed");
-        return;
-      }
-
-      if (data.data?.transcript) {
-        appendTranscript(data.data.transcript);
-      }
-
-      if (data.data?.ai?.blocks?.length) {
-        ai.append(data.data.ai.blocks, data.data.ai.provider);
+      const payload = await response.json();
+      if (response.ok && payload.ok && payload.data?.transcript) {
+        appendTranscript(payload.data.transcript);
+        if (payload.data.ai?.blocks) {
+          ai.append(payload.data.ai.blocks, payload.data.ai.provider);
+        }
+      } else {
+        console.warn("[speech:chunk] Pipeline rejected request:", payload.error);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not send text chunk");
+      console.error("[speech:chunk] Connection fault:", err);
     } finally {
       setSendingChunk(false);
     }
   }, [token, sessionId, authHeaders, user?.name, appendTranscript, ai]);
 
   const sendTextChunkRef = useRef(sendTextChunk);
-  useEffect(() => { sendTextChunkRef.current = sendTextChunk; }, [sendTextChunk]);
+  useEffect(() => {
+    sendTextChunkRef.current = sendTextChunk;
+  }, [sendTextChunk]);
 
-  // Batch rapid speech-recognition results into one chunk every
-  // CHUNK_FLUSH_MS instead of firing a full AI round-trip per utterance.
+  // Dual-buffer silence-resistant accumulation strategy
   const bufferRef = useRef<string>("");
+  const interimRef = useRef<string>("");
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flushBuffer = useCallback(() => {
@@ -214,9 +203,18 @@ export default function Meeting({ onNav }: MeetingProps) {
       clearTimeout(flushTimerRef.current);
       flushTimerRef.current = null;
     }
-    const text = bufferRef.current.trim();
+
+    let text = bufferRef.current.trim();
+    if (interimRef.current.trim()) {
+      text = (text + " " + interimRef.current.trim()).trim();
+    }
+
     bufferRef.current = "";
-    if (text) sendTextChunkRef.current(text);
+    interimRef.current = "";
+
+    if (text) {
+      sendTextChunkRef.current(text);
+    }
   }, []);
 
   useEffect(() => {
@@ -224,56 +222,94 @@ export default function Meeting({ onNav }: MeetingProps) {
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognitionEngine) {
-      setError("Your browser does not support the Web Speech API.");
+      console.warn("[speech] Native SpeechRecognition not available in this host environment.");
       return;
     }
 
-    const recognition = new SpeechRecognitionEngine();
-    recognition.continuous = true;
-    recognition.interimResults = false;
-    recognition.lang = "th-TH";
+    const rec = new SpeechRecognitionEngine();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = "th-TH"; // Continuous dual-language Thai/English STT
 
-    recognition.onresult = (event: any) => {
-      const last = event.results.length - 1;
-      const text = event.results[last][0].transcript;
-      if (!text) return;
-
-      setLastSpeechMs(Date.now());
-      bufferRef.current = bufferRef.current ? `${bufferRef.current} ${text}` : text;
-
-      if (!flushTimerRef.current) {
-        flushTimerRef.current = setTimeout(() => {
-          flushTimerRef.current = null;
-          flushBuffer();
-        }, CHUNK_FLUSH_MS);
-      }
+    rec.onstart = () => {
+      console.log("[speech] Recognition pipeline active.");
     };
 
-    recognition.onend = () => {
-      if (isRecordingRef.current) {
-        try {
-          recognition.start();
-        } catch (e) {
-          console.warn("[speech] restart collision — already running", e);
+    rec.onresult = (event: any) => {
+      let finalTranscript = "";
+      let interimTranscript = "";
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        // Correctly index SpeechRecognitionAlternative using item(0) (bracket-free!)
+        const alternative = event.results[i].item(0);
+        const transcript = alternative ? alternative.transcript : "";
+
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+
+      // Any recognized speech (final or interim) marks the AI as "hearing you"
+      // for the presence chip.
+      if (finalTranscript || interimTranscript) {
+        setLastSpeechMs(Date.now());
+      }
+
+      if (finalTranscript) {
+        bufferRef.current = (bufferRef.current + " " + finalTranscript).trim();
+        interimRef.current = "";
+      } else {
+        interimRef.current = interimTranscript;
+      }
+
+      // Schedule periodic chunk flush
+      if (bufferRef.current.trim() || interimRef.current.trim()) {
+        if (!flushTimerRef.current) {
+          flushTimerRef.current = setTimeout(() => {
+            flushBuffer();
+          }, CHUNK_FLUSH_MS);
         }
       }
     };
 
-    recognition.onerror = (event: any) => {
-      const expected = new Set(["aborted", "no-speech"]);
-      if (!expected.has(event.error)) {
-        console.warn("[speech] unexpected error:", event.error);
-        setError(`Microphone error: ${event.error}`);
+    rec.onerror = (event: any) => {
+      console.error("[speech] Capture engine error:", event.error);
+      if (event.error === "not-allowed") {
+        setIsRecording(false);
+        isRecordingRef.current = false;
       }
     };
 
-    recognitionRef.current = recognition;
+    rec.onend = () => {
+      console.log("[speech] Mic stream went silent or disconnected.");
+      flushBuffer();
+
+      if (isRecordingRef.current) {
+        console.log("[speech] Re-initiating active capture stream...");
+        try {
+          rec.start();
+        } catch (e) {
+          console.warn("[speech] Auto-restart sequence missed:", e);
+        }
+      }
+    };
+
+    recognitionRef.current = rec;
 
     return () => {
-      isRecordingRef.current = false;
-      recognition.onend = null;
-      recognition.stop();
-      flushBuffer();
+      if (rec) {
+        rec.onend = null;
+        rec.onerror = null;
+        rec.onresult = null;
+        try {
+          rec.stop();
+        } catch (e) {}
+      }
+      if (flushTimerRef.current) {
+        clearTimeout(flushTimerRef.current);
+      }
     };
   }, [flushBuffer]);
 
@@ -284,7 +320,7 @@ export default function Meeting({ onNav }: MeetingProps) {
     try {
       recognitionRef.current.start();
     } catch (e) {
-      console.warn("[speech] start collision — already running", e);
+      console.warn("[speech] Already listening - start aborted:", e);
     }
   };
 
@@ -296,44 +332,50 @@ export default function Meeting({ onNav }: MeetingProps) {
     flushBuffer();
   };
 
+  // --- Past Transcript Syncing ---
   const loadTranscript = useCallback(async () => {
     if (!token || !sessionId) return;
-
     setLoadingTranscript(true);
     setError(null);
-
     try {
-      const res = await fetch(
-        `${API_BASE}/api/transcript/session/${sessionId}`,
-        {
-          headers: authHeaders,
-        },
-      );
-
-      const data = await res.json();
-
-      if (!data.ok) {
-        setError(data.error ?? "Could not load transcript");
-        return;
+      const response = await fetch(`${API_BASE}/api/transcript/session/${sessionId}`, {
+        headers: authHeaders,
+      });
+      const payload = await response.json();
+      if (response.ok && payload.ok) {
+        setTranscripts(payload.data?.transcripts || []);
+      } else {
+        setError(payload.error || "Failed to restore previous session transcript rows.");
       }
-
-      const rows = data.data?.transcripts ?? data.data?.rows ?? [];
-      setTranscripts(rows);
-    } catch {
-      setError("Could not reach transcript endpoint");
+    } catch (err) {
+      console.error("[meeting] Error recovery loading transcripts:", err);
+      setError("Network error fetching past transcript data.");
     } finally {
       setLoadingTranscript(false);
     }
-  }, [token, sessionId, authHeaders]);
+  }, [sessionId, token, authHeaders]);
 
   useEffect(() => {
-    if (!sessionId) return;
-
-    setManualSessionId(sessionId);
-    window.localStorage.setItem(ACTIVE_SESSION_KEY, sessionId);
-
-    void loadTranscript();
+    if (sessionId) {
+      void loadTranscript();
+    }
   }, [sessionId, loadTranscript]);
+
+  // Sync starting server timestamps
+  useEffect(() => {
+    if (!sessionId || !token) return;
+    const pingStartEndpoint = async () => {
+      try {
+        await fetch(`${API_BASE}/api/session/${sessionId}/start`, {
+          method: "POST",
+          headers: authHeaders,
+        });
+      } catch (e) {
+        console.warn("[meeting] Start ping synchronization failed:", e);
+      }
+    };
+    void pingStartEndpoint();
+  }, [sessionId, token, authHeaders]);
 
   useEffect(() => {
     if (!sessionId) {
@@ -343,9 +385,7 @@ export default function Meeting({ onNav }: MeetingProps) {
     const serverStart = recovery.session?.started_at
       ? new Date(recovery.session.started_at).getTime()
       : NaN;
-    setStartMs((prev) =>
-      Number.isFinite(serverStart) ? serverStart : prev ?? Date.now(),
-    );
+    setStartMs((prev) => (Number.isFinite(serverStart) ? serverStart : prev ?? Date.now()));
   }, [sessionId, recovery.session?.started_at]);
 
   // Planned duration: the server-stored value on the meeting wins (it survives
@@ -371,66 +411,57 @@ export default function Meeting({ onNav }: MeetingProps) {
   }, [sessionId, recoveredDuration]);
 
   useEffect(() => {
-    setWrapUpDismissed(false);
-  }, [sessionId]);
-
-  useEffect(() => {
     if (!sessionId) return;
     const t = setInterval(() => setNowMs(Date.now()), 1000);
     return () => clearInterval(t);
   }, [sessionId]);
 
+  // Keep transcripts scrolled to the bottom
   useEffect(() => {
     const el = transcriptScrollRef.current;
     if (!el) return;
-    const nearBottom =
-      el.scrollHeight - el.scrollTop - el.clientHeight < 140;
-    if (nearBottom) el.scrollTop = el.scrollHeight;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
+    if (nearBottom) {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [transcripts]);
 
   const handleEndMeeting = async () => {
     if (!token || !sessionId) return;
-
-    stopListening();
     setEnding(true);
-    setError(null);
-
+    stopListening();
     try {
-      const res = await fetch(`${API_BASE}/api/session/${sessionId}/end`, {
+      const response = await fetch(`${API_BASE}/api/session/${sessionId}/end`, {
         method: "POST",
         headers: authHeaders,
       });
-
-      const data = await res.json();
-
-      if (!data.ok) {
-        throw new Error(data.error ?? "Could not end meeting");
+      const payload = await response.json();
+      if (response.ok && payload.ok) {
+        window.localStorage.removeItem(ACTIVE_SESSION_KEY);
+        recovery.clearRecoveredSession();
+        if (onNav) {
+          onNav("document", { sessionId });
+        }
+      } else {
+        setError(payload.error || "Failed to finalize session.");
       }
-
-      window.localStorage.removeItem(ACTIVE_SESSION_KEY);
-      recovery.clearRecoveredSession();
-
-      onNav?.("document", { sessionId });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not end meeting");
-      setShowEndConfirm(false);
+    } catch (e) {
+      console.error("[meeting:end] connection error:", e);
+      setError("An unexpected network error occurred ending the session.");
     } finally {
       setEnding(false);
+      setShowEndConfirm(false);
     }
   };
 
   const canRecord = !!sessionId && !!token && !ending;
-  const elapsed =
-    sessionId && startMs != null
-      ? Math.max(0, Math.floor((nowMs - startMs) / 1000))
-      : null;
+  const elapsed = sessionId && startMs != null ? Math.max(0, Math.floor((nowMs - startMs) / 1000)) : null;
 
   const WRAP_UP_SEC = 15 * 60;
-  const remainingSec =
-    durationMin != null && elapsed != null ? durationMin * 60 - elapsed : null;
-  const inWrapUp =
-    remainingSec != null && remainingSec <= WRAP_UP_SEC && remainingSec > 0;
+  const remainingSec = durationMin != null && elapsed != null ? durationMin * 60 - elapsed : null;
+  const inWrapUp = remainingSec != null && remainingSec <= WRAP_UP_SEC && remainingSec > 0;
   const overtime = remainingSec != null && remainingSec <= 0;
+  const timeColor = overtime ? COLORS.red : inWrapUp ? COLORS.orange : COLORS.textMuted;
 
   const speechActive = lastSpeechMs != null && nowMs - lastSpeechMs < 6000;
   const presenceMode: PresenceMode = !isRecording
@@ -442,13 +473,11 @@ export default function Meeting({ onNav }: MeetingProps) {
         : "listening";
 
   const meetingTitle = recovery.session?.meeting_title?.trim() || "Live meeting";
-  const sessionShort = sessionId
-    ? `…${sessionId.slice(-6)}`
-    : "";
+  const sessionShort = sessionId ? `...${sessionId.slice(-6)}` : "";
 
   if (recovery.status === "loading" && !sessionId) {
     return (
-      <div style={{ padding: "40px 60px", overflowY: "auto", flex: 1 }}>
+      <div style={{ padding: "40px 60px", overflowY: "auto", flex: 1, background: COLORS.bg }}>
         <LoadingState count={3} persist />
       </div>
     );
@@ -456,7 +485,7 @@ export default function Meeting({ onNav }: MeetingProps) {
 
   if (!sessionId) {
     return (
-      <div style={{ padding: "40px 60px", overflowY: "auto", flex: 1 }}>
+      <div style={{ padding: "40px 60px", overflowY: "auto", flex: 1, background: COLORS.bg }}>
         <h1
           style={{
             color: COLORS.text,
@@ -465,34 +494,18 @@ export default function Meeting({ onNav }: MeetingProps) {
             margin: "0 0 24px",
           }}
         >
-          Meeting
+          Control Room Workspace
         </h1>
-
-        <EmptyState message="No active meeting session. Start a meeting from Dashboard." />
-
-        <div style={{ marginTop: 18 }}>
-          <Button variant="primary" onClick={() => onNav?.("dashboard")}>
-            Go to Dashboard
-          </Button>
-        </div>
+        <EmptyState message="No active meeting session found. Initialize or join a workspace session from your Dashboard." />
       </div>
     );
   }
 
   return (
-    <div
-      style={{ display: "flex", flex: 1, minHeight: 0, background: COLORS.bg }}
-    >
-      <div
-        style={{
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          minWidth: 0,
-          minHeight: 0,
-        }}
-      >
-        {/* ── Header ─────────────────────────────────────────────────────── */}
+    <div style={{ display: "flex", flex: 1, minHeight: 0, background: COLORS.bg }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0 }}>
+        
+        {/* Header */}
         <div
           style={{
             borderBottom: `1px solid ${COLORS.border}`,
@@ -518,19 +531,18 @@ export default function Meeting({ onNav }: MeetingProps) {
             >
               {meetingTitle}
             </h1>
-
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                flexWrap: "wrap",
-              }}
-            >
-              {isRecording && (
-                <Chip color={COLORS.red} icon={<RecDot />}>
-                  REC
-                </Chip>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <Chip icon={isRecording ? <RecDot /> : <StatusDot color={COLORS.textDim} />} mono>
+                {isRecording ? "LIVE" : "STANDBY"}
+              </Chip>
+              <span style={{ fontSize: FONT.size.caption, color: COLORS.textMuted }}>
+                Session {sessionShort}
+              </span>
+              {connected && (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: FONT.size.micro, color: COLORS.cyan }}>
+                  <span style={{ width: 4, height: 4, borderRadius: "50%", background: COLORS.cyan }} />
+                  WEBSOCKET SYNCED
+                </span>
               )}
 
               <AiPresenceChip
@@ -538,49 +550,44 @@ export default function Meeting({ onNav }: MeetingProps) {
                 cardCount={cards.length}
                 provider={ai.provider}
               />
-
-              <Chip
-                color={connected ? COLORS.teal : COLORS.textMuted}
-                icon={
-                  <StatusDot color={connected ? COLORS.teal : COLORS.textDim} />
-                }
-              >
-                {connected ? "Suggestions live" : "Offline"}
-              </Chip>
-
-              <Chip color={COLORS.textDim} mono>
-                {sessionShort}
-              </Chip>
             </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {!isRecording ? (
-              <Button
-                variant="primary"
-                onClick={startListening}
-                disabled={!canRecord}
-                iconLeft={<Mic size={15} strokeWidth={2} />}
-              >
-                Start mic
-              </Button>
-            ) : (
-              <Button
-                variant="danger"
-                onClick={stopListening}
-                iconLeft={<Square size={13} strokeWidth={2.5} />}
-              >
-                Stop mic
-              </Button>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            {elapsed != null && (
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: FONT.size.subheading, fontWeight: 700, color: timeColor }}>
+                  {formatElapsed(elapsed)}
+                </div>
+                {durationMin && (
+                  <div style={{ fontSize: FONT.size.micro, color: COLORS.textDim }}>
+                    TARGET: {durationMin}m {overtime && "(OVERTIME)"}
+                  </div>
+                )}
+              </div>
             )}
 
-            <Button
-              variant="ghost"
-              onClick={() => setShowEndConfirm(true)}
-              disabled={ending}
-            >
-              {ending ? "Ending…" : "End meeting"}
-            </Button>
+            <div style={{ display: "flex", gap: 8 }}>
+              {isRecording ? (
+                <Button variant="danger" size="sm" onClick={stopListening} iconLeft={<Square size={14} />}>
+                  Pause
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={startListening}
+                  disabled={!canRecord}
+                  iconLeft={<Mic size={14} />}
+                >
+                  Record
+                </Button>
+              )}
+
+              <Button variant="ghost" size="sm" onClick={() => setShowEndConfirm(true)} disabled={ending}>
+                End Meeting
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -595,309 +602,171 @@ export default function Meeting({ onNav }: MeetingProps) {
         {error && (
           <div
             style={{
-              background: COLORS.redBg,
+              background: COLORS.dangerBg,
               borderBottom: `1px solid ${COLORS.red}`,
-              color: COLORS.red,
               padding: "10px 24px",
-              fontSize: FONT.size.body,
+              fontSize: FONT.size.label,
+              color: COLORS.red,
             }}
           >
             {error}
           </div>
         )}
 
-        {inWrapUp && !wrapUpDismissed && (
+        {/* Main Two-Column Control Workspace */}
+        <div className="meeting-grid" style={{ flex: 1, padding: "24px", overflow: "hidden" }}>
+          
+          {/* Column 1: Live Ingestion Feed */}
           <div
             style={{
-              background: COLORS.amberSubtle,
-              borderBottom: `1px solid ${COLORS.amber}`,
-              color: COLORS.amber,
-              padding: "10px 24px",
-              fontSize: FONT.size.body,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-              animation: "fadeIn 0.2s ease",
-            }}
-          >
-            <span style={{ fontWeight: 600 }}>
-              ⏰ {formatElapsed(remainingSec!)} left — start wrapping up open
-              questions and confirm decisions.
-            </span>
-            <button
-              onClick={() => setWrapUpDismissed(true)}
-              style={{
-                background: "transparent",
-                border: "none",
-                color: COLORS.amber,
-                fontSize: FONT.size.subheading,
-                lineHeight: 1,
-                padding: "0 4px",
-              }}
-              title="Dismiss"
-            >
-              ×
-            </button>
-          </div>
-        )}
-
-        {overtime && (
-          <div
-            style={{
-              background: COLORS.redBg,
-              borderBottom: `1px solid ${COLORS.red}`,
-              color: COLORS.red,
-              padding: "10px 24px",
-              fontSize: FONT.size.body,
-              fontWeight: 600,
-            }}
-          >
-            Over the planned {durationMin} min by {formatElapsed(Math.abs(remainingSec!))}.
-          </div>
-        )}
-
-        {/* ── Body ───────────────────────────────────────────────────────── */}
-        <div className="meeting-body" style={{ flex: 1, display: "flex", gap: 24, padding: 24, minHeight: 0, overflow: "hidden" }}>
-        <div className="meeting-grid" style={{ flex: 1 }}>
-          <section
-            style={{
+              background: COLORS.surface,
+              border: `1px solid ${COLORS.border}`,
+              borderRadius: RADIUS.lg,
               display: "flex",
               flexDirection: "column",
-              minHeight: 0,
               overflow: "hidden",
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 16,
-                flexShrink: 0,
-              }}
-            >
-              <h2
-                style={{
-                  color: COLORS.text,
-                  fontSize: FONT.size.subheading,
-                  fontWeight: 600,
-                  margin: 0,
-                }}
-              >
-                Transcript
-              </h2>
-
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {sendingChunk && (
-                  <span
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                      color: COLORS.textMuted,
-                      fontSize: FONT.size.label,
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 11,
-                        height: 11,
-                        border: `2px solid ${COLORS.border}`,
-                        borderTopColor: COLORS.accent,
-                        borderRadius: "50%",
-                        animation: "spin 0.7s linear infinite",
-                      }}
-                    />
-                    Transcribing…
-                  </span>
-                )}
-                <IconButton
-                  title="Reload transcript"
-                  onClick={() => void loadTranscript()}
-                >
-                  <RotateCw size={14} strokeWidth={2} />
-                </IconButton>
-              </div>
+            <div style={{ borderBottom: `1px solid ${COLORS.border}`, padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: FONT.size.label, fontWeight: 700, color: COLORS.textMuted, letterSpacing: 0.5, textTransform: "uppercase" }}>
+                Continuous STT Capture
+              </span>
+              {sendingChunk && (
+                <span style={{ fontSize: FONT.size.micro, color: COLORS.accent }}>
+                  Flushing chunk...
+                </span>
+              )}
             </div>
 
             <div
               ref={transcriptScrollRef}
-              style={{ flex: 1, overflow: "auto", minHeight: 0, paddingRight: 4 }}
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: "20px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 14,
+              }}
             >
-              {loadingTranscript ? (
-                <LoadingState count={3} persist />
+              {loadingTranscript && transcripts.length === 0 ? (
+                <LoadingState count={3} />
               ) : transcripts.length === 0 ? (
-                <EmptyState message="Transcript will appear here after you start speaking." />
-              ) : (
-                <div
-                  style={{ display: "flex", flexDirection: "column", gap: 10 }}
-                >
-                  {transcripts.map((row) => (
-                    <div
-                      key={row.id}
-                      style={{
-                        background: COLORS.surface,
-                        border: `1px solid ${COLORS.border}`,
-                        borderRadius: RADIUS.md,
-                        padding: "12px 14px",
-                        animation: "cardIn 0.2s ease",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          marginBottom: 6,
-                        }}
-                      >
-                        <span
-                          style={{
-                            color: COLORS.teal,
-                            fontSize: FONT.size.label,
-                            fontWeight: 600,
-                          }}
-                        >
-                          {row.speaker}
-                        </span>
-                        <span style={{ color: COLORS.textMuted, fontSize: FONT.size.caption }}>
-                          {formatTime(row.timestamp)}
-                        </span>
-                      </div>
-
-                      <div
-                        style={{
-                          color: COLORS.textMuted,
-                          fontSize: FONT.size.body,
-                          lineHeight: 1.6,
-                        }}
-                      >
-                        {row.text}
-                      </div>
-                    </div>
-                  ))}
+                <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center" }}>
+                  <EmptyState message="Ready for speech input. Tap 'Record' above to begin capture stream." />
                 </div>
+              ) : (
+                transcripts.map((row) => (
+                  <div
+                    key={row.id}
+                    style={{
+                      borderBottom: `1px solid ${COLORS.border}`,
+                      paddingBottom: 10,
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontWeight: 600, fontSize: FONT.size.body, color: COLORS.textPrimary }}>
+                        {row.speaker}
+                      </span>
+                      <span style={{ fontSize: FONT.size.micro, color: COLORS.textDim }}>
+                        {formatTime(row.timestamp)}
+                      </span>
+                    </div>
+                    <p style={{ margin: 0, fontSize: FONT.size.body, color: COLORS.textMuted, lineHeight: 1.5 }}>
+                      {row.text}
+                    </p>
+                  </div>
+                ))
               )}
             </div>
-          </section>
+          </div>
 
-          <section
+          {/* Column 2: Suggestion Gutter Stack */}
+          <div
+            className="suggestion-gutter"
             style={{
               display: "flex",
               flexDirection: "column",
+              gap: 20,
+              overflowY: "auto",
               minHeight: 0,
-              overflow: "hidden",
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 16,
-                flexShrink: 0,
-              }}
-            >
-              <h2
-                style={{
-                  color: COLORS.text,
-                  fontSize: FONT.size.subheading,
-                  fontWeight: 600,
-                  margin: 0,
-                }}
-              >
-                AI notes
-              </h2>
+            {durationMin != null && elapsed != null && (
+              <AgendaPulse
+                durationMin={durationMin}
+                elapsedSec={elapsed}
+                wrapUpSec={WRAP_UP_SEC}
+              />
+            )}
 
-              <span style={{ color: COLORS.textMuted, fontSize: FONT.size.label }}>
-                {ai.status}
-              </span>
+            {/* Live Strategic Recommendations */}
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                <span style={{ color: COLORS.textMuted, fontSize: FONT.size.label, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase" }}>
+                  Active Suggestions
+                </span>
+                {connected && <Chip color={COLORS.accent} mono>REALTIME SYNCED</Chip>}
+              </div>
+
+              <div style={{ flex: 1, overflowY: "auto" }}>
+                <SuggestionCardStack
+                  cards={cards}
+                  thinking={isRecording && transcripts.length > 0}
+                  onMarkAnswered={markAnswered}
+                  onMarkActive={markActive}
+                />
+              </div>
             </div>
 
-            <div style={{ flex: 1, overflow: "auto", minHeight: 0, paddingRight: 4 }}>
-              {ai.error && (
-                <div
-                  style={{
-                    background: COLORS.redBg,
-                    border: `1px solid ${COLORS.red}`,
-                    color: COLORS.red,
-                    borderRadius: RADIUS.md,
-                    padding: "10px 12px",
-                    marginBottom: 12,
-                    fontSize: FONT.size.body,
-                  }}
-                >
-                  {ai.error}
-                </div>
-              )}
-
-              {ai.blocks.length === 0 ? (
-                <EmptyState message="AI notes will appear when the transcript has enough signal." />
-              ) : (
-                <BlockRenderer nodes={ai.blocks} />
-              )}
-            </div>
-          </section>
-        </div>
-
-          {role === "facilitator" && (
+            {/* AI Session Notes Panel */}
             <div
-              className="suggestion-gutter"
               style={{
-                width: 320,
-                flexShrink: 0,
+                height: 240,
+                background: COLORS.surfaceMuted,
+                border: `1px solid ${COLORS.border}`,
+                borderRadius: RADIUS.md,
+                padding: "16px",
                 display: "flex",
                 flexDirection: "column",
-                minHeight: 0,
+                overflow: "hidden",
               }}
             >
-              {durationMin != null && elapsed != null && (
-                <AgendaPulse
-                  durationMin={durationMin}
-                  elapsedSec={elapsed}
-                  wrapUpSec={WRAP_UP_SEC}
-                />
-              )}
-              <SuggestionCardStack
-                cards={cards}
-                thinking={sendingChunk}
-                onMarkAnswered={markAnswered}
-                onMarkActive={markActive}
-              />
+              <div style={{ fontSize: FONT.size.micro, fontWeight: 700, color: COLORS.textMuted, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 12 }}>
+                Strategic Meeting Notes
+              </div>
+              <div style={{ flex: 1, overflowY: "auto" }}>
+                {ai.blocks.length === 0 ? (
+                  <p style={{ fontSize: FONT.size.label, color: COLORS.textDim, margin: 0, fontStyle: "italic" }}>
+                    Notes, key arguments, and identified risks will populate here as conversation signal classification completes.
+                  </p>
+                ) : (
+                  <BlockRenderer nodes={ai.blocks} />
+                )}
+              </div>
             </div>
-          )}
+          </div>
         </div>
       </div>
 
+      {/* End Meeting Confirmation Modal */}
       {showEndConfirm && (
         <Modal
-          title="End this meeting?"
-          width={400}
-          onClose={() => !ending && setShowEndConfirm(false)}
+          title="Conclude Meeting Session?"
+          onClose={() => setShowEndConfirm(false)}
           footer={
             <>
-              <Button
-                variant="ghost"
-                onClick={() => setShowEndConfirm(false)}
-                disabled={ending}
-              >
-                Keep going
+              <Button variant="ghost" onClick={() => setShowEndConfirm(false)} disabled={ending}>
+                Cancel
               </Button>
-              <Button
-                variant="danger"
-                onClick={() => void handleEndMeeting()}
-                disabled={ending}
-              >
-                {ending ? "Ending…" : "End meeting"}
+              <Button variant="primary" onClick={handleEndMeeting} disabled={ending}>
+                {ending ? "Concluding..." : "Generate Patches"}
               </Button>
             </>
           }
         >
-          <p style={{ color: COLORS.textMuted, fontSize: FONT.size.body, lineHeight: 1.6, margin: 0 }}>
-            Recording will stop and the session will close. Stratis will generate
-            the post-meeting summary and document patches from the transcript.
-            This can't be undone.
+          <p style={{ fontSize: FONT.size.body, color: COLORS.textMuted, lineHeight: 1.5, margin: 0 }}>
+            This action will disconnect the continuous recording feed and run post-meeting summary parsing. You will proceed to review individual PM document patches before final commit.
           </p>
         </Modal>
       )}
