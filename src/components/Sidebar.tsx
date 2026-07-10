@@ -85,7 +85,6 @@ export default function Sidebar({
       {NAV_ITEMS.map((item: { id: string; icon: string; label: string }) => {
         const isActive = active === item.id;
         const badge    = item.id === "decisions" ? 2 : item.id === "inbox" ? 4 : null;
-        const dot      = item.id === "meeting";
         const IconComp = ICON_MAP[item.icon];
 
         return (

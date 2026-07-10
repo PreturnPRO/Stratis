@@ -207,7 +207,7 @@ export function NewMeetingModal({
               min={5}
               max={480}
               value={durationMinutes}
-              onChange={(e) => setDurationMinutes(Math.max(1, Number(e.target.value) || 0))}
+              onChange={(e) => setDurationMinutes(Math.min(480, Math.max(5, Number(e.target.value) || 0)))}
               aria-label="Custom duration in minutes"
             />
             <span style={{ color: COLORS.textMuted, fontSize: FONT.size.label }}>min</span>

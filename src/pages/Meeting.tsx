@@ -245,7 +245,7 @@ export default function Meeting({ onNav }: MeetingProps) {
     const rec = new SpeechRecognitionEngine();
     rec.continuous = true;
     rec.interimResults = true;
-    rec.lang = "th-TH"; // Continuous dual-language Thai/English STT
+    rec.lang = "th-TH"; // Web Speech API supports one language per recognition instance; Thai only
 
     rec.onstart = () => {
       console.log("[speech] Recognition pipeline active.");

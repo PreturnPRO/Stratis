@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { COLORS, FONT } from "./constants";
 import { AuthProvider, useAuth } from "./context/AuthContext";
@@ -53,17 +53,29 @@ function renderPage(
   }
 }
 
+function hashToEntry(): { page: AppPage; params: Record<string, string> } {
+  const hash = window.location.hash.replace(/^#\/?/, "");
+  const [page, query] = hash.split("?");
+  const params: Record<string, string> = {};
+  if (query) new URLSearchParams(query).forEach((v, k) => { params[k] = v; });
+  return { page: (page || "dashboard") as AppPage, params };
+}
+
+function entryToHash(page: AppPage, params: Record<string, string>): string {
+  const query = new URLSearchParams(params).toString();
+  return `#/${page}${query ? `?${query}` : ""}`;
+}
+
 function AppShell() {
   const { isAuthed, logout } = useAuth();
   const [authPage, setAuthPage] = useState<AuthPage>("landing");
-  const [active, setActive] = useState<AppPage>("dashboard");
-  const [navParams, setNavParams] = useState<Record<string, string>>({});
+  const initialEntry = hashToEntry();
+  const [active, setActive] = useState<AppPage>(initialEntry.page);
+  const [navParams, setNavParams] = useState<Record<string, string>>(initialEntry.params);
   const [showTransition, setShowTransition] = useState(false);
 
   type HistoryEntry = { page: AppPage; params: Record<string, string> };
-  const [history, setHistory] = useState<HistoryEntry[]>([
-    { page: "dashboard", params: {} },
-  ]);
+  const [history, setHistory] = useState<HistoryEntry[]>([initialEntry]);
   const [historyIndex, setHistoryIndex] = useState(0);
 
   const handleNav = (id: string, params?: Record<string, string>) => {
@@ -99,6 +111,20 @@ function AppShell() {
     setActive(page);
     setNavParams(resolvedParams);
   };
+
+  useEffect(() => {
+    const hash = entryToHash(active, navParams);
+    if (window.location.hash !== hash) window.history.pushState(null, "", hash);
+  }, [active, navParams]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      const entry = hashToEntry();
+      handleNav(entry.page, entry.params);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  });
 
   const handleSidebarNav = (id: string) => {
     handleNav(id, {});

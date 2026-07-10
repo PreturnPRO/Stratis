@@ -95,6 +95,9 @@ export default function Register({ onNavigate }: Props) {
     name.trim() &&
     email.trim() &&
     password &&
+    confirmPassword &&
+    !validateRegister(name, email, password) &&
+    password === confirmPassword &&
     !loading
 
   return (
