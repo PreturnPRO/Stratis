@@ -19,7 +19,14 @@ import { useSessionRecovery } from "../hooks/useSessionRecovery";
 import { API_BASE } from "../lib/api";
 
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
-const CHUNK_FLUSH_MS = 5000;
+
+// Adaptive AI chunking: recognized words render instantly in the transcript
+// (ghost row) WITHOUT calling the question AI. A chunk is sent to the AI only
+// when the speaker pauses on a finalized sentence with enough substance, or
+// when the hard time cap is reached — whichever comes first. Thai has no word
+// spaces, so "substance" is measured in characters, not words.
+const CHUNK_MAX_MS = 7000;
+const CHUNK_MIN_CHARS = 40;
 
 interface MeetingProps {
   onNav?: (id: string, params?: Record<string, string>) => void;
@@ -137,6 +144,12 @@ export default function Meeting({ onNav }: MeetingProps) {
   // state of the AI presence chip.
   const [lastSpeechMs, setLastSpeechMs] = useState<number | null>(null);
 
+  // Ghost-row state: words shown instantly, before any backend/AI round-trip.
+  // liveText = recognized but not yet flushed; pendingText = flushed chunk
+  // still in flight to the backend.
+  const [liveText, setLiveText] = useState("");
+  const [pendingText, setPendingText] = useState("");
+
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
 
   const authHeaders = useMemo((): Record<string, string> => {
@@ -156,6 +169,7 @@ export default function Meeting({ onNav }: MeetingProps) {
   const sendTextChunk = useCallback(async (text: string) => {
     if (!token || !sessionId || !text.trim()) return;
     setSendingChunk(true);
+    setPendingText(text.trim());
     try {
       const response = await fetch(`${API_BASE}/api/transcript/chunk`, {
         method: "POST",
@@ -185,6 +199,7 @@ export default function Meeting({ onNav }: MeetingProps) {
       console.error("[speech:chunk] Connection fault:", err);
     } finally {
       setSendingChunk(false);
+      setPendingText("");
     }
   }, [token, sessionId, authHeaders, user?.name, appendTranscript, ai]);
 
@@ -211,6 +226,7 @@ export default function Meeting({ onNav }: MeetingProps) {
 
     bufferRef.current = "";
     interimRef.current = "";
+    setLiveText("");
 
     if (text) {
       sendTextChunkRef.current(text);
@@ -264,12 +280,28 @@ export default function Meeting({ onNav }: MeetingProps) {
         interimRef.current = interimTranscript;
       }
 
-      // Schedule periodic chunk flush
+      // Ghost row: mirror every recognized word to the transcript instantly —
+      // no backend or AI round-trip involved.
+      setLiveText((bufferRef.current + " " + interimRef.current).trim());
+
+      // Adaptive flush: a finalized sentence with no trailing interim means
+      // the speaker paused — hand the chunk to the question AI now, on a
+      // natural thought boundary, instead of waiting for the cap.
+      if (
+        finalTranscript &&
+        !interimTranscript &&
+        bufferRef.current.length >= CHUNK_MIN_CHARS
+      ) {
+        flushBuffer();
+        return;
+      }
+
+      // Hard cap: even mid-monologue, flush at least every CHUNK_MAX_MS.
       if (bufferRef.current.trim() || interimRef.current.trim()) {
         if (!flushTimerRef.current) {
           flushTimerRef.current = setTimeout(() => {
             flushBuffer();
-          }, CHUNK_FLUSH_MS);
+          }, CHUNK_MAX_MS);
         }
       }
     };
@@ -416,7 +448,8 @@ export default function Meeting({ onNav }: MeetingProps) {
     return () => clearInterval(t);
   }, [sessionId]);
 
-  // Keep transcripts scrolled to the bottom
+  // Keep transcripts scrolled to the bottom — including as the live ghost
+  // row grows word by word.
   useEffect(() => {
     const el = transcriptScrollRef.current;
     if (!el) return;
@@ -424,7 +457,7 @@ export default function Meeting({ onNav }: MeetingProps) {
     if (nearBottom) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [transcripts]);
+  }, [transcripts, liveText, pendingText]);
 
   const handleEndMeeting = async () => {
     if (!token || !sessionId) return;
@@ -651,32 +684,56 @@ export default function Meeting({ onNav }: MeetingProps) {
             >
               {loadingTranscript && transcripts.length === 0 ? (
                 <LoadingState count={3} />
-              ) : transcripts.length === 0 ? (
+              ) : transcripts.length === 0 && !liveText && !pendingText ? (
                 <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center" }}>
                   <EmptyState message="Ready for speech input. Tap 'Record' above to begin capture stream." />
                 </div>
               ) : (
-                transcripts.map((row) => (
-                  <div
-                    key={row.id}
-                    style={{
-                      borderBottom: `1px solid ${COLORS.border}`,
-                      paddingBottom: 10,
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                      <span style={{ fontWeight: 600, fontSize: FONT.size.body, color: COLORS.textPrimary }}>
-                        {row.speaker}
-                      </span>
-                      <span style={{ fontSize: FONT.size.micro, color: COLORS.textDim }}>
-                        {formatTime(row.timestamp)}
-                      </span>
+                <>
+                  {transcripts.map((row) => (
+                    <div
+                      key={row.id}
+                      style={{
+                        borderBottom: `1px solid ${COLORS.border}`,
+                        paddingBottom: 10,
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                        <span style={{ fontWeight: 600, fontSize: FONT.size.body, color: COLORS.textPrimary }}>
+                          {row.speaker}
+                        </span>
+                        <span style={{ fontSize: FONT.size.micro, color: COLORS.textDim }}>
+                          {formatTime(row.timestamp)}
+                        </span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: FONT.size.body, color: COLORS.textMuted, lineHeight: 1.5 }}>
+                        {row.text}
+                      </p>
                     </div>
-                    <p style={{ margin: 0, fontSize: FONT.size.body, color: COLORS.textMuted, lineHeight: 1.5 }}>
-                      {row.text}
-                    </p>
-                  </div>
-                ))
+                  ))}
+
+                  {(pendingText || liveText) && (
+                    <div style={{ paddingBottom: 10, opacity: 0.7 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                        <span style={{ fontWeight: 600, fontSize: FONT.size.body, color: COLORS.textMuted }}>
+                          {user?.name || "Facilitator"}
+                        </span>
+                        <span style={{ fontSize: FONT.size.micro, color: COLORS.accent, letterSpacing: 0.5 }}>
+                          LIVE
+                        </span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: FONT.size.body, color: COLORS.textDim, lineHeight: 1.5, fontStyle: "italic" }}>
+                        {(pendingText + " " + liveText).trim()}{" "}
+                        <span
+                          aria-hidden
+                          style={{ color: COLORS.accent, animation: "pulse 1.2s ease-in-out infinite" }}
+                        >
+                          ▌
+                        </span>
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
