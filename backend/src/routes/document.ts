@@ -174,8 +174,7 @@ documentRouter.post("/session/:sessionId/commit", requireAuth, async (req, res, 
     }
 
     const patches: DocumentPatchDTO[] = Array.isArray(req.body?.patches) ? req.body.patches : [];
-    const changeSummary =
-      typeof req.body?.overall_change_summary === "string" ? req.body.overall_change_summary : "";
+    const changeSummary = typeof req.body?.overall_change_summary === "string" ? req.body.overall_change_summary : "";
 
     if (patches.length === 0) {
       return res.status(400).json({ ok: false, error: "No approved patches to commit" });
@@ -186,7 +185,7 @@ documentRouter.post("/session/:sessionId/commit", requireAuth, async (req, res, 
     const currentState = existing ? rowToDocument(existing).state : emptyState();
     const nextState = applyPatches(currentState, patches);
     const nextVersion = (existing?.version ?? 0) + 1;
-    
+
     // Explicitly stringify for the PG query to insert into JSONB
     const stateJson = JSON.stringify(nextState);
 
@@ -200,7 +199,7 @@ documentRouter.post("/session/:sessionId/commit", requireAuth, async (req, res, 
     } else {
       documentId = newId("doc");
       await db.query(
-        `INSERT INTO documents (id, project_id, org_id, state_json, version, created_at, updated_at)
+        `INSERT INTO documents (id, project_id, org_id, state_json, version, created_at, updated_at) 
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [documentId, meta.project_id, meta.org_id, stateJson, nextVersion, timestamp, timestamp]
       );
@@ -208,7 +207,7 @@ documentRouter.post("/session/:sessionId/commit", requireAuth, async (req, res, 
 
     // git-style version log: store the committed state + the patch payload.
     await db.query(
-      `INSERT INTO document_versions (id, document_id, session_id, version, state_json, patch_json, created_by, created_at)
+      `INSERT INTO document_versions (id, document_id, session_id, version, state_json, patch_json, created_by, created_at) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [
         newId("dver"),
@@ -222,27 +221,50 @@ documentRouter.post("/session/:sessionId/commit", requireAuth, async (req, res, 
       ]
     );
 
-    // Surface on the dashboard recent-summaries feed (kind='summary').
-    await db.query(
-      `INSERT INTO notifications (id, user_id, session_id, kind, title, body, read, created_at)
-       VALUES ($1, $2, $3, 'summary', $4, $5, FALSE, $6)`,
-      [
-        newId("ntf"),
-        req.auth!.sub,
-        meta.session_id,
-        `${meta.meeting_title} — document v${nextVersion}`,
-        changeSummary || `PM document updated to v${nextVersion}.`,
-        timestamp,
-      ]
+    // 1. Fetch all users belonging to the project organization (meta.org_id)
+    const orgUsers = await db.query<{ id: string }>(
+      "SELECT id FROM users WHERE org_id = $1",
+      [meta.org_id]
     );
+
+    // Inline import of real-time hub delivery helper to prevent circular dependency races
+    const { pushNotification } = await import("../realtime/hub");
+
+    // 2. Loop and insert notification row for each organizational member, triggering dynamic real-time WebSocket push
+    for (const u of orgUsers.rows) {
+      const notificationId = newId("ntf");
+      const notificationPayload = {
+        id: notificationId,
+        user_id: u.id,
+        session_id: meta.session_id,
+        kind: "summary",
+        title: `${meta.meeting_title} — document v${nextVersion}`,
+        body: changeSummary || `PM document updated to v${nextVersion}.`,
+        read: false,
+        created_at: timestamp
+      };
+
+      await db.query(
+        `INSERT INTO notifications (id, user_id, session_id, kind, title, body, read, created_at)
+         VALUES ($1, $2, $3, 'summary', $4, $5, FALSE, $6)`,
+        [
+          notificationPayload.id,
+          notificationPayload.user_id,
+          notificationPayload.session_id,
+          notificationPayload.title,
+          notificationPayload.body,
+          notificationPayload.created_at
+        ]
+      );
+
+      // Trigger the real-time WebSocket push helper for active sockets
+      pushNotification(u.id, notificationPayload);
+    }
 
     const row = await getDocumentRow(meta.org_id, meta.project_id);
     const versions = await getVersions(documentId);
 
-    res.json({
-      ok: true,
-      data: { document: rowToDocument(row!), versions },
-    });
+    res.json({ ok: true, data: { document: rowToDocument(row!), versions }, });
   } catch (err) {
     next(err);
   }
