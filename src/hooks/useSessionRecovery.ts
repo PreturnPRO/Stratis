@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
+import { API_BASE } from '../lib/api'
 
-const API_BASE = 'http://localhost:3001'
 const STORAGE_KEY = 'stratis.activeSessionId.v1'
 
 export type SessionRecoveryStatus =
@@ -21,6 +21,7 @@ interface RecoverySession {
   org_id?: string
   project_id?: string
   meeting_title?: string
+  duration_minutes?: number | null
 }
 
 interface RecoverResponse {

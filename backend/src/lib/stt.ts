@@ -37,68 +37,65 @@ function mockTranscribe(input: TranscribeInput): TranscribeResult {
 async function deepgramTranscribe(
   input: TranscribeInput,
 ): Promise<TranscribeResult> {
-  const { apiKey, model, baseUrl } = env.stt.deepgram;
+  const { apiKey, baseUrl, model } = env.stt.deepgram;
 
   if (!apiKey) {
     return mockTranscribe(input);
   }
 
-  const url = `${baseUrl}?model=${encodeURIComponent(model)}&smart_format=true&punctuate=true`;
-
-  const res = await fetchWithTimeout(
-    url,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Token ${apiKey}`,
-        "Content-Type": input.mimeType,
-      },
-      body: input.audio,
-    },
-    env.stt.timeoutMs,
-  );
-
-  const raw: any = await res.json();
-
-  if (!res.ok) {
-    const message = `Deepgram error ${res.status}: ${JSON.stringify(raw)}`;
-
-    // Browser MediaRecorder can occasionally emit a tiny/partial chunk,
-    // especially on stop. Deepgram may reject that as corrupt/unsupported.
-    // Treat 400 as "no transcript for this chunk" instead of crashing
-    // the live meeting pipeline.
-    if (res.status === 400) {
-      console.warn(`[stt] ${message}`);
-
-      return {
-        provider: "deepgram",
-        text: "",
-        raw: {
-          skipped: true,
-          reason: "deepgram_rejected_chunk",
-          error: raw,
+  try {
+    const url = `${baseUrl}?model=${encodeURIComponent(model)}&smart_format=true&punctuate=true&language=th`;
+    
+    const res = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Token ${apiKey}`,
+          "Content-Type": input.mimeType,
         },
-      };
+        body: input.audio,
+      },
+      env.stt.timeoutMs,
+    );
+
+    const rawText = await res.text();
+    let parsedRaw: any = {};
+    
+    try {
+      parsedRaw = JSON.parse(rawText);
+    } catch (e) {
+      parsedRaw = { unparseableResponse: rawText };
     }
 
-    throw new Error(message);
+    if (!res.ok) {
+      console.warn(`[stt] Deepgram error ${res.status}`);
+      return { provider: "deepgram", text: "", raw: { skipped: true, error: parsedRaw } };
+    }
+
+    // Safely extract Deepgram's nested transcription text
+    const text = parsedRaw?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? "";
+    return { provider: "deepgram", text, raw: parsedRaw };
+    
+  } catch (error) {
+    // Graceful fallback for any network/timeout errors to keep the meeting pipeline alive
+    console.warn(`[stt] Network or timeout error during Deepgram transcription.`);
+    return { provider: "deepgram", text: "", raw: { skipped: true, error } };
   }
-
-  const text = raw?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? "";
-
-  return {
-    provider: "deepgram",
-    text,
-    raw,
-  };
 }
 
 export async function transcribeAudio(
   input: TranscribeInput,
 ): Promise<TranscribeResult> {
-  if (env.stt.provider === "deepgram") {
-    return deepgramTranscribe(input);
+  switch (env.stt.provider) {
+    case "deepgram":
+      return deepgramTranscribe(input);
+    case "mock":
+      return mockTranscribe(input);
+    default:
+      console.warn(
+        `[stt] Unknown provider ${env.stt.provider}, falling back to mock`,
+      );
+      return mockTranscribe(input);
   }
-
-  return mockTranscribe(input);
 }

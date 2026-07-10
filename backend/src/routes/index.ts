@@ -12,6 +12,7 @@ import { aiRouter } from "./ai";
 import { summaryRouter } from "./summary";
 import { sessionRouter } from "./session";
 import { transcriptRouter } from "./transcript";
+import { documentRouter } from "./document";
 
 export const apiRouter = Router();
 
@@ -20,3 +21,4 @@ apiRouter.use("/ai", aiRouter);
 apiRouter.use("/summary", summaryRouter);
 apiRouter.use("/session", sessionRouter);
 apiRouter.use("/transcript", transcriptRouter);
+apiRouter.use("/document", documentRouter);

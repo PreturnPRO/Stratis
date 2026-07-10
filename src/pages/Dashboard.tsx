@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { COLORS } from "../constants";
-import { btnAccent, btnGhost } from "../components/ui";
+import { COLORS, FONT, SHADOW, TRANSITION, GRADIENT } from "../constants";
+import { Button } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
+import { NewMeetingModal } from "../components/NewMeetingModal";
 import { useAuth } from "../context/AuthContext";
+import { useCreateMeeting, ACTIVE_SESSION_KEY, projectIdFromTitle } from "../hooks/useCreateMeeting";
 
-const API_BASE = "http://localhost:3001";
-const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
+import { API_BASE } from "../lib/api";
 
 interface DashboardProps {
   onNav?: (id: string, params?: Record<string, string>) => void;
@@ -76,15 +77,37 @@ function formatDate(value?: string | null): string {
   }).format(d);
 }
 
-function projectIdFromTitle(title: string): string {
-  const slug = title
-    .trim()
-    .toLowerCase()
-    .replace(/['"]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+// Small hover-lift for otherwise-flat interactive rows — same hover-via-state
+// idiom as Button/IconButton in ui.tsx, just applied locally here.
+function HoverLift({
+  as = "div",
+  style,
+  children,
+  ...rest
+}: {
+  as?: "div" | "button";
+  style?: React.CSSProperties;
+  children: React.ReactNode;
+} & React.HTMLAttributes<HTMLElement>) {
+  const [hovered, setHovered] = useState(false);
+  const Comp = as as any;
 
-  return slug || "default-project";
+  return (
+    <Comp
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        ...style,
+        borderColor: hovered ? COLORS.borderLight : COLORS.border,
+        boxShadow: hovered ? SHADOW.xs : "none",
+        transform: hovered ? "translateY(-1px)" : "translateY(0)",
+        transition: `transform ${TRANSITION.springSoft}, box-shadow ${TRANSITION.base}, border-color ${TRANSITION.base}`,
+      }}
+      {...rest}
+    >
+      {children}
+    </Comp>
+  );
 }
 
 export default function Dashboard({ onNav }: DashboardProps) {
@@ -96,14 +119,11 @@ export default function Dashboard({ onNav }: DashboardProps) {
   const [summaries, setSummaries] = useState<DashboardSummary[]>([]);
   const [showNewMeeting, setShowNewMeeting] = useState(false);
 
-  const [title, setTitle] = useState("");
-  const [projectName, setProjectName] = useState("");
-  const [scheduledAt, setScheduledAt] = useState("");
-  const [creating, setCreating] = useState(false);
-
   const authHeaders = useMemo((): Record<string, string> => {
     return token ? { Authorization: `Bearer ${token}` } : {};
   }, [token]);
+
+  const create = useCreateMeeting(onNav);
 
   const loadDashboard = async () => {
     if (!token) return;
@@ -131,9 +151,9 @@ export default function Dashboard({ onNav }: DashboardProps) {
 
       setMeetings(
         dashboardData?.upcomingMeetings ??
-        dashboardData?.upcoming ??
-        dashboardData?.meetings ??
-        [],
+          dashboardData?.upcoming ??
+          dashboardData?.meetings ??
+          [],
       );
 
       setSummaries(
@@ -158,46 +178,6 @@ export default function Dashboard({ onNav }: DashboardProps) {
     void loadDashboard();
   }, [token]);
 
-  const startSessionForMeeting = async (meetingId: string) => {
-    const createRes = await fetch(`${API_BASE}/api/session`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...authHeaders,
-      },
-      body: JSON.stringify({
-        meetingId,
-        meeting_id: meetingId,
-      }),
-    });
-
-    const createData = await createRes.json();
-
-    if (!createData.ok) {
-      throw new Error(createData.error ?? "Could not create session");
-    }
-
-    const session = createData.data?.session ?? createData.data;
-
-    const sessionId = session?.id;
-
-    if (!sessionId) {
-      throw new Error("Session id missing from backend response");
-    }
-
-    await fetch(`${API_BASE}/api/session/${sessionId}/start`, {
-      method: "POST",
-      headers: authHeaders,
-    }).catch(() => {
-      // Non-fatal. Some backends create sessions directly as active.
-    });
-
-    window.localStorage.setItem(ACTIVE_SESSION_KEY, sessionId);
-    onNav?.("meeting", { sessionId });
-
-    return sessionId;
-  };
-
   const handleStartExisting = async (meeting: DashboardMeeting) => {
     setError(null);
 
@@ -211,104 +191,63 @@ export default function Dashboard({ onNav }: DashboardProps) {
         return;
       }
 
-      await startSessionForMeeting(meeting.id);
+      await create.startSessionForMeeting(meeting.id, 60);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start meeting");
     }
   };
 
-  const handleCreateMeeting = async () => {
-    const cleanTitle = title.trim();
-    const cleanProject = projectName.trim();
-
-    if (!cleanTitle) {
-      setError("Meeting title is required");
-      return;
-    }
-
-    if (!cleanProject) {
-      setError("Project name is required");
-      return;
-    }
-
-    setCreating(true);
-    setError(null);
-
-    try {
-      const projectId = projectIdFromTitle(cleanProject);
-
-      const res = await fetch(`${API_BASE}/api/meeting`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...authHeaders,
-        },
-        body: JSON.stringify({
-          title: cleanTitle,
-          projectId,
-          project_id: projectId,
-          scheduledAt: scheduledAt || null,
-          scheduled_at: scheduledAt || null,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!data.ok) {
-        throw new Error(data.error ?? "Could not create meeting");
-      }
-
-      const meeting = data.data?.meeting ?? data.data;
-
-      const meetingId = meeting?.id;
-
-      if (!meetingId) {
-        throw new Error("Meeting id missing from backend response");
-      }
-
-      setShowNewMeeting(false);
-      setTitle("");
-      setProjectName("");
-      setScheduledAt("");
-
-      await startSessionForMeeting(meetingId);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create meeting");
-    } finally {
-      setCreating(false);
-    }
+  const handleCreateMeeting = async (input: {
+    title: string;
+    projectName: string;
+    durationMinutes: number;
+    goal: string;
+    brief: string;
+  }) => {
+    const sessionId = await create.createMeeting({
+      title: input.title,
+      projectId: projectIdFromTitle(input.projectName),
+      goal: input.goal,
+      brief: input.brief,
+      durationMinutes: input.durationMinutes,
+    });
+    if (sessionId) setShowNewMeeting(false);
   };
 
   return (
-    <div style={{ padding: "40px 60px", overflowY: "auto", flex: 1 }}>
+    <div className="page-padding" style={{ overflowY: "auto", flex: 1 }}>
       <div
         style={{
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           marginBottom: 40,
+          padding: "8px 12px",
+          margin: "-8px -12px 32px",
+          borderRadius: 12,
+          backgroundImage: GRADIENT.accentGlow(COLORS.accent),
         }}
       >
         <div>
           <h1
             style={{
               color: COLORS.text,
-              fontSize: 22,
-              fontWeight: 500,
+              fontSize: FONT.size.title,
+              fontWeight: 600,
               margin: 0,
               marginBottom: 4,
             }}
           >
             Dashboard
           </h1>
-          <span style={{ color: COLORS.textMuted, fontSize: 13 }}>
+          <span style={{ color: COLORS.textMuted, fontSize: FONT.size.body }}>
             Welcome back, {user?.name ?? "facilitator"}
           </span>
         </div>
 
-        <button style={btnAccent()} onClick={() => setShowNewMeeting(true)}>
+        <Button variant="primary" onClick={() => setShowNewMeeting(true)}>
           + New meeting
-        </button>
+        </Button>
       </div>
 
       {error && (
@@ -320,7 +259,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
             borderRadius: 8,
             padding: "10px 12px",
             marginBottom: 18,
-            fontSize: 13,
+            fontSize: FONT.size.body,
           }}
         >
           {error}
@@ -328,16 +267,17 @@ export default function Dashboard({ onNav }: DashboardProps) {
       )}
 
       {loading ? (
-        <LoadingState count={4} persist />
+        <LoadingState count={4} />
       ) : (
         <div
+          className="dashboard-grid"
           style={{
             display: "grid",
-            gridTemplateColumns: "1fr 1fr",
             gap: 32,
             alignItems: "start",
           }}
         >
+          {/* Upcoming Meetings */}
           <div>
             <div
               style={{
@@ -350,18 +290,17 @@ export default function Dashboard({ onNav }: DashboardProps) {
               <h2
                 style={{
                   color: COLORS.text,
-                  fontSize: 14,
-                  fontWeight: 500,
+                  fontSize: FONT.size.subheading,
+                  fontWeight: 600,
                   margin: 0,
                 }}
               >
                 Upcoming meetings
               </h2>
-              <button style={btnGhost()} onClick={loadDashboard}>
+              <Button variant="ghost" onClick={loadDashboard}>
                 Refresh
-              </button>
+              </Button>
             </div>
-
             {meetings.length === 0 ? (
               <EmptyState message="No meetings yet. Create your first meeting." />
             ) : (
@@ -369,7 +308,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
                 style={{ display: "flex", flexDirection: "column", gap: 10 }}
               >
                 {meetings.map((m) => (
-                  <div
+                  <HoverLift
                     key={m.id}
                     style={{
                       background: COLORS.surface,
@@ -390,38 +329,39 @@ export default function Dashboard({ onNav }: DashboardProps) {
                         <div
                           style={{
                             color: COLORS.text,
-                            fontSize: 14,
+                            fontSize: FONT.size.body,
                             fontWeight: 500,
                             marginBottom: 6,
                           }}
                         >
                           {m.title}
                         </div>
-                        <div style={{ color: COLORS.textMuted, fontSize: 12 }}>
+                        <div style={{ color: COLORS.textMuted, fontSize: FONT.size.label }}>
                           {m.project ?? m.projectId ?? "Project"} ·{" "}
                           {formatDate(m.scheduledAt ?? m.time)}
                         </div>
                       </div>
 
-                      <button
-                        style={btnAccent()}
+                      <Button
+                        variant="primary"
                         onClick={() => void handleStartExisting(m)}
                       >
                         {m.activeSession ? "Resume" : "Start"}
-                      </button>
+                      </Button>
                     </div>
-                  </div>
+                  </HoverLift>
                 ))}
               </div>
             )}
           </div>
 
+          {/* Recent Summaries */}
           <div>
             <h2
               style={{
                 color: COLORS.text,
-                fontSize: 14,
-                fontWeight: 500,
+                fontSize: FONT.size.subheading,
+                fontWeight: 600,
                 margin: "0 0 16px",
               }}
             >
@@ -435,9 +375,12 @@ export default function Dashboard({ onNav }: DashboardProps) {
                 style={{ display: "flex", flexDirection: "column", gap: 10 }}
               >
                 {summaries.map((s) => (
-                  <div
+                  <HoverLift
+                    as="button"
                     key={s.id}
                     style={{
+                      width: "100%",
+                      textAlign: "left",
                       background: COLORS.surface,
                       border: `1px solid ${COLORS.border}`,
                       borderRadius: 10,
@@ -459,20 +402,20 @@ export default function Dashboard({ onNav }: DashboardProps) {
                       <span
                         style={{
                           color: COLORS.text,
-                          fontSize: 14,
+                          fontSize: FONT.size.body,
                           fontWeight: 500,
                         }}
                       >
                         {s.title}
                       </span>
-                      <span style={{ color: COLORS.textDim, fontSize: 12 }}>
+                      <span style={{ color: COLORS.textMuted, fontSize: FONT.size.label }}>
                         {s.date ?? ""}
                       </span>
                     </div>
-                    <div style={{ fontSize: 12, color: COLORS.textMuted }}>
+                    <div style={{ fontSize: FONT.size.label, color: COLORS.textMuted }}>
                       {s.project ?? "Project summary"}
                     </div>
-                  </div>
+                  </HoverLift>
                 ))}
               </div>
             )}
@@ -480,98 +423,13 @@ export default function Dashboard({ onNav }: DashboardProps) {
         </div>
       )}
 
-      {showNewMeeting && (
-        <div style={overlayStyle}>
-          <div style={modalStyle}>
-            <h2
-              style={{
-                color: COLORS.text,
-                fontSize: 18,
-                fontWeight: 500,
-                margin: "0 0 18px",
-              }}
-            >
-              New meeting
-            </h2>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <input
-                style={inputStyle}
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Meeting title"
-              />
-
-              <input
-                style={inputStyle}
-                value={projectName}
-                onChange={(e) => setProjectName(e.target.value)}
-                placeholder="Project name"
-              />
-
-              <input
-                style={inputStyle}
-                type="datetime-local"
-                value={scheduledAt}
-                onChange={(e) => setScheduledAt(e.target.value)}
-              />
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: 8,
-                marginTop: 22,
-              }}
-            >
-              <button
-                style={btnGhost()}
-                onClick={() => setShowNewMeeting(false)}
-                disabled={creating}
-              >
-                Cancel
-              </button>
-              <button
-                style={btnAccent()}
-                onClick={() => void handleCreateMeeting()}
-                disabled={creating}
-              >
-                {creating ? "Creating..." : "Create and start"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <NewMeetingModal
+        open={showNewMeeting}
+        onClose={() => setShowNewMeeting(false)}
+        onSubmit={handleCreateMeeting}
+        submitting={create.creating}
+        error={create.error}
+      />
     </div>
   );
 }
-
-const overlayStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(0,0,0,0.7)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 200,
-};
-
-const modalStyle: React.CSSProperties = {
-  width: 420,
-  background: COLORS.surface,
-  border: `1px solid ${COLORS.border}`,
-  borderRadius: 12,
-  padding: 24,
-};
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  background: COLORS.bg,
-  border: `1px solid ${COLORS.border}`,
-  color: COLORS.text,
-  borderRadius: 6,
-  padding: "10px 12px",
-  fontSize: 14,
-  outline: "none",
-};

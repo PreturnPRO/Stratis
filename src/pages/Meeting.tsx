@@ -1,47 +1,32 @@
-// S1-T03-D/E: wires AI pipeline to BlockRenderer + suggestion card stack.
-//
-// E2E: user types → POST /api/ai/structure → validated blocks → BlockRenderer.
-//
-// S1-T03-E: a second call, POST /api/ai/suggest (facilitator-only), turns any
-// QuestionSuggestion blocks into cards on the server and pushes them over
-// /ws to the facilitator's stack — never to BlockRenderer / the transcript
-// panel, and never to participants. A third call, POST /api/ai/suggest/scan,
-// runs auto-detect: if this chunk answers an already-open card, the server
-// strikes it through over the same socket.
-//
-// S1-T04-C will replace manual input with live STT chunks (stub is here).
-
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { COLORS } from "../constants";
-import { btnAccent, btnGhost } from "../components/ui";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Mic, Square } from "lucide-react";
+import { COLORS, FONT } from "../constants";
+import { RADIUS } from "../tokens/colors";
+import { Button, Chip, Modal } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { SuggestionCardStack } from "../components/SuggestionCardStack";
+import {
+  AiPresenceChip,
+  AgendaPulse,
+  TimeRiver,
+  type PresenceMode,
+} from "../components/MeetingPulse";
 import BlockRenderer from "../components/BlockRenderer";
 import { useAiBlocks } from "../hooks/useAiBlocks";
 import { useSuggestionSocket } from "../hooks/useSuggestionSocket";
-import { useMediaRecorder } from "../hooks/useMediaRecorder";
 import { useAuth } from "../context/AuthContext";
 import { useSessionRecovery } from "../hooks/useSessionRecovery";
-import type { AIBlock } from "../../shared/types";
+import { API_BASE } from "../lib/api";
 
-const API_BASE = "http://localhost:3001";
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 
-const MIN_AUDIO_CHUNK_BYTES = 2048;
-
-function getPreferredRecorderMimeType(): string | undefined {
-  if (typeof MediaRecorder === "undefined") return undefined;
-
-  const candidates = [
-    "audio/webm;codecs=opus",
-    "audio/webm",
-    "audio/ogg;codecs=opus",
-  ];
-
-  return candidates.find((type) => MediaRecorder.isTypeSupported(type));
-}
-
-const RECORDER_MIME_TYPE = getPreferredRecorderMimeType();
+// Adaptive AI chunking: recognized words render instantly in the transcript
+// (ghost row) WITHOUT calling the question AI. A chunk is sent to the AI only
+// when the speaker pauses on a finalized sentence with enough substance, or
+// when the hard time cap is reached — whichever comes first. Thai has no word
+// spaces, so "substance" is measured in characters, not words.
+const CHUNK_MAX_MS = 7000;
+const CHUNK_MIN_CHARS = 40;
 
 interface MeetingProps {
   onNav?: (id: string, params?: Record<string, string>) => void;
@@ -53,23 +38,6 @@ interface TranscriptRow {
   speaker: string;
   text: string;
   timestamp: string;
-}
-
-interface AudioChunkResponse {
-  ok: boolean;
-  error?: string;
-  data?: {
-    transcript?: TranscriptRow;
-    stt?: {
-      provider: string;
-      text: string;
-    };
-    ai?: {
-      provider: string;
-      blocks: AIBlock[];
-    };
-    answered?: string[];
-  };
 }
 
 function isRealSessionId(value: string | null | undefined): value is string {
@@ -86,7 +54,6 @@ function isRealSessionId(value: string | null | undefined): value is string {
 function formatTime(value: string): string {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
-
   return new Intl.DateTimeFormat(undefined, {
     hour: "2-digit",
     minute: "2-digit",
@@ -94,17 +61,52 @@ function formatTime(value: string): string {
   }).format(d);
 }
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  let binary = "";
+function formatElapsed(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+}
 
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
+function RecDot() {
+  return (
+    <span style={{ position: "relative", display: "inline-flex", width: 9, height: 9 }}>
+      <span
+        style={{
+          position: "absolute",
+          inset: 0,
+          borderRadius: "50%",
+          background: COLORS.red,
+          animation: "recPulse 1.5s ease-out infinite",
+        }}
+      />
+      <span
+        style={{
+          position: "relative",
+          width: 9,
+          height: 9,
+          borderRadius: "50%",
+          background: COLORS.red,
+          boxShadow: `0 0 6px ${COLORS.red}`,
+        }}
+      />
+    </span>
+  );
+}
 
-  return window.btoa(binary);
+function StatusDot({ color }: { color: string }) {
+  return (
+    <span
+      style={{
+        width: 6,
+        height: 6,
+        borderRadius: "50%",
+        background: color,
+        display: "inline-block",
+      }}
+    />
+  );
 }
 
 export default function Meeting({ onNav }: MeetingProps) {
@@ -113,28 +115,48 @@ export default function Meeting({ onNav }: MeetingProps) {
   const ai = useAiBlocks();
 
   const recoveredSessionId = recovery.sessionId;
-  const [manualSessionId, setManualSessionId] = useState<string | null>(() => {
+  const [manualSessionId] = useState<string | null>(() => {
     return window.localStorage.getItem(ACTIVE_SESSION_KEY);
   });
 
   const sessionId = isRealSessionId(recoveredSessionId)
     ? recoveredSessionId
     : isRealSessionId(manualSessionId)
-      ? manualSessionId
-      : null;
+    ? manualSessionId
+    : null;
 
   const [transcripts, setTranscripts] = useState<TranscriptRow[]>([]);
   const [loadingTranscript, setLoadingTranscript] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sendingChunk, setSendingChunk] = useState(false);
   const [ending, setEnding] = useState(false);
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
+
+  // Web Speech API Native Recording States
+  const [isRecording, setIsRecording] = useState(false);
+  const isRecordingRef = useRef(false);
+  const recognitionRef = useRef<any>(null);
+
+  const [durationMin, setDurationMin] = useState<number | null>(null);
+  const [startMs, setStartMs] = useState<number | null>(null);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  // Last time speech recognition produced a result — drives the "hearing you"
+  // state of the AI presence chip.
+  const [lastSpeechMs, setLastSpeechMs] = useState<number | null>(null);
+
+  // Ghost-row state: words shown instantly, before any backend/AI round-trip.
+  // liveText = recognized but not yet flushed; pendingText = flushed chunk
+  // still in flight to the backend.
+  const [liveText, setLiveText] = useState("");
+  const [pendingText, setPendingText] = useState("");
+
+  const transcriptScrollRef = useRef<HTMLDivElement>(null);
 
   const authHeaders = useMemo((): Record<string, string> => {
     return token ? { Authorization: `Bearer ${token}` } : {};
   }, [token]);
 
-  const { cards, role, connected, markAnswered, markActive } =
-    useSuggestionSocket(sessionId);
+  const { cards, connected, markAnswered, markActive } = useSuggestionSocket(sessionId);
 
   const appendTranscript = useCallback((row: TranscriptRow) => {
     setTranscripts((prev) => {
@@ -143,166 +165,352 @@ export default function Meeting({ onNav }: MeetingProps) {
     });
   }, []);
 
-  const sendAudioChunk = useCallback(
-    async (blob: Blob) => {
-      if (!token || !sessionId) return;
-
-      if (blob.size < MIN_AUDIO_CHUNK_BYTES) {
-        console.warn("[meeting] skipped tiny audio chunk", {
-          size: blob.size,
-          type: blob.type,
-        });
-        return;
-      }
-
-      const chunkMimeType = blob.type || RECORDER_MIME_TYPE || "audio/webm";
-
-      console.log("[meeting] audio chunk", {
-        size: blob.size,
-        type: chunkMimeType,
+  // --- Real-Time STT Chunk Ingestion Pipeline ---
+  const sendTextChunk = useCallback(async (text: string) => {
+    if (!token || !sessionId || !text.trim()) return;
+    setSendingChunk(true);
+    setPendingText(text.trim());
+    try {
+      const response = await fetch(`${API_BASE}/api/transcript/chunk`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders,
+        },
+        body: JSON.stringify({
+          sessionId,
+          session_id: sessionId,
+          text: text.trim(),
+          speaker: user?.name || "Facilitator",
+          timestamp: new Date().toISOString(),
+        }),
       });
 
-      setSendingChunk(true);
-      setError(null);
-
-      try {
-        const buffer = await blob.arrayBuffer();
-        const audioBase64 = arrayBufferToBase64(buffer);
-
-        const res = await fetch(`${API_BASE}/api/transcript/audio-chunk`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...authHeaders,
-          },
-          body: JSON.stringify({
-            sessionId,
-            session_id: sessionId,
-            speaker: user?.name ?? "Facilitator",
-            mimeType: chunkMimeType,
-            mime_type: chunkMimeType,
-            audioBase64,
-            audio_base64: audioBase64,
-          }),
-        });
-
-        const data: AudioChunkResponse = await res.json();
-
-        if (!data.ok) {
-          setError(data.error ?? "Audio chunk failed");
-          return;
+      const payload = await response.json();
+      if (response.ok && payload.ok && payload.data?.transcript) {
+        appendTranscript(payload.data.transcript);
+        if (payload.data.ai?.blocks) {
+          ai.append(payload.data.ai.blocks, payload.data.ai.provider);
         }
-
-        if (data.data?.transcript?.text?.trim()) {
-          appendTranscript(data.data.transcript);
-        } else if (data.data?.stt?.text?.trim()) {
-          appendTranscript({
-            id: `local_${Date.now()}`,
-            session_id: sessionId,
-            speaker: user?.name ?? "Facilitator",
-            text: data.data.stt.text,
-            timestamp: new Date().toISOString(),
-          });
-        }
-
-        if (data.data?.ai?.blocks?.length) {
-          ai.append(data.data.ai.blocks, data.data.ai.provider);
-        }
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Could not send audio chunk",
-        );
-      } finally {
-        setSendingChunk(false);
+      } else {
+        console.warn("[speech:chunk] Pipeline rejected request:", payload.error);
       }
-    },
-    [token, sessionId, authHeaders, user?.name, appendTranscript, ai],
-  );
-
-  const recorder = useMediaRecorder({
-    onChunk: (chunk) => {
-      void sendAudioChunk(chunk);
-    },
-    chunkIntervalMs: 8000,
-    mimeType: RECORDER_MIME_TYPE,
-  });
-
-  const loadTranscript = useCallback(async () => {
-    if (!token || !sessionId) return;
-
-    setLoadingTranscript(true);
-    setError(null);
-
-    try {
-      const res = await fetch(
-        `${API_BASE}/api/transcript/session/${sessionId}`,
-        {
-          headers: authHeaders,
-        },
-      );
-
-      const data = await res.json();
-
-      if (!data.ok) {
-        setError(data.error ?? "Could not load transcript");
-        return;
-      }
-
-      const rows = data.data?.transcripts ?? data.data?.rows ?? [];
-
-      setTranscripts(rows);
-    } catch {
-      setError("Could not reach transcript endpoint");
+    } catch (err) {
+      console.error("[speech:chunk] Connection fault:", err);
     } finally {
-      setLoadingTranscript(false);
+      setSendingChunk(false);
+      setPendingText("");
     }
-  }, [token, sessionId, authHeaders]);
+  }, [token, sessionId, authHeaders, user?.name, appendTranscript, ai]);
+
+  const sendTextChunkRef = useRef(sendTextChunk);
+  useEffect(() => {
+    sendTextChunkRef.current = sendTextChunk;
+  }, [sendTextChunk]);
+
+  // Dual-buffer silence-resistant accumulation strategy
+  const bufferRef = useRef<string>("");
+  const interimRef = useRef<string>("");
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushBuffer = useCallback(() => {
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+
+    let text = bufferRef.current.trim();
+    if (interimRef.current.trim()) {
+      text = (text + " " + interimRef.current.trim()).trim();
+    }
+
+    bufferRef.current = "";
+    interimRef.current = "";
+    setLiveText("");
+
+    if (text) {
+      sendTextChunkRef.current(text);
+    }
+  }, []);
 
   useEffect(() => {
-    if (!sessionId) return;
+    const SpeechRecognitionEngine =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
-    setManualSessionId(sessionId);
-    window.localStorage.setItem(ACTIVE_SESSION_KEY, sessionId);
+    if (!SpeechRecognitionEngine) {
+      console.warn("[speech] Native SpeechRecognition not available in this host environment.");
+      return;
+    }
 
-    void loadTranscript();
-  }, [sessionId, loadTranscript]);
+    const rec = new SpeechRecognitionEngine();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = "th-TH"; // Web Speech API supports one language per recognition instance; Thai only
 
-  const handleEndMeeting = async () => {
-    if (!token || !sessionId) return;
+    rec.onstart = () => {
+      console.log("[speech] Recognition pipeline active.");
+    };
 
-    recorder.stop();
-    setEnding(true);
-    setError(null);
+    rec.onresult = (event: any) => {
+      let finalTranscript = "";
+      let interimTranscript = "";
 
-    try {
-      const res = await fetch(`${API_BASE}/api/session/${sessionId}/end`, {
-        method: "POST",
-        headers: authHeaders,
-      });
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        // Correctly index SpeechRecognitionAlternative using item(0) (bracket-free!)
+        const alternative = event.results[i].item(0);
+        const transcript = alternative ? alternative.transcript : "";
 
-      const data = await res.json();
-
-      if (!data.ok) {
-        throw new Error(data.error ?? "Could not end meeting");
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
+        }
       }
 
-      window.localStorage.removeItem(ACTIVE_SESSION_KEY);
-      recovery.clearRecoveredSession();
+      // Any recognized speech (final or interim) marks the AI as "hearing you"
+      // for the presence chip.
+      if (finalTranscript || interimTranscript) {
+        setLastSpeechMs(Date.now());
+      }
 
-      onNav?.("summary", { sessionId });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not end meeting");
-    } finally {
-      setEnding(false);
+      if (finalTranscript) {
+        bufferRef.current = (bufferRef.current + " " + finalTranscript).trim();
+        interimRef.current = "";
+      } else {
+        interimRef.current = interimTranscript;
+      }
+
+      // Ghost row: mirror every recognized word to the transcript instantly —
+      // no backend or AI round-trip involved.
+      setLiveText((bufferRef.current + " " + interimRef.current).trim());
+
+      // Adaptive flush: a finalized sentence with no trailing interim means
+      // the speaker paused — hand the chunk to the question AI now, on a
+      // natural thought boundary, instead of waiting for the cap.
+      if (
+        finalTranscript &&
+        !interimTranscript &&
+        bufferRef.current.length >= CHUNK_MIN_CHARS
+      ) {
+        flushBuffer();
+        return;
+      }
+
+      // Hard cap: even mid-monologue, flush at least every CHUNK_MAX_MS.
+      if (bufferRef.current.trim() || interimRef.current.trim()) {
+        if (!flushTimerRef.current) {
+          flushTimerRef.current = setTimeout(() => {
+            flushBuffer();
+          }, CHUNK_MAX_MS);
+        }
+      }
+    };
+
+    rec.onerror = (event: any) => {
+      console.error("[speech] Capture engine error:", event.error);
+      if (event.error === "not-allowed") {
+        setIsRecording(false);
+        isRecordingRef.current = false;
+      }
+    };
+
+    rec.onend = () => {
+      console.log("[speech] Mic stream went silent or disconnected.");
+      flushBuffer();
+
+      if (isRecordingRef.current) {
+        console.log("[speech] Re-initiating active capture stream...");
+        try {
+          rec.start();
+        } catch (e) {
+          console.warn("[speech] Auto-restart sequence missed:", e);
+        }
+      }
+    };
+
+    recognitionRef.current = rec;
+
+    return () => {
+      if (rec) {
+        rec.onend = null;
+        rec.onerror = null;
+        rec.onresult = null;
+        try {
+          rec.stop();
+        } catch (e) {}
+      }
+      if (flushTimerRef.current) {
+        clearTimeout(flushTimerRef.current);
+      }
+    };
+  }, [flushBuffer]);
+
+  const startListening = () => {
+    if (!recognitionRef.current) return;
+    setIsRecording(true);
+    isRecordingRef.current = true;
+    try {
+      recognitionRef.current.start();
+    } catch (e) {
+      console.warn("[speech] Already listening - start aborted:", e);
     }
   };
 
-  const isRecording = recorder.status === "recording";
+  const stopListening = () => {
+    if (!recognitionRef.current) return;
+    setIsRecording(false);
+    isRecordingRef.current = false;
+    recognitionRef.current.stop();
+    flushBuffer();
+  };
+
+  // --- Past Transcript Syncing ---
+  const loadTranscript = useCallback(async () => {
+    if (!token || !sessionId) return;
+    setLoadingTranscript(true);
+    setError(null);
+    try {
+      const response = await fetch(`${API_BASE}/api/transcript/session/${sessionId}`, {
+        headers: authHeaders,
+      });
+      const payload = await response.json();
+      if (response.ok && payload.ok) {
+        setTranscripts(payload.data?.transcripts || []);
+      } else {
+        setError(payload.error || "Failed to restore previous session transcript rows.");
+      }
+    } catch (err) {
+      console.error("[meeting] Error recovery loading transcripts:", err);
+      setError("Network error fetching past transcript data.");
+    } finally {
+      setLoadingTranscript(false);
+    }
+  }, [sessionId, token, authHeaders]);
+
+  useEffect(() => {
+    if (sessionId) {
+      void loadTranscript();
+    }
+  }, [sessionId, loadTranscript]);
+
+  // Sync starting server timestamps
+  useEffect(() => {
+    if (!sessionId || !token) return;
+    const pingStartEndpoint = async () => {
+      try {
+        await fetch(`${API_BASE}/api/session/${sessionId}/start`, {
+          method: "POST",
+          headers: authHeaders,
+        });
+      } catch (e) {
+        console.warn("[meeting] Start ping synchronization failed:", e);
+      }
+    };
+    void pingStartEndpoint();
+  }, [sessionId, token, authHeaders]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      setStartMs(null);
+      return;
+    }
+    const serverStart = recovery.session?.started_at
+      ? new Date(recovery.session.started_at).getTime()
+      : NaN;
+    setStartMs((prev) => (Number.isFinite(serverStart) ? serverStart : prev ?? Date.now()));
+  }, [sessionId, recovery.session?.started_at]);
+
+  // Planned duration: the server-stored value on the meeting wins (it survives
+  // cleared localStorage and other devices); localStorage covers sessions
+  // created before duration_minutes existed; 60 is the last-resort default.
+  const recoveredDuration =
+    recovery.session?.id === sessionId ? recovery.session?.duration_minutes : null;
+
+  useEffect(() => {
+    if (!sessionId) {
+      setDurationMin(null);
+      return;
+    }
+    const server = Number(recoveredDuration);
+    if (Number.isFinite(server) && server > 0) {
+      setDurationMin(server);
+      window.localStorage.setItem(`stratis.duration.${sessionId}`, String(server));
+      return;
+    }
+    const raw = window.localStorage.getItem(`stratis.duration.${sessionId}`);
+    const n = raw ? parseInt(raw, 10) : NaN;
+    setDurationMin(Number.isFinite(n) && n > 0 ? n : 60);
+  }, [sessionId, recoveredDuration]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    const t = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [sessionId]);
+
+  // Keep transcripts scrolled to the bottom — including as the live ghost
+  // row grows word by word.
+  useEffect(() => {
+    const el = transcriptScrollRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
+    if (nearBottom) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [transcripts, liveText, pendingText]);
+
+  const handleEndMeeting = async () => {
+    if (!token || !sessionId) return;
+    setEnding(true);
+    stopListening();
+    try {
+      const response = await fetch(`${API_BASE}/api/session/${sessionId}/end`, {
+        method: "POST",
+        headers: authHeaders,
+      });
+      const payload = await response.json();
+      if (response.ok && payload.ok) {
+        window.localStorage.removeItem(ACTIVE_SESSION_KEY);
+        recovery.clearRecoveredSession();
+        if (onNav) {
+          onNav("document", { sessionId });
+        }
+      } else {
+        setError(payload.error || "Failed to finalize session.");
+      }
+    } catch (e) {
+      console.error("[meeting:end] connection error:", e);
+      setError("An unexpected network error occurred ending the session.");
+    } finally {
+      setEnding(false);
+      setShowEndConfirm(false);
+    }
+  };
+
   const canRecord = !!sessionId && !!token && !ending;
+  const elapsed = sessionId && startMs != null ? Math.max(0, Math.floor((nowMs - startMs) / 1000)) : null;
+
+  const WRAP_UP_SEC = 15 * 60;
+  const remainingSec = durationMin != null && elapsed != null ? durationMin * 60 - elapsed : null;
+  const inWrapUp = remainingSec != null && remainingSec <= WRAP_UP_SEC && remainingSec > 0;
+  const overtime = remainingSec != null && remainingSec <= 0;
+  const timeColor = overtime ? COLORS.red : inWrapUp ? COLORS.orange : COLORS.textMuted;
+
+  const speechActive = lastSpeechMs != null && nowMs - lastSpeechMs < 6000;
+  const presenceMode: PresenceMode = !isRecording
+    ? "off"
+    : sendingChunk
+      ? "thinking"
+      : speechActive
+        ? "speech"
+        : "listening";
+
+  const meetingTitle = recovery.session?.meeting_title?.trim() || "Live meeting";
+  const sessionShort = sessionId ? `...${sessionId.slice(-6)}` : "";
 
   if (recovery.status === "loading" && !sessionId) {
     return (
-      <div style={{ padding: "40px 60px", overflowY: "auto", flex: 1 }}>
+      <div style={{ padding: "40px 60px", overflowY: "auto", flex: 1, background: COLORS.bg }}>
         <LoadingState count={3} persist />
       </div>
     );
@@ -310,295 +518,314 @@ export default function Meeting({ onNav }: MeetingProps) {
 
   if (!sessionId) {
     return (
-      <div style={{ padding: "40px 60px", overflowY: "auto", flex: 1 }}>
+      <div style={{ padding: "40px 60px", overflowY: "auto", flex: 1, background: COLORS.bg }}>
         <h1
           style={{
             color: COLORS.text,
-            fontSize: 22,
-            fontWeight: 500,
+            fontSize: FONT.size.title,
+            fontWeight: 600,
             margin: "0 0 24px",
           }}
         >
-          Meeting
+          Control Room Workspace
         </h1>
-
-        <EmptyState message="No active meeting session. Start a meeting from Dashboard." />
-
-        <div style={{ marginTop: 18 }}>
-          <button style={btnAccent()} onClick={() => onNav?.("dashboard")}>
-            Go to Dashboard
-          </button>
-        </div>
+        <EmptyState message="No active meeting session found. Initialize or join a workspace session from your Dashboard." />
       </div>
     );
   }
 
   return (
-    <div
-      style={{ display: "flex", flex: 1, minHeight: 0, background: COLORS.bg }}
-    >
-      <div
-        style={{
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          minWidth: 0,
-        }}
-      >
+    <div style={{ display: "flex", flex: 1, minHeight: 0, background: COLORS.bg }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0 }}>
+        
+        {/* Header */}
         <div
           style={{
             borderBottom: `1px solid ${COLORS.border}`,
-            padding: "18px 24px",
+            padding: "16px 24px",
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
             gap: 16,
+            flexWrap: "wrap",
           }}
         >
-          <div>
+          <div style={{ minWidth: 0 }}>
             <h1
               style={{
                 color: COLORS.text,
-                fontSize: 20,
-                fontWeight: 500,
-                margin: "0 0 4px",
+                fontSize: FONT.size.heading,
+                fontWeight: 600,
+                margin: "0 0 8px",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
               }}
             >
-              Live meeting
+              {meetingTitle}
             </h1>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <Chip icon={isRecording ? <RecDot /> : <StatusDot color={COLORS.textDim} />} mono>
+                {isRecording ? "LIVE" : "STANDBY"}
+              </Chip>
+              <span style={{ fontSize: FONT.size.caption, color: COLORS.textMuted }}>
+                Session {sessionShort}
+              </span>
+              {connected && (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: FONT.size.micro, color: COLORS.cyan }}>
+                  <span style={{ width: 4, height: 4, borderRadius: "50%", background: COLORS.cyan }} />
+                  WEBSOCKET SYNCED
+                </span>
+              )}
 
-            <div style={{ color: COLORS.textMuted, fontSize: 12 }}>
-              Session: {sessionId}
-              {" · "}
-              Mic: {recorder.status}
-              {" · "}
-              AI: {ai.provider ?? "waiting"}
-              {" · "}
-              Suggestions: {connected ? "connected" : "offline"}
+              <AiPresenceChip
+                mode={presenceMode}
+                cardCount={cards.length}
+                provider={ai.provider}
+              />
             </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {!isRecording ? (
-              <button
-                style={btnAccent()}
-                onClick={() => void recorder.start()}
-                disabled={!canRecord}
-              >
-                Start mic
-              </button>
-            ) : (
-              <button
-                style={{
-                  ...btnGhost(),
-                  color: COLORS.red,
-                  borderColor: `${COLORS.red}66`,
-                }}
-                onClick={recorder.stop}
-              >
-                Stop mic
-              </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            {elapsed != null && (
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: FONT.size.subheading, fontWeight: 700, color: timeColor }}>
+                  {formatElapsed(elapsed)}
+                </div>
+                {durationMin && (
+                  <div style={{ fontSize: FONT.size.micro, color: COLORS.textDim }}>
+                    TARGET: {durationMin}m {overtime && "(OVERTIME)"}
+                  </div>
+                )}
+              </div>
             )}
 
-            <button
-              style={{
-                ...btnGhost(),
-                color: COLORS.red,
-                borderColor: `${COLORS.red}66`,
-              }}
-              onClick={() => void handleEndMeeting()}
-              disabled={ending}
-            >
-              {ending ? "Ending..." : "End meeting"}
-            </button>
+            <div style={{ display: "flex", gap: 8 }}>
+              {isRecording ? (
+                <Button variant="danger" size="sm" onClick={stopListening} iconLeft={<Square size={14} />}>
+                  Pause
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={startListening}
+                  disabled={!canRecord}
+                  iconLeft={<Mic size={14} />}
+                >
+                  Record
+                </Button>
+              )}
+
+              <Button variant="ghost" size="sm" onClick={() => setShowEndConfirm(true)} disabled={ending}>
+                End Meeting
+              </Button>
+            </div>
           </div>
         </div>
+
+        {durationMin != null && elapsed != null && (
+          <TimeRiver
+            durationMin={durationMin}
+            elapsedSec={elapsed}
+            wrapUpSec={WRAP_UP_SEC}
+          />
+        )}
 
         {error && (
           <div
             style={{
-              background: COLORS.redBg,
+              background: COLORS.dangerBg,
               borderBottom: `1px solid ${COLORS.red}`,
-              color: COLORS.red,
               padding: "10px 24px",
-              fontSize: 13,
+              fontSize: FONT.size.label,
+              color: COLORS.red,
             }}
           >
             {error}
           </div>
         )}
 
-        {recorder.error && (
+        {/* Main Two-Column Control Workspace */}
+        <div className="meeting-grid" style={{ flex: 1, padding: "24px", overflow: "hidden" }}>
+          
+          {/* Column 1: Live Ingestion Feed */}
           <div
             style={{
-              background: COLORS.redBg,
-              borderBottom: `1px solid ${COLORS.red}`,
-              color: COLORS.red,
-              padding: "10px 24px",
-              fontSize: 13,
+              background: COLORS.surface,
+              border: `1px solid ${COLORS.border}`,
+              borderRadius: RADIUS.lg,
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
             }}
           >
-            {recorder.error}
-          </div>
-        )}
-
-        <div
-          style={{
-            flex: 1,
-            overflow: "auto",
-            padding: "24px",
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: 24,
-            alignItems: "start",
-          }}
-        >
-          <section>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 14,
-              }}
-            >
-              <h2
-                style={{
-                  color: COLORS.text,
-                  fontSize: 14,
-                  fontWeight: 500,
-                  margin: 0,
-                }}
-              >
-                Transcript
-              </h2>
-
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {sendingChunk && (
-                  <span style={{ color: COLORS.textDim, fontSize: 12 }}>
-                    Processing audio...
-                  </span>
-                )}
-                <button
-                  style={btnGhost()}
-                  onClick={() => void loadTranscript()}
-                >
-                  Refresh
-                </button>
-              </div>
-            </div>
-
-            {loadingTranscript ? (
-              <LoadingState count={3} persist />
-            ) : transcripts.length === 0 ? (
-              <EmptyState message="Transcript will appear here after you start speaking." />
-            ) : (
-              <div
-                style={{ display: "flex", flexDirection: "column", gap: 10 }}
-              >
-                {transcripts.map((row) => (
-                  <div
-                    key={row.id}
-                    style={{
-                      background: COLORS.surface,
-                      border: `1px solid ${COLORS.border}`,
-                      borderRadius: 8,
-                      padding: "12px 14px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
-                        marginBottom: 6,
-                      }}
-                    >
-                      <span
-                        style={{
-                          color: COLORS.teal,
-                          fontSize: 12,
-                          fontWeight: 600,
-                        }}
-                      >
-                        {row.speaker}
-                      </span>
-                      <span style={{ color: COLORS.textDim, fontSize: 11 }}>
-                        {formatTime(row.timestamp)}
-                      </span>
-                    </div>
-
-                    <div
-                      style={{
-                        color: COLORS.textMuted,
-                        fontSize: 13,
-                        lineHeight: 1.6,
-                      }}
-                    >
-                      {row.text}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 14,
-              }}
-            >
-              <h2
-                style={{
-                  color: COLORS.text,
-                  fontSize: 14,
-                  fontWeight: 500,
-                  margin: 0,
-                }}
-              >
-                AI notes
-              </h2>
-
-              <span style={{ color: COLORS.textDim, fontSize: 12 }}>
-                {ai.status}
+            <div style={{ borderBottom: `1px solid ${COLORS.border}`, padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: FONT.size.label, fontWeight: 700, color: COLORS.textMuted, letterSpacing: 0.5, textTransform: "uppercase" }}>
+                Continuous STT Capture
               </span>
+              {sendingChunk && (
+                <span style={{ fontSize: FONT.size.micro, color: COLORS.accent }}>
+                  Flushing chunk...
+                </span>
+              )}
             </div>
 
-            {ai.error && (
-              <div
-                style={{
-                  background: COLORS.redBg,
-                  border: `1px solid ${COLORS.red}`,
-                  color: COLORS.red,
-                  borderRadius: 8,
-                  padding: "10px 12px",
-                  marginBottom: 12,
-                  fontSize: 13,
-                }}
-              >
-                {ai.error}
-              </div>
+            <div
+              ref={transcriptScrollRef}
+              style={{
+                flex: 1,
+                overflowY: "auto",
+                padding: "20px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 14,
+              }}
+            >
+              {loadingTranscript && transcripts.length === 0 ? (
+                <LoadingState count={3} />
+              ) : transcripts.length === 0 && !liveText && !pendingText ? (
+                <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center" }}>
+                  <EmptyState message="Ready for speech input. Tap 'Record' above to begin capture stream." />
+                </div>
+              ) : (
+                <>
+                  {transcripts.map((row) => (
+                    <div
+                      key={row.id}
+                      style={{
+                        borderBottom: `1px solid ${COLORS.border}`,
+                        paddingBottom: 10,
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                        <span style={{ fontWeight: 600, fontSize: FONT.size.body, color: COLORS.textPrimary }}>
+                          {row.speaker}
+                        </span>
+                        <span style={{ fontSize: FONT.size.micro, color: COLORS.textDim }}>
+                          {formatTime(row.timestamp)}
+                        </span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: FONT.size.body, color: COLORS.textMuted, lineHeight: 1.5 }}>
+                        {row.text}
+                      </p>
+                    </div>
+                  ))}
+
+                  {(pendingText || liveText) && (
+                    <div style={{ paddingBottom: 10, opacity: 0.7 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                        <span style={{ fontWeight: 600, fontSize: FONT.size.body, color: COLORS.textMuted }}>
+                          {user?.name || "Facilitator"}
+                        </span>
+                        <span style={{ fontSize: FONT.size.micro, color: COLORS.accent, letterSpacing: 0.5 }}>
+                          LIVE
+                        </span>
+                      </div>
+                      <p style={{ margin: 0, fontSize: FONT.size.body, color: COLORS.textDim, lineHeight: 1.5, fontStyle: "italic" }}>
+                        {(pendingText + " " + liveText).trim()}{" "}
+                        <span
+                          aria-hidden
+                          style={{ color: COLORS.accent, animation: "pulse 1.2s ease-in-out infinite" }}
+                        >
+                          ▌
+                        </span>
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Column 2: Suggestion Gutter Stack */}
+          <div
+            className="suggestion-gutter"
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 20,
+              overflowY: "auto",
+              minHeight: 0,
+            }}
+          >
+            {durationMin != null && elapsed != null && (
+              <AgendaPulse
+                durationMin={durationMin}
+                elapsedSec={elapsed}
+                wrapUpSec={WRAP_UP_SEC}
+              />
             )}
 
-            {ai.blocks.length === 0 ? (
-              <EmptyState message="AI notes will appear when the transcript has enough signal." />
-            ) : (
-              <BlockRenderer nodes={ai.blocks} />
-            )}
-          </section>
+            {/* Live Strategic Recommendations */}
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                <span style={{ color: COLORS.textMuted, fontSize: FONT.size.label, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase" }}>
+                  Active Suggestions
+                </span>
+                {connected && <Chip color={COLORS.accent} mono>REALTIME SYNCED</Chip>}
+              </div>
+
+              <div style={{ flex: 1, overflowY: "auto" }}>
+                <SuggestionCardStack
+                  cards={cards}
+                  thinking={isRecording && transcripts.length > 0}
+                  onMarkAnswered={markAnswered}
+                  onMarkActive={markActive}
+                />
+              </div>
+            </div>
+
+            {/* AI Session Notes Panel */}
+            <div
+              style={{
+                height: 240,
+                background: COLORS.surfaceMuted,
+                border: `1px solid ${COLORS.border}`,
+                borderRadius: RADIUS.md,
+                padding: "16px",
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+              }}
+            >
+              <div style={{ fontSize: FONT.size.micro, fontWeight: 700, color: COLORS.textMuted, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 12 }}>
+                Strategic Meeting Notes
+              </div>
+              <div style={{ flex: 1, overflowY: "auto" }}>
+                {ai.blocks.length === 0 ? (
+                  <p style={{ fontSize: FONT.size.label, color: COLORS.textDim, margin: 0, fontStyle: "italic" }}>
+                    Notes, key arguments, and identified risks will populate here as conversation signal classification completes.
+                  </p>
+                ) : (
+                  <BlockRenderer nodes={ai.blocks} />
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {role === "facilitator" && (
-        <SuggestionCardStack
-          cards={cards}
-          onMarkAnswered={markAnswered}
-          onMarkActive={markActive}
-        />
+      {/* End Meeting Confirmation Modal */}
+      {showEndConfirm && (
+        <Modal
+          title="Conclude Meeting Session?"
+          onClose={() => setShowEndConfirm(false)}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setShowEndConfirm(false)} disabled={ending}>
+                Cancel
+              </Button>
+              <Button variant="primary" onClick={handleEndMeeting} disabled={ending}>
+                {ending ? "Concluding..." : "Generate Patches"}
+              </Button>
+            </>
+          }
+        >
+          <p style={{ fontSize: FONT.size.body, color: COLORS.textMuted, lineHeight: 1.5, margin: 0 }}>
+            This action will disconnect the continuous recording feed and run post-meeting summary parsing. You will proceed to review individual PM document patches before final commit.
+          </p>
+        </Modal>
       )}
     </div>
   );

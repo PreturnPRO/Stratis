@@ -1,11 +1,11 @@
 import { env } from "../../../backend/src/config/env";
 import { fetchWithTimeout, type AIProvider, type ChatMessage, type CompletionResult } from "./types";
 
-export const groqProvider: AIProvider = {
-  name: "groq",
+export const typhoonProvider: AIProvider = {
+  name: "typhoon",
   async complete(messages: ChatMessage[]): Promise<CompletionResult> {
-    const { apiKey, model, baseUrl } = env.ai.groq;
-    if (!apiKey) throw new Error("GROQ_API_KEY is not set");
+    const { apiKey, model, baseUrl } = env.ai.typhoon;
+    if (!apiKey) throw new Error("TYPHOON_API_KEY is not set");
 
     const res = await fetchWithTimeout(
       `${baseUrl}/chat/completions`,
@@ -18,9 +18,8 @@ export const groqProvider: AIProvider = {
         body: JSON.stringify({
           model,
           messages,
-          temperature: 0.1, // precision focus: eliminates formatting drift
-          max_tokens: 4096,  // ample token window to prevent JSON structure truncation
-          response_format: { type: "json_object" } // hard constraint for json compliance
+          temperature: 0.1, // precision focus
+          max_tokens: 4096,  // large prediction limit
         }),
       },
       env.ai.timeoutMs
@@ -28,7 +27,7 @@ export const groqProvider: AIProvider = {
 
     if (!res.ok) {
       const errorText = await res.text();
-      throw new Error(`Groq API error: ${res.status} ${errorText}`);
+      throw new Error(`Typhoon API error: ${res.status} ${errorText}`);
     }
 
     // Type-assertion cast: satisfies strict compilation parameters by defining the expected envelope shape
@@ -44,6 +43,6 @@ export const groqProvider: AIProvider = {
     const [firstChoice] = payload.choices ?? [];
     const text = firstChoice?.message?.content ?? "";
     
-    return { text, provider: "groq", raw: payload };
+    return { text, provider: "typhoon", raw: payload };
   },
 };

@@ -12,6 +12,9 @@ interface MeetingRow {
   org_id: string;
   project_id: string;
   title: string;
+  goal: string | null;
+  brief: string | null;
+  duration_minutes: number | null;
   scheduled_at: string | null;
   created_by: string | null;
   created_at: string;
@@ -52,16 +55,17 @@ function parseLimit(value: unknown, fallback = 10, max = 50): number {
   return Math.min(Math.floor(n), max);
 }
 
-function getMeeting(id: string): MeetingRow | undefined {
-  return db
-    .prepare(
-      `
-      SELECT id, org_id, project_id, title, scheduled_at, created_by, created_at
-      FROM meetings
-      WHERE id = ?
-      `
-    )
-    .get<MeetingRow>(id);
+// Converted to async using db.query
+async function getMeeting(id: string): Promise<MeetingRow | undefined> {
+  const result = await db.query<MeetingRow>(
+    `
+    SELECT id, org_id, project_id, title, goal, brief, duration_minutes, scheduled_at, created_by, created_at
+    FROM meetings
+    WHERE id = $1
+    `,
+    [id]
+  );
+  return result.rows[0];
 }
 
 function canRead(req: Request, meeting: MeetingRow): boolean {
@@ -99,28 +103,30 @@ function toDashboardMeeting(row: MeetingListRow) {
   };
 }
 
-function listMeetings(req: Request, res: Response) {
-  const limit = parseLimit(req.query.limit);
-  const includePast = req.query.includePast === "true";
-  const ts = now();
+async function listMeetings(req: Request, res: Response) {
+  try {
+    const limit = parseLimit(req.query.limit);
+    const includePast = req.query.includePast === "true";
+    const ts = now();
 
-  const where: string[] = ["m.org_id = ?"];
-  const params: unknown[] = [req.auth!.orgId];
+    const params: unknown[] = [req.auth!.orgId];
+    const where: string[] = ["m.org_id = $1"];
+    let pIdx = 2; // PG parameters are 1-indexed, $1 is used
 
-  if (req.auth!.role === "facilitator") {
-    where.push("m.created_by = ?");
-    params.push(req.auth!.sub);
-  }
+    if (req.auth!.role === "facilitator") {
+      where.push(`m.created_by = $${pIdx++}`);
+      params.push(req.auth!.sub);
+    }
 
-  if (!includePast) {
-    where.push("(m.scheduled_at IS NULL OR m.scheduled_at >= ?)");
-    params.push(ts);
-  }
+    if (!includePast) {
+      where.push(`(m.scheduled_at IS NULL OR m.scheduled_at >= $${pIdx++})`);
+      params.push(ts);
+    }
 
-  params.push(limit);
+    const limitParam = `$${pIdx}`;
+    params.push(limit);
 
-  const rows = db
-    .prepare(
+    const result = await db.query<MeetingListRow>(
       `
       SELECT
         m.id,
@@ -173,17 +179,21 @@ function listMeetings(req: Request, res: Response) {
         CASE WHEN m.scheduled_at IS NULL THEN 1 ELSE 0 END,
         m.scheduled_at ASC,
         m.created_at DESC
-      LIMIT ?
-      `
-    )
-    .all<MeetingListRow>(...params);
+      LIMIT ${limitParam}
+      `,
+      params
+    );
 
-  res.json({
-    ok: true,
-    data: {
-      meetings: rows.map(toDashboardMeeting),
-    },
-  });
+    res.json({
+      ok: true,
+      data: {
+        meetings: result.rows.map(toDashboardMeeting),
+      },
+    });
+  } catch (error) {
+    console.error("Error in listMeetings:", error);
+    res.status(500).json({ ok: false, error: "Internal server error retrieving meetings" });
+  }
 }
 
 /**
@@ -201,22 +211,24 @@ meetingRouter.get("/upcoming", requireAuth, listMeetings);
  * GET /api/meeting/dashboard
  * One-call dashboard payload.
  */
-meetingRouter.get("/dashboard", requireAuth, (req, res) => {
-  const limit = parseLimit(req.query.limit, 5, 20);
-  const ts = now();
+meetingRouter.get("/dashboard", requireAuth, async (req, res) => {
+  try {
+    const limit = parseLimit(req.query.limit, 5, 20);
+    const ts = now();
 
-  const meetingWhere: string[] = ["m.org_id = ?", "(m.scheduled_at IS NULL OR m.scheduled_at >= ?)"];
-  const meetingParams: unknown[] = [req.auth!.orgId, ts];
+    const meetingParams: unknown[] = [req.auth!.orgId, ts];
+    const meetingWhere: string[] = ["m.org_id = $1", "(m.scheduled_at IS NULL OR m.scheduled_at >= $2)"];
+    let pIdx = 3;
 
-  if (req.auth!.role === "facilitator") {
-    meetingWhere.push("m.created_by = ?");
-    meetingParams.push(req.auth!.sub);
-  }
+    if (req.auth!.role === "facilitator") {
+      meetingWhere.push(`m.created_by = $${pIdx++}`);
+      meetingParams.push(req.auth!.sub);
+    }
 
-  meetingParams.push(limit);
+    const limitParam = `$${pIdx}`;
+    meetingParams.push(limit);
 
-  const upcoming = db
-    .prepare(
+    const upcoming = await db.query<MeetingListRow>(
       `
       SELECT
         m.id,
@@ -257,13 +269,12 @@ meetingRouter.get("/dashboard", requireAuth, (req, res) => {
         CASE WHEN m.scheduled_at IS NULL THEN 1 ELSE 0 END,
         m.scheduled_at ASC,
         m.created_at DESC
-      LIMIT ?
-      `
-    )
-    .all<MeetingListRow>(...meetingParams);
+      LIMIT ${limitParam}
+      `,
+      meetingParams
+    );
 
-  const activeSession = db
-    .prepare(
+    const activeSession = await db.query<SessionRow>(
       `
       SELECT
         s.id,
@@ -275,17 +286,16 @@ meetingRouter.get("/dashboard", requireAuth, (req, res) => {
         s.created_at
       FROM sessions s
       JOIN meetings m ON m.id = s.meeting_id
-      WHERE m.org_id = ?
+      WHERE m.org_id = $1
         AND s.status = 'active'
-        AND (? = 'admin' OR s.facilitator_id = ?)
+        AND ($2 = 'admin' OR s.facilitator_id = $3)
       ORDER BY s.started_at DESC
       LIMIT 1
-      `
-    )
-    .get<SessionRow>(req.auth!.orgId, req.auth!.role, req.auth!.sub);
+      `,
+      [req.auth!.orgId, req.auth!.role, req.auth!.sub]
+    );
 
-  const recentSummaries = db
-    .prepare(
+    const recentSummaries = await db.query<SummaryRow>(
       `
       SELECT
         n.id,
@@ -301,71 +311,90 @@ meetingRouter.get("/dashboard", requireAuth, (req, res) => {
       FROM notifications n
       LEFT JOIN sessions s ON s.id = n.session_id
       LEFT JOIN meetings m ON m.id = s.meeting_id
-      WHERE n.user_id = ?
+      WHERE n.user_id = $1
         AND n.kind = 'summary'
       ORDER BY n.created_at DESC
-      LIMIT ?
-      `
-    )
-    .all<SummaryRow>(req.auth!.sub, limit);
+      LIMIT $2
+      `,
+      [req.auth!.sub, limit]
+    );
 
-  res.json({
-    ok: true,
-    data: {
-      upcomingMeetings: upcoming.map(toDashboardMeeting),
-      activeSession: activeSession ?? null,
-      recentSummaries,
-    },
-  });
+    res.json({
+      ok: true,
+      data: {
+        upcomingMeetings: upcoming.rows.map(toDashboardMeeting),
+        activeSession: activeSession.rows[0] ?? null,
+        recentSummaries: recentSummaries.rows,
+      },
+    });
+  } catch (error) {
+    console.error("Dashboard error:", error);
+    res.status(500).json({ ok: false, error: "Internal server error generating dashboard" });
+  }
 });
 
 /**
  * POST /api/meeting
  */
-meetingRouter.post("/", requireAuth, (req, res) => {
-  const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+meetingRouter.post("/", requireAuth, async (req, res) => {
+  try {
+    const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
 
-  const projectId =
-    typeof req.body?.projectId === "string"
-      ? req.body.projectId.trim()
-      : typeof req.body?.project_id === "string"
-        ? req.body.project_id.trim()
-        : "";
+    const projectId =
+      typeof req.body?.projectId === "string"
+        ? req.body.projectId.trim()
+        : typeof req.body?.project_id === "string"
+          ? req.body.project_id.trim()
+          : "";
 
-  const scheduledAt =
-    typeof req.body?.scheduledAt === "string"
-      ? req.body.scheduledAt
-      : typeof req.body?.scheduled_at === "string"
-        ? req.body.scheduled_at
+    const scheduledAt =
+      typeof req.body?.scheduledAt === "string"
+        ? req.body.scheduledAt
+        : typeof req.body?.scheduled_at === "string"
+          ? req.body.scheduled_at
+          : null;
+
+    const goal = typeof req.body?.goal === "string" ? req.body.goal.trim() || null : null;
+    const brief = typeof req.body?.brief === "string" ? req.body.brief.trim() || null : null;
+
+    const rawDuration = req.body?.durationMinutes ?? req.body?.duration_minutes;
+    const durationMinutes =
+      typeof rawDuration === "number" && Number.isFinite(rawDuration) && rawDuration > 0
+        ? Math.min(Math.round(rawDuration), 480)
         : null;
 
-  if (!title) return res.status(400).json({ ok: false, error: "body.title is required" });
-  if (!projectId) return res.status(400).json({ ok: false, error: "body.projectId is required" });
+    if (!title) return res.status(400).json({ ok: false, error: "body.title is required" });
+    if (!projectId) return res.status(400).json({ ok: false, error: "body.projectId is required" });
 
-  const id = newId("mtg");
-  const timestamp = now();
+    if (scheduledAt && new Date(scheduledAt) < new Date()) {
+      return res.status(400).json({ ok: false, error: "Scheduled date cannot be in the past" });
+    }
 
-  db.prepare(
-    `
-    INSERT INTO meetings (
-      id,
-      org_id,
-      project_id,
-      title,
-      scheduled_at,
-      created_by,
-      created_at
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    `
-  ).run(id, req.auth!.orgId, projectId, title, scheduledAt, req.auth!.sub, timestamp);
+    const id = newId("mtg");
+    const timestamp = now();
 
-  res.status(201).json({
-    ok: true,
-    data: {
-      meeting: getMeeting(id),
-    },
-  });
+    await db.query(
+      `
+      INSERT INTO meetings (
+        id, org_id, project_id, title, goal, brief, duration_minutes, scheduled_at, created_by, created_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `,
+      [id, req.auth!.orgId, projectId, title, goal, brief, durationMinutes, scheduledAt, req.auth!.sub, timestamp]
+    );
+
+    const createdMeeting = await getMeeting(id);
+
+    res.status(201).json({
+      ok: true,
+      data: {
+        meeting: createdMeeting,
+      },
+    });
+  } catch (error) {
+    console.error("Meeting creation error:", error);
+    res.status(500).json({ ok: false, error: "Internal server error creating meeting" });
+  }
 });
 
 interface ProjectListRow {
@@ -392,19 +421,18 @@ function titleFromProjectId(projectId: string): string {
 
 /**
  * GET /api/meeting/projects
- *
- * Sprint 1 MVP project list.
- * There is no full projects table yet, so projects are derived from meetings.project_id.
  */
-meetingRouter.get("/projects", requireAuth, (req, res) => {
-  const where: string[] = ["m.org_id = ?"];
-  const params: unknown[] = [req.auth!.orgId];
-  if (req.auth!.role === "facilitator") {
-    where.push("m.created_by = ?");
-    params.push(req.auth!.sub);
-  }
-  const rows = db
-    .prepare(
+meetingRouter.get("/projects", requireAuth, async (req, res) => {
+  try {
+    const params: unknown[] = [req.auth!.orgId];
+    const where: string[] = ["m.org_id = $1"];
+    
+    if (req.auth!.role === "facilitator") {
+      where.push("m.created_by = $2");
+      params.push(req.auth!.sub);
+    }
+    
+    const rows = await db.query<ProjectListRow>(
       `
       SELECT
         m.project_id,
@@ -414,255 +442,282 @@ meetingRouter.get("/projects", requireAuth, (req, res) => {
       WHERE ${where.join(" AND ")}
       GROUP BY m.project_id
       ORDER BY last_meeting_at DESC
-      `
-    )
-    .all<ProjectListRow>(...params);
-  res.json({
-    ok: true,
-    data: {
-      projects: rows.map((row) => ({
-        id: row.project_id,
-        projectId: row.project_id,
-        name: titleFromProjectId(row.project_id),
-        meetingCount: Number(row.meeting_count ?? 0),
-        lastMeetingAt: row.last_meeting_at,
-      })),
-    },
-  });
+      `,
+      params
+    );
+    
+    res.json({
+      ok: true,
+      data: {
+        projects: rows.rows.map((row) => ({
+          id: row.project_id,
+          projectId: row.project_id,
+          name: titleFromProjectId(row.project_id),
+          meetingCount: Number(row.meeting_count ?? 0),
+          lastMeetingAt: row.last_meeting_at,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error("Projects list error:", error);
+    res.status(500).json({ ok: false, error: "Internal server error loading projects" });
+  }
 });
 
 /**
  * POST /api/meeting/projects
- *
- * Sprint 1 MVP new project.
- * Creates a starter meeting under a new project_id.
  */
-meetingRouter.post("/projects", requireAuth, (req, res) => {
-  const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
-  if (!name) {
-    return res.status(400).json({
-      ok: false,
-      error: "Project name is required",
-    });
-  }
-  const baseProjectId = slugifyProjectName(name);
-  if (!baseProjectId) {
-    return res.status(400).json({
-      ok: false,
-      error: "Project name must contain letters or numbers",
-    });
-  }
-  let projectId = baseProjectId;
-  const existing = db
-    .prepare(
+meetingRouter.post("/projects", requireAuth, async (req, res) => {
+  try {
+    const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    if (!name) {
+      return res.status(400).json({
+        ok: false,
+        error: "Project name is required",
+      });
+    }
+    
+    const baseProjectId = slugifyProjectName(name);
+    if (!baseProjectId) {
+      return res.status(400).json({
+        ok: false,
+        error: "Project name must contain letters or numbers",
+      });
+    }
+    
+    let projectId = baseProjectId;
+    
+    const existing = await db.query<{ project_id: string }>(
       `
       SELECT project_id
       FROM meetings
-      WHERE org_id = ?
-        AND project_id = ?
+      WHERE org_id = $1
+        AND project_id = $2
       LIMIT 1
+      `,
+      [req.auth!.orgId, projectId]
+    );
+    
+    if (existing.rows[0]) {
+      projectId = `${baseProjectId}-${Date.now().toString(36)}`;
+    }
+    
+    const ts = now();
+    const meetingId = newId("mtg");
+    const title = `Kickoff: ${name}`;
+    
+    await db.query(
       `
-    )
-    .get<{ project_id: string }>(req.auth!.orgId, projectId);
-  if (existing) {
-    projectId = `${baseProjectId}-${Date.now().toString(36)}`;
+      INSERT INTO meetings (
+        id, org_id, project_id, title, scheduled_at, created_by, created_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `,
+      [meetingId, req.auth!.orgId, projectId, title, null, req.auth!.sub, ts]
+    );
+    
+    res.status(201).json({
+      ok: true,
+      data: {
+        project: {
+          id: projectId,
+          projectId,
+          name,
+          meetingCount: 1,
+          lastMeetingAt: ts,
+        },
+        meeting: {
+          id: meetingId,
+          projectId,
+          title,
+          scheduledAt: null,
+          createdAt: ts,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Project creation error:", error);
+    res.status(500).json({ ok: false, error: "Internal server error creating project" });
   }
-  const ts = now();
-  const meetingId = newId("mtg");
-  const title = `Kickoff: ${name}`;
-  db.prepare(
-    `
-    INSERT INTO meetings (
-      id,
-      org_id,
-      project_id,
-      title,
-      scheduled_at,
-      created_by,
-      created_at
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    `
-  ).run(
-    meetingId,
-    req.auth!.orgId,
-    projectId,
-    title,
-    null,
-    req.auth!.sub,
-    ts
-  );
-  res.status(201).json({
-    ok: true,
-    data: {
-      project: {
-        id: projectId,
-        projectId,
-        name,
-        meetingCount: 1,
-        lastMeetingAt: ts,
-      },
-      meeting: {
-        id: meetingId,
-        projectId,
-        title,
-        scheduledAt: null,
-        createdAt: ts,
-      },
-    },
-  });
 });
 
 /**
  * GET /api/meeting/:id
  */
-meetingRouter.get("/:id", requireAuth, (req, res) => {
-  const meeting = getMeeting(req.params.id);
+meetingRouter.get("/:id", requireAuth, async (req, res) => {
+  try {
+    const meeting = await getMeeting(req.params.id);
 
-  if (!meeting) {
-    return res.status(404).json({ ok: false, error: "Meeting not found" });
-  }
+    if (!meeting) {
+      return res.status(404).json({ ok: false, error: "Meeting not found" });
+    }
 
-  if (!canRead(req, meeting)) {
-    return res.status(403).json({ ok: false, error: "You do not have access to this meeting" });
-  }
+    if (!canRead(req, meeting)) {
+      return res.status(403).json({ ok: false, error: "You do not have access to this meeting" });
+    }
 
-  const sessions = db
-    .prepare(
+    const sessions = await db.query<SessionRow>(
       `
       SELECT id, meeting_id, facilitator_id, status, started_at, ended_at, created_at
       FROM sessions
-      WHERE meeting_id = ?
+      WHERE meeting_id = $1
       ORDER BY created_at DESC
-      `
-    )
-    .all<SessionRow>(meeting.id);
+      `,
+      [meeting.id]
+    );
 
-  res.json({
-    ok: true,
-    data: {
-      meeting,
-      sessions,
-    },
-  });
+    res.json({
+      ok: true,
+      data: {
+        meeting,
+        sessions: sessions.rows,
+      },
+    });
+  } catch (error) {
+    console.error("Meeting fetch error:", error);
+    res.status(500).json({ ok: false, error: "Internal server error loading meeting" });
+  }
 });
 
 /**
  * PATCH /api/meeting/:id
  */
-meetingRouter.patch("/:id", requireAuth, (req, res) => {
-  const meeting = getMeeting(req.params.id);
+meetingRouter.patch("/:id", requireAuth, async (req, res) => {
+  try {
+    const meeting = await getMeeting(req.params.id);
 
-  if (!meeting) {
-    return res.status(404).json({ ok: false, error: "Meeting not found" });
+    if (!meeting) {
+      return res.status(404).json({ ok: false, error: "Meeting not found" });
+    }
+
+    if (!canManage(req, meeting)) {
+      return res.status(403).json({ ok: false, error: "You cannot update this meeting" });
+    }
+
+    const updates: string[] = [];
+    const params: unknown[] = [];
+    let pIdx = 1;
+
+    if (typeof req.body?.title === "string") {
+      const title = req.body.title.trim();
+      if (!title) return res.status(400).json({ ok: false, error: "body.title cannot be empty" });
+      updates.push(`title = $${pIdx++}`);
+      params.push(title);
+    }
+
+    if (typeof req.body?.projectId === "string" || typeof req.body?.project_id === "string") {
+      const projectId =
+        typeof req.body?.projectId === "string"
+          ? req.body.projectId.trim()
+          : req.body.project_id.trim();
+
+      if (!projectId) return res.status(400).json({ ok: false, error: "body.projectId cannot be empty" });
+
+      updates.push(`project_id = $${pIdx++}`);
+      params.push(projectId);
+    }
+
+    if (
+      typeof req.body?.scheduledAt === "string" ||
+      typeof req.body?.scheduled_at === "string" ||
+      req.body?.scheduledAt === null ||
+      req.body?.scheduled_at === null
+    ) {
+      const scheduledAt =
+        req.body?.scheduledAt === null || req.body?.scheduled_at === null
+          ? null
+          : typeof req.body?.scheduledAt === "string"
+            ? req.body.scheduledAt
+            : req.body.scheduled_at;
+
+      updates.push(`scheduled_at = $${pIdx++}`);
+      params.push(scheduledAt);
+    }
+
+    for (const field of ["goal", "brief"] as const) {
+      if (typeof req.body?.[field] === "string" || req.body?.[field] === null) {
+        const value =
+          typeof req.body?.[field] === "string" ? req.body[field].trim() || null : null;
+        updates.push(`${field} = $${pIdx++}`);
+        params.push(value);
+      }
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ ok: false, error: "No supported fields provided" });
+    }
+
+    params.push(meeting.id);
+    const idParam = `$${pIdx}`;
+
+    await db.query(
+      `
+      UPDATE meetings
+      SET ${updates.join(", ")}
+      WHERE id = ${idParam}
+      `,
+      params
+    );
+
+    const updatedMeeting = await getMeeting(meeting.id);
+
+    res.json({
+      ok: true,
+      data: {
+        meeting: updatedMeeting,
+      },
+    });
+  } catch (error) {
+    console.error("Meeting update error:", error);
+    res.status(500).json({ ok: false, error: "Internal server error updating meeting" });
   }
-
-  if (!canManage(req, meeting)) {
-    return res.status(403).json({ ok: false, error: "You cannot update this meeting" });
-  }
-
-  const updates: string[] = [];
-  const params: unknown[] = [];
-
-  if (typeof req.body?.title === "string") {
-    const title = req.body.title.trim();
-    if (!title) return res.status(400).json({ ok: false, error: "body.title cannot be empty" });
-    updates.push("title = ?");
-    params.push(title);
-  }
-
-  if (typeof req.body?.projectId === "string" || typeof req.body?.project_id === "string") {
-    const projectId =
-      typeof req.body?.projectId === "string"
-        ? req.body.projectId.trim()
-        : req.body.project_id.trim();
-
-    if (!projectId) return res.status(400).json({ ok: false, error: "body.projectId cannot be empty" });
-
-    updates.push("project_id = ?");
-    params.push(projectId);
-  }
-
-  if (
-    typeof req.body?.scheduledAt === "string" ||
-    typeof req.body?.scheduled_at === "string" ||
-    req.body?.scheduledAt === null ||
-    req.body?.scheduled_at === null
-  ) {
-    const scheduledAt =
-      req.body?.scheduledAt === null || req.body?.scheduled_at === null
-        ? null
-        : typeof req.body?.scheduledAt === "string"
-          ? req.body.scheduledAt
-          : req.body.scheduled_at;
-
-    updates.push("scheduled_at = ?");
-    params.push(scheduledAt);
-  }
-
-  if (updates.length === 0) {
-    return res.status(400).json({ ok: false, error: "No supported fields provided" });
-  }
-
-  params.push(meeting.id);
-
-  db.prepare(
-    `
-    UPDATE meetings
-    SET ${updates.join(", ")}
-    WHERE id = ?
-    `
-  ).run(...params);
-
-  res.json({
-    ok: true,
-    data: {
-      meeting: getMeeting(meeting.id),
-    },
-  });
 });
 
 /**
  * DELETE /api/meeting/:id
  */
-meetingRouter.delete("/:id", requireAuth, (req, res) => {
-  const meeting = getMeeting(req.params.id);
+meetingRouter.delete("/:id", requireAuth, async (req, res) => {
+  try {
+    const meeting = await getMeeting(req.params.id);
 
-  if (!meeting) {
-    return res.status(404).json({ ok: false, error: "Meeting not found" });
-  }
+    if (!meeting) {
+      return res.status(404).json({ ok: false, error: "Meeting not found" });
+    }
 
-  if (!canManage(req, meeting)) {
-    return res.status(403).json({ ok: false, error: "You cannot delete this meeting" });
-  }
+    if (!canManage(req, meeting)) {
+      return res.status(403).json({ ok: false, error: "You cannot delete this meeting" });
+    }
 
-  const openSession = db
-    .prepare(
+    const openSession = await db.query<{ id: string }>(
       `
       SELECT id
       FROM sessions
-      WHERE meeting_id = ?
+      WHERE meeting_id = $1
         AND status IN ('created', 'active')
       LIMIT 1
-      `
-    )
-    .get<{ id: string }>(meeting.id);
+      `,
+      [meeting.id]
+    );
 
-  if (openSession) {
-    return res.status(409).json({
-      ok: false,
-      error: "Cannot delete a meeting with an open session",
-      data: { sessionId: openSession.id },
+    if (openSession.rows[0]) {
+      return res.status(409).json({
+        ok: false,
+        error: "Cannot delete a meeting with an open session",
+        data: { sessionId: openSession.rows[0].id },
+      });
+    }
+
+    await db.query(`DELETE FROM meetings WHERE id = $1`, [meeting.id]);
+
+    res.json({
+      ok: true,
+      data: {
+        deleted: true,
+        meetingId: meeting.id,
+      },
     });
+  } catch (error) {
+    console.error("Meeting delete error:", error);
+    res.status(500).json({ ok: false, error: "Internal server error deleting meeting" });
   }
-
-  db.prepare(`DELETE FROM meetings WHERE id = ?`).run(meeting.id);
-
-  res.json({
-    ok: true,
-    data: {
-      deleted: true,
-      meetingId: meeting.id,
-    },
-  });
 });

@@ -1,52 +1,73 @@
 import { useState, useEffect } from "react";
-import { COLORS } from "../constants";
+import { COLORS, FONT, LETTER_SPACING } from "../constants";
+
+// Quiet priming beat between "start meeting" and the live session — reads as
+// the tool getting ready, not an announcement. Hold, then a quick fade.
+const HOLD_MS = 650;
+const EXIT_MS = 300;
 
 export default function MeetingTransition({ onDone }: { onDone: () => void }) {
-  const [phase, setPhase] = useState("enter");
-  const [color, setColor] = useState("#ffffff");
+  const [exiting, setExiting] = useState(false);
 
   useEffect(() => {
-    const t1 = setTimeout(() => setColor(COLORS.accent), 200);
-    const t2 = setTimeout(() => setPhase("exit"), 1400);
-    const t3 = setTimeout(() => onDone(), 2000);
-    return () => [t1, t2, t3].forEach(clearTimeout);
+    const t1 = setTimeout(() => setExiting(true), HOLD_MS);
+    const t2 = setTimeout(() => onDone(), HOLD_MS + EXIT_MS);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, [onDone]);
 
   return (
-    <div style={{
-      position: "absolute", inset: 0,
-      background: COLORS.bg,
-      display: "flex", alignItems: "center", justifyContent: "center",
-      gap: "8vw",
-      opacity: phase === "exit" ? 0 : 1,
-      transition: phase === "exit" ? "opacity 0.5s ease" : "none",
-      zIndex: 10,
-    }}>
-      {["left", "right"].map((dir) => (
-        <div
-          key={dir}
+    <div
+      role="status"
+      aria-label="Preparing session"
+      style={{
+        position: "absolute", inset: 0,
+        background: COLORS.bg,
+        display: "flex", flexDirection: "column",
+        alignItems: "center", justifyContent: "center",
+        gap: 16,
+        opacity: exiting ? 0 : 1,
+        transition: `opacity ${EXIT_MS}ms ease`,
+        zIndex: 10,
+      }}
+    >
+      <span style={{ position: "relative", display: "inline-flex", width: 14, height: 14 }}>
+        <span
           style={{
-            fontFamily: "'Arial Black', 'Impact', sans-serif",
-            fontWeight: 900,
-            fontSize: "clamp(60px, 10vw, 120px)",
-            letterSpacing: "-2px",
-            color,
-            transition: "color 0.6s ease",
-            animation: `slideIn${dir === "left" ? "Left" : "Right"} 0.4s cubic-bezier(0.22,1,0.36,1) forwards`,
+            position: "absolute",
+            inset: 0,
+            borderRadius: "50%",
+            background: COLORS.accent,
+            animation: "meetingPrimePulse 1.1s ease-out infinite",
           }}
-        >
-          MEETING
-        </div>
-      ))}
+        />
+        <span
+          style={{
+            position: "relative",
+            width: 14,
+            height: 14,
+            borderRadius: "50%",
+            background: COLORS.accent,
+            boxShadow: `0 0 10px ${COLORS.accent}`,
+          }}
+        />
+      </span>
+
+      <span
+        style={{
+          fontSize: FONT.size.label,
+          fontWeight: 500,
+          letterSpacing: LETTER_SPACING.label,
+          textTransform: "uppercase",
+          color: COLORS.textMuted,
+        }}
+      >
+        Preparing session
+      </span>
 
       <style>{`
-        @keyframes slideInLeft {
-          from { transform: translateX(-120%); }
-          to   { transform: translateX(0); }
-        }
-        @keyframes slideInRight {
-          from { transform: translateX(120%); }
-          to   { transform: translateX(0); }
+        @keyframes meetingPrimePulse {
+          0%   { transform: scale(1);   opacity: 0.7; }
+          100% { transform: scale(3.2); opacity: 0; }
         }
       `}</style>
     </div>

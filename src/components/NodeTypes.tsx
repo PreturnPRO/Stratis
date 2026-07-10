@@ -1,5 +1,5 @@
 import React from 'react';
-import { COLORS } from '../tokens/colors';
+import { COLORS, FONT, LETTER_SPACING } from '../tokens/colors';
 
 // ─── Node type + status enums ────────────────────────────────────────────────
 
@@ -90,9 +90,9 @@ export const NodeBadge: React.FC<NodeBadgeProps> = ({ type, size = 'md' }) => {
         gap: isSm ? 4 : 5,
         padding: isSm ? '2px 7px' : '3px 9px',
         borderRadius: 4,
-        fontSize: isSm ? 10 : 11,
+        fontSize: isSm ? FONT.size.micro : FONT.size.caption,
         fontWeight: 500,
-        letterSpacing: '0.04em',
+        letterSpacing: LETTER_SPACING.wide,
         background: t.badgeBg,
         color: t.badgeText,
         border: `1px solid ${t.badgeBorder}`,
@@ -140,7 +140,7 @@ export const NodeStatusPill: React.FC<NodeStatusPillProps> = ({ status }) => {
   return (
     <span
       style={{
-        fontSize: 10,
+        fontSize: FONT.size.micro,
         fontWeight: 500,
         padding: '2px 6px',
         borderRadius: 3,
@@ -175,8 +175,6 @@ export const NodeCard: React.FC<NodeCardData> = ({
   timestamp,
   onClick,
 }) => {
-  const t = NODE_TYPE_TOKENS[type];
-
   return (
     <div
       onClick={onClick}
@@ -185,8 +183,6 @@ export const NodeCard: React.FC<NodeCardData> = ({
         border: `1px solid ${COLORS.border}`,
         borderRadius: 8,
         padding: '12px 14px',
-        position: 'relative',
-        overflow: 'hidden',
         cursor: onClick ? 'pointer' : 'default',
         transition: 'border-color 0.15s',
       }}
@@ -197,23 +193,12 @@ export const NodeCard: React.FC<NodeCardData> = ({
         (e.currentTarget as HTMLDivElement).style.borderColor = COLORS.border;
       }}
     >
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: 3,
-          height: '100%',
-          background: t.accent,
-          borderRadius: '4px 0 0 4px',
-        }}
-      />
       <div style={{ marginBottom: 6 }}>
         <NodeBadge type={type} size="sm" />
       </div>
       <div
         style={{
-          fontSize: 13,
+          fontSize: FONT.size.body,
           fontWeight: 500,
           color: COLORS.textPrimary,
           marginBottom: 4,
@@ -224,7 +209,7 @@ export const NodeCard: React.FC<NodeCardData> = ({
       </div>
       <div
         style={{
-          fontSize: 12,
+          fontSize: FONT.size.body,
           color: COLORS.textMuted,
           lineHeight: 1.5,
         }}
@@ -239,7 +224,7 @@ export const NodeCard: React.FC<NodeCardData> = ({
           marginTop: 10,
         }}
       >
-        <span style={{ fontSize: 11, color: COLORS.textDim }}>
+        <span style={{ fontSize: FONT.size.caption, color: COLORS.textMuted }}>
           {[sourceSession, timestamp].filter(Boolean).join(' · ')}
         </span>
         <NodeStatusPill status={status} />

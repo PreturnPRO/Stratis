@@ -1,262 +1,247 @@
-import { useEffect, useMemo, useState } from "react";
-import { COLORS } from "../constants";
-import { btnAccent, btnGhost } from "../components/ui";
-import { EmptyState, LoadingState } from "../components/states";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { COLORS, RADIUS, FONT, LETTER_SPACING } from "../tokens/colors";
+import { Button, Modal } from "../components/ui";
+import { NewMeetingModal } from "../components/NewMeetingModal";
 import { useAuth } from "../context/AuthContext";
+import { useCreateMeeting } from "../hooks/useCreateMeeting";
+import { API_BASE } from "../lib/api";
 
-const API_BASE = "http://localhost:3001";
+interface Props {
+  onNav?: (id: string, params?: Record<string, string>) => void;
+}
 
-interface ProjectItem {
+interface Project {
   id: string;
-  projectId: string;
   name: string;
   meetingCount: number;
-  lastMeetingAt: string | null;
+  lastMeetingAt?: string | null;
 }
 
-function formatDate(value: string | null): string {
+function formatDate(value?: string | null): string {
   if (!value) return "No meetings yet";
-
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
-
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(d);
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(d);
 }
 
-export default function Projects() {
-  const { token } = useAuth();
+// Stable-ish dot color derived from the project name.
+const DOT_COLORS = [COLORS.accent, COLORS.teal, COLORS.cyan, COLORS.orange, COLORS.red];
+function colorFor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return DOT_COLORS[Math.abs(hash) % DOT_COLORS.length];
+}
 
-  const [projects, setProjects] = useState<ProjectItem[]>([]);
+export default function Projects({ onNav }: Props) {
+  const { token, user } = useAuth();
+
+  const authHeaders = useMemo(
+    (): Record<string, string> => (token ? { Authorization: `Bearer ${token}` } : {}),
+    [token],
+  );
+
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [showNewProject, setShowNewProject] = useState(false);
-  const [projectName, setProjectName] = useState("");
+  const [showNew, setShowNew] = useState(false);
+  const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
 
-  const authHeaders = useMemo((): Record<string, string> => {
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }, [token]);
+  const [newMeetingProject, setNewMeetingProject] = useState<Project | null>(null);
+  const create = useCreateMeeting(onNav);
 
-  const loadProjects = async () => {
+  const load = useCallback(async () => {
     if (!token) return;
-
     setLoading(true);
     setError(null);
-
     try {
-      const res = await fetch(`${API_BASE}/api/meeting/projects`, {
-        headers: authHeaders,
-      });
-
-      const data: {
-        ok: boolean;
-        error?: string;
-        data?: {
-          projects: ProjectItem[];
-        };
-      } = await res.json();
-
-      if (!data.ok) {
+      const res = await fetch(`${API_BASE}/api/meeting/projects`, { headers: authHeaders });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
         setError(data.error ?? "Could not load projects");
         return;
       }
-
       setProjects(data.data?.projects ?? []);
     } catch {
-      setError("Could not reach backend");
+      setError("Could not reach the server");
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, authHeaders]);
 
-  useEffect(() => {
-    void loadProjects();
-  }, [token]);
+  useEffect(() => { void load(); }, [load]);
 
-  const handleCreateProject = async () => {
-    const cleanName = projectName.trim();
-
-    if (!cleanName) {
-      setError("Project name is required");
-      return;
-    }
-
+  const handleCreate = async () => {
+    const name = newName.trim();
+    if (!name) return;
     setCreating(true);
     setError(null);
-
     try {
       const res = await fetch(`${API_BASE}/api/meeting/projects`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...authHeaders,
-        },
-        body: JSON.stringify({ name: cleanName }),
+        headers: { "Content-Type": "application/json", ...authHeaders },
+        body: JSON.stringify({ name }),
       });
-
       const data = await res.json();
-
-      if (!data.ok) {
-        throw new Error(data.error ?? "Could not create project");
+      if (!res.ok || !data.ok) {
+        setError(data.error ?? "Could not create project");
+        return;
       }
-
-      setProjectName("");
-      setShowNewProject(false);
-      await loadProjects();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create project");
+      setShowNew(false);
+      setNewName("");
+      await load();
+    } catch {
+      setError("Could not reach the server");
     } finally {
       setCreating(false);
     }
   };
 
-  return (
-    <div style={{ padding: "40px 60px", overflowY: "auto", flex: 1 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 32 }}>
-        <h1 style={{ color: COLORS.text, fontSize: 22, fontWeight: 500, margin: 0 }}>
-          All projects
-        </h1>
+  const handleCreateMeetingForProject = async (input: {
+    title: string;
+    durationMinutes: number;
+    goal: string;
+    brief: string;
+  }) => {
+    if (!newMeetingProject) return;
+    const sessionId = await create.createMeeting({
+      title: input.title,
+      projectId: newMeetingProject.id,
+      goal: input.goal,
+      brief: input.brief,
+      durationMinutes: input.durationMinutes,
+    });
+    if (sessionId) setNewMeetingProject(null);
+  };
 
-        <div style={{ display: "flex", gap: 8 }}>
-          <button style={btnGhost()} onClick={loadProjects}>
-            Refresh
-          </button>
-          <button style={btnAccent()} onClick={() => setShowNewProject(true)}>
-            + New project
-          </button>
-        </div>
+  const owner = user?.name ?? "You";
+
+  return (
+    <div className="page-padding" style={{ overflowY: "auto", flex: 1 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 32 }}>
+        <h1 style={{ color: COLORS.text, fontSize: FONT.size.title, fontWeight: 600, margin: 0 }}>All projects</h1>
+        <Button variant="primary" onClick={() => setShowNew(true)}>+ New project</Button>
       </div>
 
       {error && (
         <div style={{
-          background: COLORS.redBg,
-          border: `1px solid ${COLORS.red}`,
-          color: COLORS.red,
-          borderRadius: 8,
-          padding: "10px 12px",
-          marginBottom: 18,
-          fontSize: 13,
+          background: COLORS.redBg, border: `1px solid ${COLORS.red}`, color: COLORS.red,
+          borderRadius: RADIUS.md, padding: "10px 14px", fontSize: FONT.size.body, marginBottom: 18,
         }}>
           {error}
         </div>
       )}
 
       {loading ? (
-        <LoadingState count={4} persist />
+        <p style={{ color: COLORS.textMuted, fontSize: FONT.size.body }}>Loading projects…</p>
       ) : projects.length === 0 ? (
-        <EmptyState message="No projects yet. Create your first project." />
+        <div style={{
+          border: `1px dashed ${COLORS.border}`, borderRadius: RADIUS.lg, padding: "48px 24px",
+          textAlign: "center", color: COLORS.textMuted, fontSize: FONT.size.body,
+        }}>
+          No projects yet. Create one, or start a meeting from the dashboard.
+        </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-          {projects.map((p, index) => (
-            <div
-              key={p.projectId}
-              style={{
-                background: COLORS.surface,
-                border: `1px solid ${COLORS.border}`,
-                borderRadius: 10,
-                padding: "20px 22px",
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <div
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: "50%",
-                      background: index % 3 === 0 ? COLORS.red : index % 3 === 1 ? COLORS.teal : COLORS.orange,
-                      marginTop: 2,
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
+          {projects.map((p) => {
+            const dot = colorFor(p.name);
+            const openDocument = () => onNav?.("document", { projectId: p.id });
+            return (
+              <div
+                key={p.id}
+                role="button"
+                tabIndex={0}
+                onClick={openDocument}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    openDocument();
+                  }
+                }}
+                style={{
+                  background: COLORS.surface,
+                  border: `1px solid ${COLORS.border}`,
+                  borderRadius: RADIUS.lg,
+                  padding: "20px 22px",
+                  textAlign: "left",
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: dot, flexShrink: 0 }} />
+                    <span style={{ color: COLORS.text, fontWeight: 600, fontSize: FONT.size.body }}>{p.name}</span>
+                  </div>
+                  <span aria-hidden="true" style={{ color: COLORS.textMuted, fontSize: FONT.size.label }}>↗</span>
+                </div>
+
+                <div style={{ color: COLORS.textMuted, fontSize: FONT.size.label, marginBottom: 12, paddingLeft: 16 }}>
+                  {owner}
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingLeft: 16 }}>
+                  <div style={{ display: "flex", gap: 16, fontSize: FONT.size.label, color: COLORS.textMuted }}>
+                    <span><span style={{ color: COLORS.text }}>{p.meetingCount}</span> meeting{p.meetingCount === 1 ? "" : "s"}</span>
+                    <span style={{ color: COLORS.textMuted }}>Last: {formatDate(p.lastMeetingAt)}</span>
+                  </div>
+                  <Button
+                    variant="subtle"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setNewMeetingProject(p);
                     }}
-                  />
-                  <span style={{ color: COLORS.text, fontWeight: 500, fontSize: 15 }}>
-                    {p.name}
-                  </span>
+                  >
+                    + New meeting
+                  </Button>
                 </div>
               </div>
-
-              <div style={{ color: COLORS.textMuted, fontSize: 13, marginBottom: 12, paddingLeft: 16 }}>
-                {p.projectId}
-              </div>
-
-              <div style={{ display: "flex", gap: 16, paddingLeft: 16, marginBottom: 12 }}>
-                <span style={{ color: COLORS.textMuted, fontSize: 12 }}>
-                  <span style={{ color: COLORS.textDim }}>{p.meetingCount}</span>{" "}
-                  meeting{p.meetingCount === 1 ? "" : "s"}
-                </span>
-              </div>
-
-              <div style={{ paddingLeft: 16, fontSize: 12, color: COLORS.cyan }}>
-                Last meeting: {formatDate(p.lastMeetingAt)}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
-      {showNewProject && (
-        <div style={overlayStyle}>
-          <div style={modalStyle}>
-            <h2 style={{ color: COLORS.text, fontSize: 18, fontWeight: 500, margin: "0 0 18px" }}>
-              New project
-            </h2>
-
-            <input
-              style={inputStyle}
-              value={projectName}
-              onChange={(e) => setProjectName(e.target.value)}
-              placeholder="Project name"
-              autoFocus
-            />
-
-            <p style={{ color: COLORS.textMuted, fontSize: 12, lineHeight: 1.6, margin: "12px 0 0" }}>
-              Sprint 1 creates a starter kickoff meeting for this project.
-            </p>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 22 }}>
-              <button style={btnGhost()} onClick={() => setShowNewProject(false)} disabled={creating}>
-                Cancel
-              </button>
-              <button style={btnAccent()} onClick={() => void handleCreateProject()} disabled={creating}>
-                {creating ? "Creating..." : "Create project"}
-              </button>
-            </div>
-          </div>
-        </div>
+      {showNew && (
+        <Modal
+          title="New project"
+          width={420}
+          onClose={() => !creating && setShowNew(false)}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setShowNew(false)} disabled={creating}>Cancel</Button>
+              <Button variant="primary" onClick={() => void handleCreate()} disabled={creating || !newName.trim()}>
+                {creating ? "Creating…" : "Create project"}
+              </Button>
+            </>
+          }
+        >
+          <label htmlFor="new-project-name" style={{ color: COLORS.textMuted, fontSize: FONT.size.label, letterSpacing: LETTER_SPACING.wide, display: "block", marginBottom: 6 }}>
+            Project name
+          </label>
+          <input
+            id="new-project-name"
+            autoFocus
+            style={{
+              width: "100%", background: COLORS.bg, border: `1px solid ${COLORS.border}`,
+              color: COLORS.text, borderRadius: RADIUS.sm, padding: "10px 12px", fontSize: FONT.size.body, outline: "none",
+            }}
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") void handleCreate(); }}
+            placeholder="e.g. Pricing v2"
+          />
+        </Modal>
       )}
+
+      <NewMeetingModal
+        open={!!newMeetingProject}
+        onClose={() => setNewMeetingProject(null)}
+        onSubmit={handleCreateMeetingForProject}
+        submitting={create.creating}
+        error={create.error}
+        lockedProject={newMeetingProject ? { id: newMeetingProject.id, name: newMeetingProject.name } : undefined}
+      />
     </div>
   );
 }
-
-const overlayStyle: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(0,0,0,0.7)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 200,
-};
-
-const modalStyle: React.CSSProperties = {
-  width: 400,
-  background: COLORS.surface,
-  border: `1px solid ${COLORS.border}`,
-  borderRadius: 12,
-  padding: 24,
-};
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  background: COLORS.bg,
-  border: `1px solid ${COLORS.border}`,
-  color: COLORS.text,
-  borderRadius: 6,
-  padding: "10px 12px",
-  fontSize: 14,
-  outline: "none",
-};

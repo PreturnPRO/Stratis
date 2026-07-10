@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { COLORS } from '../tokens/colors';
+import { COLORS, FONT, LETTER_SPACING } from '../tokens/colors';
 import { NodeBadge as _NodeBadge } from '../components/NodeTypes';
 import { ParticipantSummaryOutput, SummaryBlock, ActionItem } from '../mocks/summaryMock';
 import { useAuth } from '../context/AuthContext';
 
-const API_BASE = 'http://localhost:3001';
+import { API_BASE } from '../lib/api';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type UserRole = 'facilitator' | 'participant';
@@ -23,7 +23,7 @@ const BLOCK_CONFIG: Record<
 > = {
   OVERVIEW:     { icon: '≡',  color: COLORS.textMuted },
   WHAT_CHANGED: { icon: '↻',  color: COLORS.cyan },
-  DECISIONS:    { icon: '⊕',  color: '#378add', nodeType: 'DECISION' },
+  DECISIONS:    { icon: '⊕',  color: COLORS.cyan, nodeType: 'DECISION' },
   OPEN_ITEMS:   { icon: '?',  color: COLORS.red,    nodeType: 'OPEN_QUESTION' },
   ASSUMPTIONS:  { icon: '~',  color: COLORS.accent,  nodeType: 'ASSUMPTION' },
   RISKS:        { icon: '⚠',  color: COLORS.orange,  nodeType: 'RISK' },
@@ -59,10 +59,10 @@ function parseContentLines(content: string): string[] {
 const FacilitatorBadge: React.FC = () => (
   <span
     style={{
-      fontSize: 10,
-      color: '#5ba3e8',
-      background: '#0c1e38',
-      border: '1px solid #1a3a5c',
+      fontSize: FONT.size.micro,
+      color: COLORS.cyan,
+      background: COLORS.cyanBg,
+      border: `1px solid ${COLORS.cyan}55`,
       borderRadius: 3,
       padding: '1px 6px',
       marginLeft: 6,
@@ -81,7 +81,7 @@ const TimerBar: React.FC<{
   <div
     style={{
       background: COLORS.amberSubtle,
-      border: `1px solid #3a2800`,
+      border: `1px solid ${COLORS.amber}55`,
       borderRadius: 8,
       padding: '10px 14px',
       display: 'flex',
@@ -92,8 +92,8 @@ const TimerBar: React.FC<{
   >
     <div
       style={{
-        fontSize: 12,
-        color: '#ef9f27',
+        fontSize: FONT.size.label,
+        color: COLORS.amber,
         fontWeight: 500,
         display: 'flex',
         alignItems: 'center',
@@ -101,11 +101,12 @@ const TimerBar: React.FC<{
       }}
     >
       <span
+        aria-hidden="true"
         style={{
           width: 7,
           height: 7,
           borderRadius: '50%',
-          background: '#ef9f27',
+          background: COLORS.amber,
           display: 'inline-block',
           animation: 'stratisTimerPulse 1.2s ease-in-out infinite',
         }}
@@ -116,7 +117,7 @@ const TimerBar: React.FC<{
       <button
         onClick={onEdit}
         style={{
-          fontSize: 11,
+          fontSize: FONT.size.caption,
           fontWeight: 500,
           padding: '5px 12px',
           borderRadius: 5,
@@ -131,11 +132,11 @@ const TimerBar: React.FC<{
       <button
         onClick={onSendNow}
         style={{
-          fontSize: 11,
+          fontSize: FONT.size.caption,
           fontWeight: 500,
           padding: '5px 12px',
           borderRadius: 5,
-          border: '1px solid #0f4a38',
+          border: `1px solid ${COLORS.teal}55`,
           background: COLORS.tealBg,
           color: COLORS.teal,
           cursor: 'pointer',
@@ -158,14 +159,14 @@ const SummaryBlockSection: React.FC<{
   return (
     <div style={{ marginBottom: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-        <span style={{ fontSize: 13, color: cfg.color, fontWeight: 500, width: 16, textAlign: 'center' }}>
+        <span aria-hidden="true" style={{ fontSize: FONT.size.body, color: cfg.color, fontWeight: 500, width: 16, textAlign: 'center' }}>
           {cfg.icon}
         </span>
         <span
           style={{
-            fontSize: 11,
+            fontSize: FONT.size.label,
             fontWeight: 500,
-            letterSpacing: '0.06em',
+            letterSpacing: LETTER_SPACING.label,
             textTransform: 'uppercase',
             color: cfg.color,
           }}
@@ -201,14 +202,14 @@ const SummaryBlockSection: React.FC<{
                   flexShrink: 0,
                 }}
               />
-              <span style={{ fontSize: 13, color: COLORS.textPrimary, lineHeight: 1.5 }}>
+              <span style={{ fontSize: FONT.size.body, color: COLORS.textPrimary, lineHeight: 1.5 }}>
                 {line}
               </span>
             </div>
           ))}
         </div>
       ) : (
-        <p style={{ fontSize: 13, color: '#888888', lineHeight: 1.6, margin: 0 }}>
+        <p style={{ fontSize: FONT.size.body, color: COLORS.textMuted, lineHeight: 1.6, margin: 0 }}>
           {block.content}
         </p>
       )}
@@ -219,12 +220,12 @@ const SummaryBlockSection: React.FC<{
 const ActionItemsSection: React.FC<{ items: ActionItem[] }> = ({ items }) => (
   <div style={{ marginBottom: 20 }}>
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-      <span style={{ fontSize: 13, color: COLORS.teal, fontWeight: 500, width: 16, textAlign: 'center' }}>✓</span>
+      <span aria-hidden="true" style={{ fontSize: FONT.size.body, color: COLORS.teal, fontWeight: 500, width: 16, textAlign: 'center' }}>✓</span>
       <span
         style={{
-          fontSize: 11,
+          fontSize: FONT.size.label,
           fontWeight: 500,
-          letterSpacing: '0.06em',
+          letterSpacing: LETTER_SPACING.label,
           textTransform: 'uppercase',
           color: COLORS.teal,
         }}
@@ -247,10 +248,10 @@ const ActionItemsSection: React.FC<{ items: ActionItem[] }> = ({ items }) => (
           gap: 12,
         }}
       >
-        <span style={{ fontSize: 13, color: COLORS.textPrimary }}>{item.task}</span>
+        <span style={{ fontSize: FONT.size.body, color: COLORS.textPrimary }}>{item.task}</span>
         <span
           style={{
-            fontSize: 11,
+            fontSize: FONT.size.caption,
             color: COLORS.textMuted,
             background: COLORS.surfaceMuted,
             border: `1px solid ${COLORS.border}`,
@@ -361,6 +362,8 @@ const SummaryView: React.FC<SummaryViewProps> = ({
   if (loading) {
     return (
       <div
+        role="status"
+        aria-live="polite"
         style={{
           background: COLORS.bg,
           minHeight: '100vh',
@@ -379,6 +382,7 @@ const SummaryView: React.FC<SummaryViewProps> = ({
   if (error) {
     return (
       <div
+        role="alert"
         style={{
           background: COLORS.bg,
           minHeight: '100vh',
@@ -452,44 +456,45 @@ const SummaryView: React.FC<SummaryViewProps> = ({
 
         {sent && isFacilitator && (
           <div
+            role="status"
             style={{
               background: COLORS.tealBg,
-              border: `1px solid #0f4a38`,
+              border: `1px solid ${COLORS.teal}55`,
               borderRadius: 8,
               padding: '10px 14px',
               marginBottom: 24,
-              fontSize: 12,
+              fontSize: FONT.size.label,
               color: COLORS.teal,
               fontWeight: 500,
             }}
           >
-            ✓ Summary sent to all participants
+            <span aria-hidden="true">✓</span> Summary sent to all participants
           </div>
         )}
 
         {/* Header */}
         <div style={{ marginBottom: 20 }}>
-          <h1 style={{ fontSize: 20, fontWeight: 500, color: COLORS.textPrimary, margin: '0 0 4px' }}>
+          <h1 style={{ fontSize: FONT.size.heading, fontWeight: 600, color: COLORS.textPrimary, margin: '0 0 4px' }}>
             {summary.summary_title}
           </h1>
-          <p style={{ fontSize: 13, color: COLORS.textMuted, margin: '0 0 10px' }}>
+          <p style={{ fontSize: FONT.size.body, color: COLORS.textMuted, margin: '0 0 10px' }}>
             {summary.summary_subtitle}
           </p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
-            <span style={{ fontSize: 11, color: COLORS.textDim }}>
+            <span style={{ fontSize: FONT.size.caption, color: COLORS.textMuted }}>
               {summary.participants.join(', ')}
             </span>
             {decisionCount > 0 && (
-              <span style={{ fontSize: 11, color: COLORS.textDim }}>
+              <span style={{ fontSize: FONT.size.caption, color: COLORS.textMuted }}>
                 {decisionCount} decision{decisionCount !== 1 ? 's' : ''}
               </span>
             )}
             {openCount > 0 && (
-              <span style={{ fontSize: 11, color: COLORS.textDim }}>
+              <span style={{ fontSize: FONT.size.caption, color: COLORS.textMuted }}>
                 {openCount} open item{openCount !== 1 ? 's' : ''}
               </span>
             )}
-            <span style={{ fontSize: 11, color: COLORS.textDim }}>
+            <span style={{ fontSize: FONT.size.caption, color: COLORS.textMuted }}>
               {summary.action_items.length} action item{summary.action_items.length !== 1 ? 's' : ''}
             </span>
           </div>

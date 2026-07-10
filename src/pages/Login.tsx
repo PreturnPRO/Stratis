@@ -1,13 +1,12 @@
-import { useState } from 'react'
-import { COLORS } from '../constants'
-import { btnAccent } from '../components/ui'
+import React, { useState, type CSSProperties } from 'react'
+import { COLORS, FONT, LETTER_SPACING, RADIUS } from '../constants'
+import { Button } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
+import { API_BASE } from '../lib/api'
 
 interface Props {
   onNavigate: (page: 'landing' | 'register' | 'app') => void
 }
-
-const API_BASE = 'http://localhost:3001'
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
@@ -15,222 +14,220 @@ function isValidEmail(email: string): boolean {
 
 function validateLogin(email: string, password: string): string | null {
   const cleanEmail = email.trim()
-
   if (!cleanEmail) return 'Email is required'
   if (!isValidEmail(cleanEmail)) return 'Enter a valid email address'
   if (!password) return 'Password is required'
-
   return null
 }
 
 export default function Login({ onNavigate }: Props) {
   const { login } = useAuth()
-
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
     if (loading) return
 
     const validationError = validateLogin(email, password)
-
     if (validationError) {
       setError(validationError)
       return
     }
 
-    setError(null)
     setLoading(true)
+    setError(null)
 
     try {
-      const res = await fetch(`${API_BASE}/api/auth/login`, {
+      const response = await fetch(`${API_BASE}/api/auth/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
-          email: email.trim().toLowerCase(),
+          email: email.trim(),
           password,
         }),
       })
 
-      const data = await res.json()
+      const payload = await response.json()
 
-      if (!res.ok || !data.ok) {
-        setError(data.error ?? 'Invalid email or password')
+      if (!response.ok || !payload.ok) {
+        setError(payload.error || 'Invalid credentials or login failed')
         return
       }
 
-      if (!data.data?.token || !data.data?.user) {
-        setError('Login response was missing user session data')
-        return
-      }
-
-      login(data.data.token, data.data.user)
+      // Commit to central AuthContext and navigate to App
+      login(payload.data.token, payload.data.user)
       onNavigate('app')
-    } catch {
-      setError('Could not reach server')
+    } catch (err) {
+      console.error('[auth:login] error:', err)
+      setError('Could not connect to the authentication server')
     } finally {
       setLoading(false)
     }
   }
 
+  const canSubmit = email.trim() && password && !loading
+
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        height: '100%',
-        background: COLORS.bg,
-      }}
-    >
-      <div
-        style={{
-          background: COLORS.surface,
-          border: `1px solid ${COLORS.border}`,
-          borderRadius: 12,
-          padding: '40px 36px',
-          width: 360,
-        }}
-      >
-        <div
-          style={{
-            fontSize: 11,
-            color: COLORS.accent,
-            letterSpacing: 2,
-            marginBottom: 24,
-          }}
-        >
-          STRATIS
-        </div>
+    <div style={containerStyle}>
+      <div style={cardStyle}>
+        <div style={wordmarkStyle}>STRATIS</div>
+        <div style={subtitleStyle}>Access the Control Room</div>
 
-        <h2
-          style={{
-            color: COLORS.text,
-            fontSize: 20,
-            fontWeight: 500,
-            margin: '0 0 28px',
-          }}
-        >
-          Sign in
-        </h2>
+        {error && <div style={errorStyle}>{error}</div>}
 
-        {error && (
-          <div
-            style={{
-              background: COLORS.redBg,
-              border: `1px solid ${COLORS.red}`,
-              borderRadius: 6,
-              padding: '8px 12px',
-              fontSize: 13,
-              color: COLORS.red,
-              marginBottom: 16,
-            }}
-          >
-            {error}
+        <form onSubmit={handleSubmit} style={formStyle}>
+          <div style={fieldStyle}>
+            <label htmlFor="email" style={labelStyle}>
+              Email Address
+            </label>
+            <input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@organization.com"
+              disabled={loading}
+              style={inputStyle()}
+              required
+            />
           </div>
-        )}
 
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 14,
-            marginBottom: 24,
-          }}
-        >
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => {
-              setEmail(e.target.value)
-              if (error) setError(null)
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void handleSubmit()
-            }}
-            autoComplete="email"
-            disabled={loading}
-            style={inputStyle()}
-          />
+          <div style={fieldStyle}>
+            <label htmlFor="password" style={labelStyle}>
+              Password
+            </label>
+            <input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              disabled={loading}
+              style={inputStyle()}
+              required
+            />
+          </div>
 
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => {
-              setPassword(e.target.value)
-              if (error) setError(null)
-            }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void handleSubmit()
-            }}
-            autoComplete="current-password"
-            disabled={loading}
-            style={inputStyle()}
-          />
-        </div>
-
-        <button
-          style={{
-            ...btnAccent(),
-            width: '100%',
-            justifyContent: 'center',
-            fontSize: 14,
-            padding: '10px',
-            opacity: loading ? 0.6 : 1,
-            cursor: loading ? 'not-allowed' : 'pointer',
-          }}
-          onClick={() => void handleSubmit()}
-          disabled={loading}
-        >
-          {loading ? 'Signing in...' : 'Sign in'}
-        </button>
-
-        <div
-          style={{
-            marginTop: 20,
-            textAlign: 'center',
-            fontSize: 13,
-            color: COLORS.textMuted,
-          }}
-        >
-          No account?{' '}
-          <span
-            style={{ color: COLORS.accent, cursor: 'pointer' }}
-            onClick={() => !loading && onNavigate('register')}
+          <Button
+            variant="primary"
+            type="submit"
+            disabled={!canSubmit}
+            fullWidth
+            style={{ marginTop: 12 }}
           >
-            Register
-          </span>
-        </div>
+            {loading ? 'Accessing...' : 'Enter Control Room'}
+          </Button>
+        </form>
 
-        <div style={{ marginTop: 8, textAlign: 'center' }}>
-          <span
-            style={{
-              fontSize: 12,
-              color: COLORS.textDim,
-              cursor: 'pointer',
-            }}
-            onClick={() => !loading && onNavigate('landing')}
+        <div style={switchFooterStyle}>
+          <span style={{ color: COLORS.textMuted }}>Don't have an account? </span>
+          <button
+            type="button"
+            onClick={() => onNavigate('register')}
+            disabled={loading}
+            style={linkStyle}
           >
-            ← Back
-          </span>
+            Create one
+          </button>
         </div>
       </div>
     </div>
   )
 }
 
-const inputStyle = (): React.CSSProperties => ({
+// ─── Style Blocks ────────────────────────────────────────────────────────────
+
+const containerStyle: CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  height: '100%',
+  background: COLORS.bg,
+}
+
+const cardStyle: CSSProperties = {
+  background: COLORS.surface,
+  border: `1px solid ${COLORS.border}`,
+  borderRadius: RADIUS.lg,
+  padding: '40px 36px',
+  width: 360,
+  display: 'flex',
+  flexDirection: 'column',
+}
+
+const wordmarkStyle: CSSProperties = {
+  fontSize: FONT.size.caption,
+  color: COLORS.accent,
+  letterSpacing: LETTER_SPACING.eyebrow,
+  fontWeight: FONT.weight.bold,
+  marginBottom: 4,
+}
+
+const subtitleStyle: CSSProperties = {
+  fontSize: FONT.size.body,
+  color: COLORS.textMuted,
+  marginBottom: 24,
+}
+
+const errorStyle: CSSProperties = {
+  background: COLORS.redBg,
+  border: `1px solid ${COLORS.red}`,
+  color: COLORS.red,
+  borderRadius: RADIUS.sm,
+  padding: '10px 12px',
+  fontSize: FONT.size.label,
+  marginBottom: 16,
+  lineHeight: 1.4,
+}
+
+const formStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 16,
+}
+
+const fieldStyle: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 6,
+}
+
+const labelStyle: CSSProperties = {
+  color: COLORS.textMuted,
+  fontSize: FONT.size.label,
+  fontWeight: FONT.weight.medium,
+  letterSpacing: LETTER_SPACING.wide,
+}
+
+const inputStyle = (): CSSProperties => ({
   background: COLORS.bg,
   border: `1px solid ${COLORS.border}`,
-  borderRadius: 6,
+  borderRadius: RADIUS.sm,
   padding: '10px 12px',
-  fontSize: 14,
+  fontSize: FONT.size.body,
   color: COLORS.text,
   outline: 'none',
   width: '100%',
   boxSizing: 'border-box',
 })
+
+const switchFooterStyle: CSSProperties = {
+  marginTop: 24,
+  textAlign: 'center',
+  fontSize: FONT.size.label,
+}
+
+const linkStyle: CSSProperties = {
+  background: 'transparent',
+  border: 'none',
+  padding: 0,
+  font: 'inherit',
+  color: COLORS.accent,
+  cursor: 'pointer',
+  textDecoration: 'underline',
+}

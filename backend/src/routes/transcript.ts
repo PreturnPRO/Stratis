@@ -2,12 +2,12 @@ import { Router } from "express";
 import { requireAuth } from "../auth/middleware";
 import { db } from "../db/database";
 import { newId, now } from "../lib/ids";
-import { structuredCall } from "@ai/index";
+import { liveCardCall, type LiveContext } from "@ai/index";
 import { transcribeAudio } from "../lib/stt";
 import * as suggestions from "../realtime/suggestions";
 import { detectAnswered } from "../realtime/autodetect";
 import { pushSuggestion, pushAnswered } from "../realtime/hub";
-import { validateAiOutput } from "../middleware/validateAiOutput";
+import { getDocumentRow, rowToDocument, renderDocument } from "../lib/pmDocument";
 
 export const transcriptRouter = Router();
 
@@ -26,10 +26,12 @@ interface TranscriptRow {
   timestamp: string;
 }
 
-function getSession(sessionId: string): SessionRow | undefined {
-  return db
-    .prepare(`SELECT id, facilitator_id, status FROM sessions WHERE id = ?`)
-    .get<SessionRow>(sessionId);
+async function getSession(sessionId: string): Promise<SessionRow | undefined> {
+  const result = await db.query<SessionRow>(
+    `SELECT id, facilitator_id, status FROM sessions WHERE id = $1`,
+    [sessionId]
+  );
+  return result.rows[0];
 }
 
 function canUseSession(
@@ -41,21 +43,23 @@ function canUseSession(
   return session.facilitator_id === userId;
 }
 
-function saveTranscriptChunk(input: {
+async function saveTranscriptChunk(input: {
   sessionId: string;
   speaker: string;
   text: string;
   timestamp?: string;
-}): TranscriptRow {
+}): Promise<TranscriptRow> {
   const id = newId("tx");
   const timestamp = input.timestamp ?? now();
 
-  db.prepare(
+  // Crucially awaited. Throws to the caller if the DB constraints fail.
+  await db.query(
     `
     INSERT INTO transcripts (id, session_id, speaker, text, timestamp)
-    VALUES (?, ?, ?, ?, ?)
+    VALUES ($1, $2, $3, $4, $5)
     `,
-  ).run(id, input.sessionId, input.speaker, input.text, timestamp);
+    [id, input.sessionId, input.speaker, input.text, timestamp]
+  );
 
   return {
     id,
@@ -66,7 +70,101 @@ function saveTranscriptChunk(input: {
   };
 }
 
-async function routeTextToAi(sessionId: string, text: string, role: string) {
+// Recent transcript window the live AI sees each chunk (schema spec §6.4 — the
+// last 1-3 minutes, not the whole meeting). Capped to the most recent rows.
+const RECENT_WINDOW_ROWS = 12;
+
+// A project's PM document can only change via the post-meeting commit flow
+// (document.ts), which can't happen mid-session — so it's safe (and avoids a
+// DB round-trip per transcript chunk) to fetch it once per session and reuse
+// it for every live AI call in that session. Mirrors the bySession cache
+// pattern in backend/src/realtime/suggestions.ts.
+const projectDocCache = new Map<string, string | null>();
+
+async function getProjectDocumentForSession(
+  sessionId: string,
+  orgId: string,
+  projectId: string,
+): Promise<string | null> {
+  if (projectDocCache.has(sessionId)) return projectDocCache.get(sessionId)!;
+
+  const row = await getDocumentRow(orgId, projectId);
+  const text = row ? renderDocument(rowToDocument(row).state) : null;
+  projectDocCache.set(sessionId, text);
+  return text;
+}
+
+/** Called when a session ends so a stale/absent cache entry can't leak into a
+ * future session reusing the same id space, and to bound cache growth. */
+export function clearProjectDocCache(sessionId: string): void {
+  projectDocCache.delete(sessionId);
+}
+
+/** Build the live AI context for a session: meeting goal/brief, rolling memory,
+ * open questions, the project's existing PM document (if this meeting
+ * continues a prior project), and the recent transcript window. */
+async function buildLiveContext(sessionId: string, latestText: string): Promise<LiveContext> {
+  const metaResult = await db.query<{
+    rolling_summary: string | null;
+    goal: string | null;
+    brief: string | null;
+    project_id: string;
+    org_id: string;
+  }>(
+    `
+    SELECT s.rolling_summary AS rolling_summary, m.goal AS goal, m.brief AS brief,
+           m.project_id AS project_id, m.org_id AS org_id
+    FROM sessions s
+    JOIN meetings m ON m.id = s.meeting_id
+    WHERE s.id = $1
+    `,
+    [sessionId]
+  );
+  const meta = metaResult.rows[0];
+
+  const projectDocument = meta
+    ? await getProjectDocumentForSession(sessionId, meta.org_id, meta.project_id)
+    : null;
+
+  const recentRowsResult = await db.query<{ speaker: string; text: string }>(
+    `
+    SELECT speaker, text
+    FROM transcripts
+    WHERE session_id = $1
+    ORDER BY timestamp DESC
+    LIMIT $2
+    `,
+    [sessionId, RECENT_WINDOW_ROWS]
+  );
+  
+  const recentRows = recentRowsResult.rows.reverse();
+
+  const recentTranscript = recentRows.length
+    ? recentRows.map((r) => `${r.speaker}: ${r.text}`).join("\n")
+    : latestText;
+
+  return {
+    sessionId,
+    goal: meta?.goal ?? null,
+    brief: meta?.brief ?? null,
+    rollingSummary: meta?.rolling_summary ?? null,
+    openQuestions: suggestions.openCards(sessionId).map((c) => c.question),
+    recentTranscript,
+    projectDocument,
+  };
+}
+
+/**
+ * Route a fresh transcript chunk through the live meeting AI (schema spec §6):
+ * auto-detect answered cards, call the live_card gateway with rolling context,
+ * persist the chunk signal + updated rolling memory, and push new cards.
+ */
+async function routeTextToAi(
+  sessionId: string,
+  text: string,
+  role: string,
+  transcriptId?: string,
+) {
   const open = suggestions.openCards(sessionId);
   const answeredIds = detectAnswered(text, open);
 
@@ -78,7 +176,8 @@ async function routeTextToAi(sessionId: string, text: string, role: string) {
     }
   }
 
-  const result = await structuredCall(text);
+  const ctx = await buildLiveContext(sessionId, text);
+  const result = await liveCardCall(ctx);
 
   if (!result.ok) {
     return {
@@ -93,23 +192,26 @@ async function routeTextToAi(sessionId: string, text: string, role: string) {
     };
   }
 
-  const checked = validateAiOutput(result.data);
-  if (!checked.ok) {
-    return {
-      ok: false as const,
-      status: 422,
-      error: `AI output failed validation: ${checked.error}`,
-      data: {
-        provider: result.provider,
-        answered,
-      },
-    };
+  const out = result.data;
+
+  // Persist the chunk classification on the saved transcript row.
+  if (transcriptId) {
+    await db.query(
+      `UPDATE transcripts SET chunk_signal = $1 WHERE id = $2`, 
+      [out.chunk_signal, transcriptId]
+    );
+  }
+
+  // IMPORTANT chunks update rolling memory (schema spec §6.4); others skipped.
+  if (out.chunk_signal === "IMPORTANT" && out.rolling_memory_update?.trim()) {
+    await db.query(
+      `UPDATE sessions SET rolling_summary = $1 WHERE id = $2`, 
+      [out.rolling_memory_update.trim(), sessionId]
+    );
   }
 
   const cards =
-    role === "facilitator"
-      ? suggestions.createFromBlocks(sessionId, checked.data.blocks)
-      : [];
+    role === "facilitator" ? suggestions.createFromLiveCards(sessionId, out.cards) : [];
 
   for (const card of cards) pushSuggestion(card);
 
@@ -118,7 +220,9 @@ async function routeTextToAi(sessionId: string, text: string, role: string) {
     data: {
       ai: {
         provider: result.provider,
-        blocks: checked.data.blocks,
+        chunkSignal: out.chunk_signal,
+        rollingMemoryUpdate: out.rolling_memory_update,
+        cards: out.cards,
       },
       suggestions: {
         created: cards,
@@ -128,8 +232,8 @@ async function routeTextToAi(sessionId: string, text: string, role: string) {
   };
 }
 
-function validateSession(req: any, res: any, sessionId: string) {
-  const session = getSession(sessionId);
+async function validateSession(req: any, res: any, sessionId: string) {
+  const session = await getSession(sessionId);
 
   if (!session) {
     res.status(404).json({ ok: false, error: "Session not found" });
@@ -172,38 +276,42 @@ transcriptRouter.get("/", requireAuth, (_req, res) => {
  * GET /api/transcript/session/:sessionId
  * Load saved transcript after refresh.
  */
-transcriptRouter.get("/session/:sessionId", requireAuth, (req, res) => {
-  const sessionId = req.params.sessionId;
-  const session = getSession(sessionId);
+transcriptRouter.get("/session/:sessionId", requireAuth, async (req, res) => {
+  try {
+    const sessionId = req.params.sessionId;
+    const session = await getSession(sessionId);
 
-  if (!session) {
-    return res.status(404).json({ ok: false, error: "Session not found" });
-  }
+    if (!session) {
+      return res.status(404).json({ ok: false, error: "Session not found" });
+    }
 
-  if (!canUseSession(session, req.auth!.sub, req.auth!.role)) {
-    return res
-      .status(403)
-      .json({ ok: false, error: "You do not have access to this session" });
-  }
+    if (!canUseSession(session, req.auth!.sub, req.auth!.role)) {
+      return res
+        .status(403)
+        .json({ ok: false, error: "You do not have access to this session" });
+    }
 
-  const rows = db
-    .prepare(
+    const rowsResult = await db.query<TranscriptRow>(
       `
       SELECT id, session_id, speaker, text, timestamp
       FROM transcripts
-      WHERE session_id = ?
+      WHERE session_id = $1
       ORDER BY timestamp ASC
       `,
-    )
-    .all<TranscriptRow>(sessionId);
+      [sessionId]
+    );
 
-  res.json({
-    ok: true,
-    data: {
-      sessionId,
-      transcripts: rows,
-    },
-  });
+    res.json({
+      ok: true,
+      data: {
+        sessionId,
+        transcripts: rowsResult.rows,
+      },
+    });
+  } catch (error) {
+    console.error("Transcript fetch error:", error);
+    res.status(500).json({ ok: false, error: "Internal server error retrieving transcript" });
+  }
 });
 
 /**
@@ -231,19 +339,31 @@ transcriptRouter.post("/chunk", requireAuth, async (req, res, next) => {
       });
     }
 
-    if (!validateSession(req, res, sessionId)) return;
+    const session = await validateSession(req, res, sessionId);
+    if (!session) return;
 
-    const row = saveTranscriptChunk({
-      sessionId,
-      speaker,
-      text,
-      timestamp:
-        typeof req.body?.timestamp === "string"
-          ? req.body.timestamp
-          : undefined,
-    });
+    let row: TranscriptRow;
+    
+    // Strict block: Abort AI integration if the database insert fails
+    try {
+      row = await saveTranscriptChunk({
+        sessionId,
+        speaker,
+        text,
+        timestamp:
+          typeof req.body?.timestamp === "string"
+            ? req.body.timestamp
+            : undefined,
+      });
+    } catch (dbError) {
+      console.error("[transcript:chunk] Database insert failed, aborting AI call:", dbError);
+      return res.status(500).json({
+        ok: false,
+        error: "Database error saving transcript chunk",
+      });
+    }
 
-    const routed = await routeTextToAi(sessionId, text, req.auth!.role);
+    const routed = await routeTextToAi(sessionId, text, req.auth!.role, row.id);
 
     if (!routed.ok) {
       return res.status(routed.status).json({
@@ -299,7 +419,8 @@ transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
       });
     }
 
-    if (!validateSession(req, res, sessionId)) return;
+    const session = await validateSession(req, res, sessionId);
+    if (!session) return;
 
     const cleanBase64 = audioBase64.includes(",")
       ? (audioBase64.split(",").pop() ?? "")
@@ -377,7 +498,7 @@ transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
       });
     }
 
-    const text = stt.text.trim();
+    const text = stt.text.replace(/([\u0E00-\u0E7F])\s+(?=[\u0E00-\u0E7F])/g, '$1').trim();
 
     if (!text) {
       return res.json({
@@ -391,13 +512,24 @@ transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
       });
     }
 
-    const row = saveTranscriptChunk({
-      sessionId,
-      speaker,
-      text,
-    });
+    let row: TranscriptRow;
 
-    const routed = await routeTextToAi(sessionId, text, req.auth!.role);
+    // Strict block: Abort AI integration if the database insert fails
+    try {
+      row = await saveTranscriptChunk({
+        sessionId,
+        speaker,
+        text,
+      });
+    } catch (dbError) {
+      console.error("[transcript:audio-chunk] Database insert failed, aborting AI call:", dbError);
+      return res.status(500).json({
+        ok: false,
+        error: "Database error saving audio transcript chunk",
+      });
+    }
+
+    const routed = await routeTextToAi(sessionId, text, req.auth!.role, row.id);
 
     if (!routed.ok) {
       return res.status(routed.status).json({

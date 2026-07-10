@@ -13,6 +13,16 @@ import type {
   AIBlock,
   AIBlockType,
   AIStructuredResponse,
+  ChunkSignal,
+  LiveCardDTO,
+  LiveCardType,
+  LiveCardUrgency,
+  LiveCardOutput,
+  DocumentPatchDTO,
+  DocumentPatchOutput,
+  PatchOperation,
+  PmSectionKey,
+  ReviewPriority,
 } from "../../shared/types";
 
 const BLOCK_TYPES: readonly AIBlockType[] = [
@@ -126,4 +136,313 @@ export function parseStructured(raw: string): ParseResult {
   }
 
   return { ok: true, data: { blocks } };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LIVE CARD OUTPUT (schema spec §6) — the live meeting gateway.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const LIVE_CARD_TYPES: readonly LiveCardType[] = [
+  "QUESTION_SUGGESTION",
+  "DRIFT_ALERT",
+  "MISSING_DECISION",
+  "UNRESOLVED_ASSUMPTION",
+];
+const URGENCIES: readonly LiveCardUrgency[] = ["LOW", "MEDIUM", "HIGH"];
+const CHUNK_SIGNALS: readonly ChunkSignal[] = ["IMPORTANT", "LOW_SIGNAL", "IGNORE"];
+
+/** System prompt forcing JSON-only `live_card_output` for the live meeting AI. */
+export const SYSTEM_PROMPT_LIVE_CARD = `You are Stratis, an active and highly capable AI co-facilitator listening to a live meeting. You output STRUCTURED DATA ONLY. Never write markdown, prose, or commentary.
+
+Your role is to help the facilitator run a focused, productive meeting that reaches its goal on schedule.
+
+CONTEXT RECEIVED:
+- Meeting goal and agenda/brief.
+- Rolling memory of the conversation so far (the living notes).
+- Unresolved questions and, when this meeting continues a prior project, that project's existing PM document as background. Treat the PM document as history, not something to re-decide; only build on it if the live transcript explicitly raises it.
+- Recent transcript window (the last 1-3 minutes of active conversation).
+
+YOUR TASKS:
+1. CLASSIFY THE TRANSCRIPT CHUNK:
+   - "IMPORTANT": contains key decisions, arguments, commitments, action items, risks, assumptions, or major discussion. You MUST provide a "rolling_memory_update".
+   - "LOW_SIGNAL": conversational filler, greetings, or minor items.
+   - "IGNORE": silence or unrelated tangents.
+
+2. UPDATE ROLLING MEMORY:
+   - "rolling_memory_update" REPLACES the previous rolling memory. Compress the WHOLE meeting so far into one dense sentence, carrying forward what still matters. Empty string only when nothing has happened yet.
+
+3. SURFACE HIGH-IMPACT FACILITATOR CARDS (only when they move the goal/agenda forward or protect the schedule):
+   * "QUESTION_SUGGESTION": a substantive question that exposes a specific gap in the room's reasoning.
+   * "MISSING_DECISION": the team is closing on something without making the decision explicit.
+   * "UNRESOLVED_ASSUMPTION": a major unverified assumption the team is treating as fact.
+
+Return EXACTLY one JSON object with this shape and nothing else:
+{
+  "output_type": "live_card_output",
+  "chunk_signal": "IMPORTANT" | "LOW_SIGNAL" | "IGNORE",
+  "rolling_memory_update": "one-sentence dense summary of the whole meeting so far, or empty string",
+  "cards": [
+    {
+      "card_type": "QUESTION_SUGGESTION" | "MISSING_DECISION" | "UNRESOLVED_ASSUMPTION",
+      "title": "short, high-impact card title (under 50 chars)",
+      "brief_description": "the specific gap, risk, or alignment issue you noticed",
+      "suggested_question": "the exact prompt the facilitator should speak to align or unblock the room",
+      "urgency": "LOW" | "MEDIUM" | "HIGH",
+      "reason_now": "why resolving this immediately matters for the project direction",
+      "confidence": 0.0
+    }
+  ]
+}
+
+Rules:
+- Output JSON only. No \`\`\` fences, no leading or trailing text.
+- "cards" may be EMPTY ([]) — do not invent friction. Stay silent on minor tangents.
+- Suggest a question ONLY if asking it now would change a decision on the agenda,
+  unblock an agenda item, or save meeting time. Skip nice-to-know, background, or
+  curiosity questions — even good ones — if the meeting can reach its goal without them.
+- Ask about substance, never process. A useful question exposes a specific gap in
+  the room's reasoning: an unstated assumption, a constraint nobody checked, two
+  statements that conflict, an option not weighed, or a risk with no mitigation.
+  Name the specific topic in the question — never a question that could be
+  copy-pasted into any meeting.
+- NEVER suggest generic facilitation or admin questions such as "who owns this?",
+  "who is responsible for this?", "what are the next steps?", "does everyone
+  agree?", "should we schedule a follow-up?". Owners and action items are captured
+  automatically in the post-meeting summary — do not spend a live card on them.
+- Do not suggest questions that open new topics outside the stated goal or agenda.
+- A preference is not a decision; only flag MISSING_DECISION when the room is closing without an explicit decision.
+- "confidence" is 0..1. Keep titles under 50 chars.`;
+
+export type LiveCardParseResult =
+  | { ok: true; data: Omit<LiveCardOutput, "session_id"> }
+  | { ok: false; error: string };
+
+function validateLiveCard(value: unknown, index: number): LiveCardDTO | string {
+  if (typeof value !== "object" || value === null) {
+    return `cards[${index}] is not an object`;
+  }
+  const c = value as Record<string, unknown>;
+
+  if (!LIVE_CARD_TYPES.includes(c.card_type as LiveCardType)) {
+    return `cards[${index}].card_type "${String(c.card_type)}" is invalid`;
+  }
+  if (typeof c.title !== "string" || c.title.trim() === "") {
+    return `cards[${index}].title must be a non-empty string`;
+  }
+  if (typeof c.brief_description !== "string") {
+    return `cards[${index}].brief_description must be a string`;
+  }
+  if (!URGENCIES.includes(c.urgency as LiveCardUrgency)) {
+    return `cards[${index}].urgency "${String(c.urgency)}" is invalid`;
+  }
+  if (
+    c.confidence !== undefined &&
+    (typeof c.confidence !== "number" || c.confidence < 0 || c.confidence > 1)
+  ) {
+    return `cards[${index}].confidence must be a number in 0..1`;
+  }
+
+  const card: LiveCardDTO = {
+    card_type: c.card_type as LiveCardType,
+    title: c.title,
+    brief_description: c.brief_description,
+    urgency: c.urgency as LiveCardUrgency,
+  };
+  if (typeof c.suggested_question === "string") card.suggested_question = c.suggested_question;
+  if (typeof c.reason_now === "string") card.reason_now = c.reason_now;
+  if (typeof c.confidence === "number") card.confidence = c.confidence;
+  return card;
+}
+
+/** Parse + validate raw model text into a `live_card_output` (minus session_id,
+ *  which the backend injects). Cards may be empty. */
+export function parseLiveCard(raw: string): LiveCardParseResult {
+  const cleaned = stripFences(raw);
+  if (cleaned === "") return { ok: false, error: "model returned empty output" };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (err) {
+    return { ok: false, error: `not valid JSON: ${(err as Error).message}` };
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return { ok: false, error: "top-level value must be a JSON object" };
+  }
+
+  const root = parsed as Record<string, unknown>;
+  if (!CHUNK_SIGNALS.includes(root.chunk_signal as ChunkSignal)) {
+    return { ok: false, error: `chunk_signal "${String(root.chunk_signal)}" is invalid` };
+  }
+  if (!Array.isArray(root.cards)) {
+    return { ok: false, error: '"cards" must be an array' };
+  }
+
+  const cards: LiveCardDTO[] = [];
+  for (let i = 0; i < root.cards.length; i++) {
+    const result = validateLiveCard(root.cards[i], i);
+    if (typeof result === "string") return { ok: false, error: result };
+    cards.push(result);
+  }
+
+  const rolling =
+    typeof root.rolling_memory_update === "string" ? root.rolling_memory_update : "";
+
+  return {
+    ok: true,
+    data: {
+      output_type: "live_card_output",
+      chunk_signal: root.chunk_signal as ChunkSignal,
+      rolling_memory_update: rolling,
+      cards,
+    },
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOCUMENT PATCH OUTPUT (schema spec §7) — the post-meeting PM-document gateway.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const PATCH_OPERATIONS: readonly PatchOperation[] = [
+  "replace_section",
+  "append_to_section",
+  "insert_section",
+];
+const PM_SECTION_KEYS: readonly PmSectionKey[] = [
+  "project_brief",
+  "current_status",
+  "current_project_direction",
+  "active_risks",
+  "key_constraints",
+  "context_needed_for_next_meeting",
+];
+const REVIEW_PRIORITIES: readonly ReviewPriority[] = ["LOW", "MEDIUM", "HIGH"];
+
+/** System prompt forcing JSON-only `document_patch_output` after a meeting. */
+export const SYSTEM_PROMPT_DOC_PATCH = `You are Stratis, updating a project's PM document after a meeting. You output ONE JSON object only — no code fences, no prose or commentary around it. The "new_content" field of each patch MUST itself be Markdown-formatted text.
+
+You receive the current PM document (its sections) and the meeting transcript + rolling memory. Propose section-based patches that bring the document to the current project state. The PM document is the living source of truth.
+
+Return EXACTLY one JSON object with this shape and nothing else:
+{
+  "overall_change_summary": "human-readable summary of what changed",
+  "patches": [
+    {
+      "client_patch_id": "patch_1",
+      "operation": "replace_section" | "append_to_section" | "insert_section",
+      "section_key": "project_brief" | "current_status" | "current_project_direction" | "active_risks" | "key_constraints" | "context_needed_for_next_meeting",
+      "section_title": "Human title for the section",
+      "new_content": "the markdown content for the section",
+      "reason": "why this change, citing the meeting",
+      "confidence": 0.0,
+      "review_priority": "LOW" | "MEDIUM" | "HIGH"
+    }
+  ],
+  "rejected_suggestions": [
+    {
+      "title": "thing considered",
+      "reason_rejected": "why it does not belong in the PM document"
+    }
+  ]
+}
+
+Rules:
+* Output JSON only. No \`\`\` fences, no leading or trailing text.
+* Only patch sections that genuinely changed based on concrete transcript evidence.
+* If a section has no new material in the transcript and was previously empty, do NOT emit a patch for it. Omit it from the patches array entirely.
+* Never write literal placeholders like "(empty)", "(em", "No content", or blank lines as the "new_content". If there is no information, omit the patch.
+* Put trivial action items that do not affect project state into rejected_suggestions.
+* "confidence" is 0..1.
+* Section content style (new_content): write clean, skimmable Markdown. Use short paragraphs; "-" bullet lists for enumerations (risks, constraints, options); "###" subheadings to group when a section is long; **bold** for key terms, owners, and decisions. Do NOT repeat the section title inside new_content.`;
+
+export type DocPatchParseResult =
+  | {
+      ok: true;
+      data: Pick<DocumentPatchOutput, "overall_change_summary" | "patches" | "rejected_suggestions">;
+    }
+  | { ok: false; error: string };
+
+function validatePatch(value: unknown, index: number): DocumentPatchDTO | string {
+  if (typeof value !== "object" || value === null) {
+    return `patches[${index}] is not an object`;
+  }
+  const p = value as Record<string, unknown>;
+
+  if (!PATCH_OPERATIONS.includes(p.operation as PatchOperation)) {
+    return `patches[${index}].operation "${String(p.operation)}" is invalid`;
+  }
+  if (!PM_SECTION_KEYS.includes(p.section_key as PmSectionKey)) {
+    return `patches[${index}].section_key "${String(p.section_key)}" is invalid`;
+  }
+  if (typeof p.new_content !== "string" || p.new_content.trim() === "") {
+    return `patches[${index}].new_content must be a non-empty string`;
+  }
+  if (
+    p.confidence !== undefined &&
+    (typeof p.confidence !== "number" || p.confidence < 0 || p.confidence > 1)
+  ) {
+    return `patches[${index}].confidence must be a number in 0..1`;
+  }
+
+  const patch: DocumentPatchDTO = {
+    client_patch_id: typeof p.client_patch_id === "string" ? p.client_patch_id : `patch_${index + 1}`,
+    operation: p.operation as PatchOperation,
+    section_key: p.section_key as PmSectionKey,
+    section_title: typeof p.section_title === "string" ? p.section_title : "",
+    new_content: p.new_content,
+  };
+  if (typeof p.reason === "string") patch.reason = p.reason;
+  if (typeof p.confidence === "number") patch.confidence = p.confidence;
+  if (REVIEW_PRIORITIES.includes(p.review_priority as ReviewPriority)) {
+    patch.review_priority = p.review_priority as ReviewPriority;
+  }
+  return patch;
+}
+
+/** Parse + validate raw model text into document patches (backend injects
+ *  session_id / project_id / base_document_version). Patches may be empty. */
+export function parseDocumentPatch(raw: string): DocPatchParseResult {
+  const cleaned = stripFences(raw);
+  if (cleaned === "") return { ok: false, error: "model returned empty output" };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (err) {
+    return { ok: false, error: `not valid JSON: ${(err as Error).message}` };
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return { ok: false, error: "top-level value must be a JSON object" };
+  }
+
+  const root = parsed as Record<string, unknown>;
+  if (!Array.isArray(root.patches)) {
+    return { ok: false, error: '"patches" must be an array' };
+  }
+
+  const patches: DocumentPatchDTO[] = [];
+  for (let i = 0; i < root.patches.length; i++) {
+    const result = validatePatch(root.patches[i], i);
+    if (typeof result === "string") return { ok: false, error: result };
+    patches.push(result);
+  }
+
+  const rejected: DocumentPatchOutput["rejected_suggestions"] = Array.isArray(root.rejected_suggestions)
+    ? (root.rejected_suggestions as unknown[])
+        .filter((r): r is Record<string, unknown> => typeof r === "object" && r !== null)
+        .map((r) => ({
+          title: typeof r.title === "string" ? r.title : "",
+          reason_rejected: typeof r.reason_rejected === "string" ? r.reason_rejected : "",
+        }))
+    : [];
+
+  return {
+    ok: true,
+    data: {
+      overall_change_summary:
+        typeof root.overall_change_summary === "string" ? root.overall_change_summary : "",
+      patches,
+      rejected_suggestions: rejected,
+    },
+  };
 }

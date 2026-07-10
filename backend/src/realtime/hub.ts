@@ -58,20 +58,45 @@ function broadcast(sessionId: string, event: WsServerEvent): void {
  * If the session row exists, the facilitator_id must match. If it does not yet
  * exist (session lifecycle lands in S1-T03-F), we allow the bind so the
  * pipeline is testable ahead of that task.
+ * 
+ * Converted to async to support PostgreSQL queries.
  */
-function ownsSession(claims: JwtClaims, sessionId: string): boolean {
-  const row = db
-    .prepare(`SELECT facilitator_id FROM sessions WHERE id = ?`)
-    .get(sessionId) as { facilitator_id: string } | undefined;
+async function ownsSession(claims: JwtClaims, sessionId: string): Promise<boolean> {
+  const result = await db.query<{ facilitator_id: string }>(
+    `SELECT facilitator_id FROM sessions WHERE id = $1`,
+    [sessionId]
+  );
+  const row = result.rows[0];
   if (!row) return true;
   return row.facilitator_id === claims.sub;
 }
+
+// Ping every 30s: keeps sockets alive through proxy idle timeouts (Railway's
+// edge closes silent connections) and reaps peers that stopped answering.
+const HEARTBEAT_MS = 30_000;
+const liveness = new WeakMap<WebSocket, boolean>();
 
 /** Mount the WS server on the shared HTTP server. */
 export function attachHub(server: Server): WebSocketServer {
   wss = new WebSocketServer({ server, path: "/ws" });
 
-  wss.on("connection", (socket, req) => {
+  const sweep = setInterval(() => {
+    for (const socket of wss?.clients ?? []) {
+      if (liveness.get(socket) === false) {
+        socket.terminate(); // 'close' fires → unsubscribe cleans up
+        continue;
+      }
+      liveness.set(socket, false);
+      socket.ping();
+    }
+  }, HEARTBEAT_MS);
+  wss.on("close", () => clearInterval(sweep));
+
+  // Make the connection handler async to await the DB validation query
+  wss.on("connection", async (socket, req) => {
+    liveness.set(socket, true);
+    socket.on("pong", () => liveness.set(socket, true));
+
     const url = new URL(req.url ?? "", "http://localhost");
     const token = url.searchParams.get("token") ?? "";
     const sessionId = url.searchParams.get("sessionId") ?? "";
@@ -93,16 +118,26 @@ export function attachHub(server: Server): WebSocketServer {
     const role: Role = claims.role;
     send(socket, { type: "connected", sessionId, role });
 
-    // Only the session's facilitator is subscribed to suggestion events.
-    if (role !== "facilitator" || !ownsSession(claims, sessionId)) {
-      // Participants/others stay connected but receive no suggestion events.
-      return;
-    }
+    try {
+      // Await the asynchronous database check
+      const owns = await ownsSession(claims, sessionId);
 
-    const client: Client = { socket, sessionId, claims };
-    subscribe(client);
-    socket.on("close", () => unsubscribe(client));
-    socket.on("error", () => unsubscribe(client));
+      // Only the session's facilitator is subscribed to suggestion events.
+      if (role !== "facilitator" || !owns) {
+        // Participants/others stay connected but receive no suggestion events.
+        return;
+      }
+
+      const client: Client = { socket, sessionId, claims };
+      subscribe(client);
+      socket.on("close", () => unsubscribe(client));
+      socket.on("error", () => unsubscribe(client));
+
+    } catch (error) {
+      console.error("[hub] Database error during websocket connection validation:", error);
+      // Cleanly close the socket on an internal DB error to avoid hanging connections
+      socket.close(1011, "internal server error");
+    }
   });
 
   return wss;

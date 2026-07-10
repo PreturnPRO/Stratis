@@ -1,60 +1,60 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Stratis Document Patch Output",
+  "$id": "https://stratis.dev/schema/document-patch-output.schema.json",
+  "title": "document_patch_output",
+  "description": "Post-meeting PM-document gateway (schema spec §7). The AI proposes section patches; the facilitator approves/edits/rejects each; approved patches commit the next document version. The PM document is the project's source of truth.",
   "type": "object",
   "required": ["output_type", "session_id", "project_id", "base_document_version", "overall_change_summary", "patches"],
+  "additionalProperties": false,
   "properties": {
     "output_type": { "const": "document_patch_output" },
     "session_id": { "type": "string" },
     "project_id": { "type": "string" },
     "base_document_version": { "type": "integer", "minimum": 0 },
-    "overall_change_summary": { "type": "string" },
+    "overall_change_summary": {
+      "type": "string",
+      "description": "Human-readable summary of what changed. Shown in version history, not necessarily inside the PM document."
+    },
     "patches": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["client_patch_id", "operation", "section_key", "section_title", "new_content", "reason", "confidence", "evidence"],
-        "properties": {
-          "client_patch_id": { "type": "string" },
-          "operation": {
-            "type": "string",
-            "enum": ["replace_section", "append_to_section", "insert_section"]
-          },
-          "section_key": { "type": "string" },
-          "section_title": { "type": "string" },
-          "new_content": { "type": "string" },
-          "reason": { "type": "string" },
-          "confidence": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 1
-          },
-          "evidence": {
-            "type": "array",
-            "items": { "$ref": "#/definitions/evidence" }
-          },
-          "related_live_card_ids": {
-            "type": "array",
-            "items": { "type": "string" }
-          }
-        },
-        "additionalProperties": false
-      }
+      "description": "Section patches. May be empty when the meeting changed nothing about project state.",
+      "items": { "$ref": "#/definitions/patch" }
+    },
+    "rejected_suggestions": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/rejected" }
     }
   },
   "definitions": {
-    "evidence": {
+    "patch": {
       "type": "object",
-      "required": ["transcript_ref", "timestamp_start", "timestamp_end", "speaker", "quote"],
+      "required": ["client_patch_id", "operation", "section_key", "section_title", "new_content"],
+      "additionalProperties": false,
       "properties": {
-        "transcript_ref": { "type": "string" },
-        "timestamp_start": { "type": "string" },
-        "timestamp_end": { "type": "string" },
-        "speaker": { "type": "string" },
-        "quote": { "type": "string" }
-      },
-      "additionalProperties": false
+        "client_patch_id": {
+          "type": "string",
+          "description": "Temporary AI-generated patch key. Backend may replace with a canonical id."
+        },
+        "operation": { "enum": ["replace_section", "append_to_section", "insert_section"] },
+        "section_key": {
+          "enum": ["project_brief", "current_status", "current_project_direction", "active_risks", "key_constraints", "context_needed_for_next_meeting"]
+        },
+        "section_title": { "type": "string" },
+        "new_content": { "type": "string" },
+        "reason": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "review_priority": { "enum": ["LOW", "MEDIUM", "HIGH"] },
+        "requires_facilitator_review": { "type": "boolean" }
+      }
+    },
+    "rejected": {
+      "type": "object",
+      "required": ["title", "reason_rejected"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string" },
+        "reason_rejected": { "type": "string" }
+      }
     }
-  },
-  "additionalProperties": false
+  }
 }
