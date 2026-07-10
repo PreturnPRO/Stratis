@@ -103,6 +103,8 @@ export function useCreateMeeting(onNav?: (id: string, params?: Record<string, st
           scheduled_at: null,
           goal: input.goal?.trim() || null,
           brief: input.brief?.trim() || null,
+          durationMinutes: input.durationMinutes,
+          duration_minutes: input.durationMinutes,
         }),
       });
 

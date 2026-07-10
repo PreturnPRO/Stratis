@@ -79,86 +79,98 @@ export function useSuggestionSocket(sessionId: string | null | undefined): UseSu
     }
   }, [validSessionId])
 
-  // Initial load — current stack, newest first, via REST.
+  // Live updates over /ws, with automatic reconnect. Deployed backends
+  // (Railway et al.) recycle idle websocket connections and restart on
+  // deploys — without a retry the facilitator's live stack dies silently
+  // until a full page reload. On every (re)connect the current stack is
+  // refetched over REST so cards missed while offline reappear.
   useEffect(() => {
     if (!token || !validSessionId) return
 
-    let cancelled = false
+    let disposed = false
+    let attempt = 0
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
 
-    fetch(`${API_BASE}/api/ai/suggest/${validSessionId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => res.json())
-      .then((data: { ok: boolean; data?: { cards: ServerCard[] } }) => {
-        if (cancelled || !data.ok || !data.data) return
-        setCards(data.data.cards.map(toUICard))
+    const loadStack = () => {
+      fetch(`${API_BASE}/api/ai/suggest/${validSessionId}`, {
+        headers: { Authorization: `Bearer ${token}` },
       })
-      .catch(() => {
-        // Non-fatal — live socket will still populate new cards.
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [validSessionId, token])
-
-  // Live updates over /ws.
-  useEffect(() => {
-    if (!token || !validSessionId) return
-
-    const url = `${WS_BASE}/ws?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(validSessionId)}`
-    const ws = new WebSocket(url)
-    wsRef.current = ws
-
-    ws.onopen = () => {
-      setConnected(true)
+        .then((res) => res.json())
+        .then((data: { ok: boolean; data?: { cards: ServerCard[] } }) => {
+          if (disposed || !data.ok || !data.data) return
+          setCards(data.data.cards.map(toUICard))
+        })
+        .catch(() => {
+          // Non-fatal — the live socket still delivers new cards.
+        })
     }
 
-    ws.onclose = () => {
-      setConnected(false)
+    const connect = () => {
+      if (disposed) return
 
-      if (wsRef.current === ws) {
-        wsRef.current = null
-      }
-    }
+      const url = `${WS_BASE}/ws?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(validSessionId)}`
+      const ws = new WebSocket(url)
+      wsRef.current = ws
 
-    ws.onerror = () => {
-      setConnected(false)
-    }
-
-    ws.onmessage = (event: MessageEvent<string>) => {
-      let msg: WsServerEvent
-
-      try {
-        msg = JSON.parse(event.data) as WsServerEvent
-      } catch {
-        return
+      ws.onopen = () => {
+        attempt = 0
+        setConnected(true)
+        loadStack()
       }
 
-      switch (msg.type) {
-        case 'connected':
-          setRole(msg.role)
-          break
+      ws.onclose = () => {
+        setConnected(false)
+        if (wsRef.current === ws) {
+          wsRef.current = null
+        }
+        if (disposed) return
+        // Capped exponential backoff: 1s, 2s, 4s, 8s, then every 15s.
+        const delay = Math.min(1000 * 2 ** attempt, 15000)
+        attempt += 1
+        retryTimer = setTimeout(connect, delay)
+      }
 
-        case 'suggestion:new':
-          setCards((prev: UICard[]) => [toUICard(msg.card), ...prev])
-          break
+      ws.onerror = () => {
+        setConnected(false)
+        // 'close' always follows 'error' — the retry is scheduled there.
+      }
 
-        case 'suggestion:answered':
-          setCards((prev: UICard[]) =>
-            prev.map((c) =>
-              c.id === msg.cardId ? { ...c, status: 'answered' as const } : c
+      ws.onmessage = (event: MessageEvent<string>) => {
+        let msg: WsServerEvent
+
+        try {
+          msg = JSON.parse(event.data) as WsServerEvent
+        } catch {
+          return
+        }
+
+        switch (msg.type) {
+          case 'connected':
+            setRole(msg.role)
+            break
+
+          case 'suggestion:new':
+            setCards((prev: UICard[]) => [toUICard(msg.card), ...prev])
+            break
+
+          case 'suggestion:answered':
+            setCards((prev: UICard[]) =>
+              prev.map((c) =>
+                c.id === msg.cardId ? { ...c, status: 'answered' as const } : c
+              )
             )
-          )
-          break
+            break
+        }
       }
     }
 
+    connect()
+
     return () => {
-      ws.close()
-      if (wsRef.current === ws) {
-        wsRef.current = null
-      }
+      disposed = true
+      if (retryTimer) clearTimeout(retryTimer)
+      wsRef.current?.close()
+      wsRef.current = null
     }
   }, [validSessionId, token])
 

@@ -41,10 +41,15 @@ CREATE TABLE IF NOT EXISTS meetings (
   title         VARCHAR(255) NOT NULL,
   goal          TEXT,
   brief         TEXT,
+  duration_minutes INTEGER,
   scheduled_at  VARCHAR(255),
   created_by    VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
   created_at    VARCHAR(255) NOT NULL
 );
+
+-- Column added after initial release; CREATE TABLE IF NOT EXISTS skips
+-- existing tables, so re-add idempotently for databases migrated before it.
+ALTER TABLE meetings ADD COLUMN IF NOT EXISTS duration_minutes INTEGER;
 
 CREATE INDEX IF NOT EXISTS idx_meetings_org_id ON meetings(org_id);
 CREATE INDEX IF NOT EXISTS idx_meetings_project_id ON meetings(project_id);

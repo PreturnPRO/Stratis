@@ -20,11 +20,27 @@ function dbPath(): string {
   return resolve(repoRoot, rel.replace(/^\.\//, ""));
 }
 
+const isProd = nodeEnv === "production";
+
+// Refuse to run production auth on the publicly-known dev fallback secret —
+// anyone could forge valid tokens. Set JWT_SECRET on the Railway service.
+if (isProd && !process.env.JWT_SECRET) {
+  throw new Error(
+    "[env] JWT_SECRET is not set. Refusing to start in production with the insecure dev fallback — set JWT_SECRET on the backend service.",
+  );
+}
+
 export const env = {
   nodeEnv,
-  isProd: nodeEnv === "production",
+  isProd,
   port: Number(process.env.PORT ?? 3001),
-  clientOrigin: process.env.CLIENT_ORIGIN ?? "http://localhost:5173",
+  // Comma-separated list — a Vercel frontend needs its production domain and
+  // (optionally) preview-deploy URLs allowed, e.g.
+  // CLIENT_ORIGIN=https://stratis.vercel.app,https://stratis-git-main-user.vercel.app
+  clientOrigins: (process.env.CLIENT_ORIGIN ?? "http://localhost:5173")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean),
 
   dbFile: dbPath(),
 

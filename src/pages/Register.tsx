@@ -95,7 +95,6 @@ export default function Register({ onNavigate }: Props) {
     name.trim() &&
     email.trim() &&
     password &&
-    confirmPassword &&
     !loading
 
   return (

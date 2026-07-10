@@ -22,14 +22,23 @@ data/
 *.db-shm
 *.db-wal
 
-# IDE / local tooling
+# IDE / local tooling (AI-assistant plugins, memories, and sidecars stay local)
 .vscode/
 .idea/
 .claude/
+**/.claude/
 /.impeccable/
 .playwright-mcp/
 *.swp
 *.swo
+
+# Design scratch images at the repo root (mockup exports, drafts — local only;
+# real assets belong in src/ or public/ and are unaffected)
+/*.jpeg
+/*.jpg
+/*.png
+/*.webp
+/*.gif
 
 # OS
 .DS_Store

@@ -5,6 +5,12 @@ import { RADIUS } from "../tokens/colors";
 import { Button, Chip, Modal } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { SuggestionCardStack } from "../components/SuggestionCardStack";
+import {
+  AiPresenceChip,
+  AgendaPulse,
+  TimeRiver,
+  type PresenceMode,
+} from "../components/MeetingPulse";
 import BlockRenderer from "../components/BlockRenderer";
 import { useAiBlocks } from "../hooks/useAiBlocks";
 import { useSuggestionSocket } from "../hooks/useSuggestionSocket";
@@ -127,6 +133,9 @@ export default function Meeting({ onNav }: MeetingProps) {
   const [durationMin, setDurationMin] = useState<number | null>(null);
   const [startMs, setStartMs] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  // Last time speech recognition produced a result — drives the "hearing you"
+  // state of the AI presence chip.
+  const [lastSpeechMs, setLastSpeechMs] = useState<number | null>(null);
 
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
 
@@ -242,6 +251,12 @@ export default function Meeting({ onNav }: MeetingProps) {
         }
       }
 
+      // Any recognized speech (final or interim) marks the AI as "hearing you"
+      // for the presence chip.
+      if (finalTranscript || interimTranscript) {
+        setLastSpeechMs(Date.now());
+      }
+
       if (finalTranscript) {
         bufferRef.current = (bufferRef.current + " " + finalTranscript).trim();
         interimRef.current = "";
@@ -346,27 +361,6 @@ export default function Meeting({ onNav }: MeetingProps) {
     }
   }, [sessionId, loadTranscript]);
 
-  useEffect(() => {
-    if (!sessionId || !token) return;
-    try {
-      const storedDuration = window.localStorage.getItem(`stratis.duration.${sessionId}`);
-      if (storedDuration) {
-        setDurationMin(Number(storedDuration));
-      } else {
-        setDurationMin(60);
-      }
-    } catch (e) {
-      setDurationMin(60);
-    }
-  }, [sessionId, token]);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setNowMs(Date.now());
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
   // Sync starting server timestamps
   useEffect(() => {
     if (!sessionId || !token) return;
@@ -394,15 +388,27 @@ export default function Meeting({ onNav }: MeetingProps) {
     setStartMs((prev) => (Number.isFinite(serverStart) ? serverStart : prev ?? Date.now()));
   }, [sessionId, recovery.session?.started_at]);
 
+  // Planned duration: the server-stored value on the meeting wins (it survives
+  // cleared localStorage and other devices); localStorage covers sessions
+  // created before duration_minutes existed; 60 is the last-resort default.
+  const recoveredDuration =
+    recovery.session?.id === sessionId ? recovery.session?.duration_minutes : null;
+
   useEffect(() => {
     if (!sessionId) {
       setDurationMin(null);
       return;
     }
+    const server = Number(recoveredDuration);
+    if (Number.isFinite(server) && server > 0) {
+      setDurationMin(server);
+      window.localStorage.setItem(`stratis.duration.${sessionId}`, String(server));
+      return;
+    }
     const raw = window.localStorage.getItem(`stratis.duration.${sessionId}`);
     const n = raw ? parseInt(raw, 10) : NaN;
     setDurationMin(Number.isFinite(n) && n > 0 ? n : 60);
-  }, [sessionId]);
+  }, [sessionId, recoveredDuration]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -456,6 +462,15 @@ export default function Meeting({ onNav }: MeetingProps) {
   const inWrapUp = remainingSec != null && remainingSec <= WRAP_UP_SEC && remainingSec > 0;
   const overtime = remainingSec != null && remainingSec <= 0;
   const timeColor = overtime ? COLORS.red : inWrapUp ? COLORS.orange : COLORS.textMuted;
+
+  const speechActive = lastSpeechMs != null && nowMs - lastSpeechMs < 6000;
+  const presenceMode: PresenceMode = !isRecording
+    ? "off"
+    : sendingChunk
+      ? "thinking"
+      : speechActive
+        ? "speech"
+        : "listening";
 
   const meetingTitle = recovery.session?.meeting_title?.trim() || "Live meeting";
   const sessionShort = sessionId ? `...${sessionId.slice(-6)}` : "";
@@ -529,6 +544,12 @@ export default function Meeting({ onNav }: MeetingProps) {
                   WEBSOCKET SYNCED
                 </span>
               )}
+
+              <AiPresenceChip
+                mode={presenceMode}
+                cardCount={cards.length}
+                provider={ai.provider}
+              />
             </div>
           </div>
 
@@ -569,6 +590,14 @@ export default function Meeting({ onNav }: MeetingProps) {
             </div>
           </div>
         </div>
+
+        {durationMin != null && elapsed != null && (
+          <TimeRiver
+            durationMin={durationMin}
+            elapsedSec={elapsed}
+            wrapUpSec={WRAP_UP_SEC}
+          />
+        )}
 
         {error && (
           <div
@@ -663,6 +692,14 @@ export default function Meeting({ onNav }: MeetingProps) {
               minHeight: 0,
             }}
           >
+            {durationMin != null && elapsed != null && (
+              <AgendaPulse
+                durationMin={durationMin}
+                elapsedSec={elapsed}
+                wrapUpSec={WRAP_UP_SEC}
+              />
+            )}
+
             {/* Live Strategic Recommendations */}
             <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>

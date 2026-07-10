@@ -21,6 +21,7 @@ interface RecoverySession {
   org_id?: string
   project_id?: string
   meeting_title?: string
+  duration_minutes?: number | null
 }
 
 interface RecoverResponse {

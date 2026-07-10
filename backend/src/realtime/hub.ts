@@ -71,12 +71,32 @@ async function ownsSession(claims: JwtClaims, sessionId: string): Promise<boolea
   return row.facilitator_id === claims.sub;
 }
 
+// Ping every 30s: keeps sockets alive through proxy idle timeouts (Railway's
+// edge closes silent connections) and reaps peers that stopped answering.
+const HEARTBEAT_MS = 30_000;
+const liveness = new WeakMap<WebSocket, boolean>();
+
 /** Mount the WS server on the shared HTTP server. */
 export function attachHub(server: Server): WebSocketServer {
   wss = new WebSocketServer({ server, path: "/ws" });
 
+  const sweep = setInterval(() => {
+    for (const socket of wss?.clients ?? []) {
+      if (liveness.get(socket) === false) {
+        socket.terminate(); // 'close' fires → unsubscribe cleans up
+        continue;
+      }
+      liveness.set(socket, false);
+      socket.ping();
+    }
+  }, HEARTBEAT_MS);
+  wss.on("close", () => clearInterval(sweep));
+
   // Make the connection handler async to await the DB validation query
   wss.on("connection", async (socket, req) => {
+    liveness.set(socket, true);
+    socket.on("pong", () => liveness.set(socket, true));
+
     const url = new URL(req.url ?? "", "http://localhost");
     const token = url.searchParams.get("token") ?? "";
     const sessionId = url.searchParams.get("sessionId") ?? "";
