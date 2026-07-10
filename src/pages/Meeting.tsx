@@ -5,6 +5,12 @@ import { RADIUS } from "../tokens/colors";
 import { Button, IconButton, Chip, Modal } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { SuggestionCardStack } from "../components/SuggestionCardStack";
+import {
+  AiPresenceChip,
+  AgendaPulse,
+  TimeRiver,
+  type PresenceMode,
+} from "../components/MeetingPulse";
 import BlockRenderer from "../components/BlockRenderer";
 import { useAiBlocks } from "../hooks/useAiBlocks";
 import { useSuggestionSocket } from "../hooks/useSuggestionSocket";
@@ -133,6 +139,9 @@ export default function Meeting({ onNav }: MeetingProps) {
   const [wrapUpDismissed, setWrapUpDismissed] = useState(false);
   const [startMs, setStartMs] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  // Last time speech recognition produced a result — drives the "hearing you"
+  // state of the AI presence chip.
+  const [lastSpeechMs, setLastSpeechMs] = useState<number | null>(null);
 
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
 
@@ -229,6 +238,7 @@ export default function Meeting({ onNav }: MeetingProps) {
       const text = event.results[last][0].transcript;
       if (!text) return;
 
+      setLastSpeechMs(Date.now());
       bufferRef.current = bufferRef.current ? `${bufferRef.current} ${text}` : text;
 
       if (!flushTimerRef.current) {
@@ -338,14 +348,29 @@ export default function Meeting({ onNav }: MeetingProps) {
     );
   }, [sessionId, recovery.session?.started_at]);
 
+  // Planned duration: the server-stored value on the meeting wins (it survives
+  // cleared localStorage and other devices); localStorage covers sessions
+  // created before duration_minutes existed; 60 is the last-resort default.
+  const recoveredDuration =
+    recovery.session?.id === sessionId ? recovery.session?.duration_minutes : null;
+
   useEffect(() => {
     if (!sessionId) {
       setDurationMin(null);
       return;
     }
+    const server = Number(recoveredDuration);
+    if (Number.isFinite(server) && server > 0) {
+      setDurationMin(server);
+      window.localStorage.setItem(`stratis.duration.${sessionId}`, String(server));
+      return;
+    }
     const raw = window.localStorage.getItem(`stratis.duration.${sessionId}`);
     const n = raw ? parseInt(raw, 10) : NaN;
     setDurationMin(Number.isFinite(n) && n > 0 ? n : 60);
+  }, [sessionId, recoveredDuration]);
+
+  useEffect(() => {
     setWrapUpDismissed(false);
   }, [sessionId]);
 
@@ -406,11 +431,15 @@ export default function Meeting({ onNav }: MeetingProps) {
   const inWrapUp =
     remainingSec != null && remainingSec <= WRAP_UP_SEC && remainingSec > 0;
   const overtime = remainingSec != null && remainingSec <= 0;
-  const timeColor = overtime
-    ? COLORS.red
-    : inWrapUp
-      ? COLORS.amber
-      : COLORS.textMuted;
+
+  const speechActive = lastSpeechMs != null && nowMs - lastSpeechMs < 6000;
+  const presenceMode: PresenceMode = !isRecording
+    ? "off"
+    : sendingChunk
+      ? "thinking"
+      : speechActive
+        ? "speech"
+        : "listening";
 
   const meetingTitle = recovery.session?.meeting_title?.trim() || "Live meeting";
   const sessionShort = sessionId
@@ -504,24 +533,11 @@ export default function Meeting({ onNav }: MeetingProps) {
                 </Chip>
               )}
 
-              {remainingSec != null ? (
-                <Chip
-                  color={timeColor}
-                  icon={<StatusDot color={timeColor} />}
-                >
-                  {overtime
-                    ? `+${formatElapsed(Math.abs(remainingSec))} over`
-                    : `${formatElapsed(remainingSec)} left`}
-                </Chip>
-              ) : (
-                <Chip color={COLORS.textMuted} icon={<StatusDot color={COLORS.textDim} />}>
-                  {elapsed != null ? formatElapsed(elapsed) : "Idle"}
-                </Chip>
-              )}
-
-              <Chip color={COLORS.textMuted}>
-                AI · {ai.provider ?? "waiting"}
-              </Chip>
+              <AiPresenceChip
+                mode={presenceMode}
+                cardCount={cards.length}
+                provider={ai.provider}
+              />
 
               <Chip
                 color={connected ? COLORS.teal : COLORS.textMuted}
@@ -567,6 +583,14 @@ export default function Meeting({ onNav }: MeetingProps) {
             </Button>
           </div>
         </div>
+
+        {durationMin != null && elapsed != null && (
+          <TimeRiver
+            durationMin={durationMin}
+            elapsedSec={elapsed}
+            wrapUpSec={WRAP_UP_SEC}
+          />
+        )}
 
         {error && (
           <div
@@ -828,6 +852,13 @@ export default function Meeting({ onNav }: MeetingProps) {
                 minHeight: 0,
               }}
             >
+              {durationMin != null && elapsed != null && (
+                <AgendaPulse
+                  durationMin={durationMin}
+                  elapsedSec={elapsed}
+                  wrapUpSec={WRAP_UP_SEC}
+                />
+              )}
               <SuggestionCardStack
                 cards={cards}
                 thinking={sendingChunk}

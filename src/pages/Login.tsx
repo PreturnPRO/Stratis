@@ -1,6 +1,6 @@
-import { useState, type CSSProperties } from 'react'
-import { COLORS } from '../constants'
-import { btnAccent } from '../components/ui'
+import { useState } from 'react'
+import { COLORS, FONT } from '../constants'
+import { Button } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 
 interface Props {
@@ -69,7 +69,7 @@ export default function Login({ onNavigate }: Props) {
       login(data.data.token, data.data.user)
       onNavigate('app')
     } catch {
-      setErrors({ form: 'Could not reach server' })
+      setError('Could not reach server')
     } finally {
       setLoading(false)
     }
@@ -184,7 +184,7 @@ export default function Login({ onNavigate }: Props) {
             </div>
           </div>
 
-          <Button type="submit" variant="primary" fullWidth disabled={loading} style={{ fontSize: FONT.size.body, padding: '10px' }}>
+          <Button type="submit" variant="primary" fullWidth disabled={!canSubmit} style={{ fontSize: FONT.size.body, padding: '10px' }}>
             {loading ? 'Signing in...' : 'Sign in'}
           </Button>
         </form>

@@ -15,7 +15,7 @@ import { attachHub } from "./realtime/hub";
 import "./db/database";
 
 const app = express();
-app.use(cors({ origin: env.clientOrigin }));
+app.use(cors({ origin: env.clientOrigins }));
 app.use(express.json({ limit: "10mb" }));
 
 app.get("/api/health", (_req, res) => {

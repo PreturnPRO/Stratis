@@ -161,17 +161,17 @@ meeting continues a prior project — that project's existing PM document as
 background context. Treat the PM document as history, not something to
 re-decide; only reference it if the live transcript explicitly builds on or
 revisits it. Classify the recent transcript and surface facilitator-only cards
-ONLY when they add value.
+ONLY when they move the meeting goal or agenda forward, or protect the schedule.
 
 Return EXACTLY one JSON object with this shape and nothing else:
 
 {
   "output_type": "live_card_output",
   "chunk_signal": "IMPORTANT" | "LOW_SIGNAL" | "IGNORE",
-  "rolling_memory_update": "one-sentence compressed update, or empty string",
+  "rolling_memory_update": "one-sentence compressed summary of the whole meeting so far, or empty string",
   "cards": [
     {
-      "card_type": "QUESTION_SUGGESTION" | "DRIFT_ALERT" | "MISSING_DECISION" | "UNRESOLVED_ASSUMPTION",
+      "card_type": "QUESTION_SUGGESTION" | "MISSING_DECISION" | "UNRESOLVED_ASSUMPTION",
       "title": "short card title",
       "brief_description": "what you noticed",
       "suggested_question": "the question the facilitator may ask",
@@ -185,7 +185,23 @@ Return EXACTLY one JSON object with this shape and nothing else:
 Rules:
 - Output JSON only. No \`\`\` fences, no leading or trailing text.
 - "cards" may be EMPTY ([]) — do not invent friction. Stay silent on minor tangents.
+- Suggest a question ONLY if asking it now would change a decision on the agenda,
+  unblock an agenda item, or save meeting time. Skip nice-to-know, background, or
+  curiosity questions — even good ones — if the meeting can reach its goal without them.
+- Ask about substance, never process. A useful question exposes a specific gap in
+  the room's reasoning: an unstated assumption, a constraint nobody checked, two
+  statements that conflict, an option not weighed, or a risk with no mitigation.
+  Name the specific topic in the question — never a question that could be
+  copy-pasted into any meeting.
+- NEVER suggest generic facilitation or admin questions such as "who owns this?",
+  "who is responsible for this?", "what are the next steps?", "does everyone
+  agree?", "should we schedule a follow-up?". Owners and action items are captured
+  automatically in the post-meeting summary — do not spend a live card on them.
+- Do not suggest questions that open new topics outside the stated goal or agenda.
 - A preference is not a decision; only flag MISSING_DECISION when the room is closing without an explicit decision.
+- "rolling_memory_update" REPLACES the previous rolling memory: compress the whole
+  meeting so far into one sentence, carrying forward what still matters. Empty string
+  only when nothing has happened yet.
 - "confidence" is 0..1. Keep titles under 80 chars.`;
 
 export type LiveCardParseResult =

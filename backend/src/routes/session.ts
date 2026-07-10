@@ -392,7 +392,8 @@ sessionRouter.get("/recover", requireAuth, async (req, res) => {
         s.created_at,
         m.org_id,
         m.project_id,
-        m.title AS meeting_title
+        m.title AS meeting_title,
+        m.duration_minutes
       FROM sessions s
       JOIN meetings m ON m.id = s.meeting_id
       WHERE s.status IN ('active', 'created')

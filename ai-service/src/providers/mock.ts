@@ -20,12 +20,12 @@ export const mockProvider: AIProvider = {
         rolling_memory_update: `Mock memory: the team touched on "${echo}".`,
         cards: [
           {
-            card_type: "MISSING_DECISION",
-            title: "Ownership not assigned",
-            brief_description: "The topic was discussed but no owner was named.",
-            suggested_question: "Who will own this before the next meeting?",
+            card_type: "UNRESOLVED_ASSUMPTION",
+            title: "Assumption stated as fact",
+            brief_description: "A key claim was treated as settled without anything in the discussion confirming it.",
+            suggested_question: "What evidence do we have that this holds — and what changes in the plan if it doesn't?",
             urgency: "MEDIUM",
-            reason_now: "The conversation appears to be closing without a decision.",
+            reason_now: "The next agenda item builds on this assumption.",
             confidence: 0.7,
           },
         ],

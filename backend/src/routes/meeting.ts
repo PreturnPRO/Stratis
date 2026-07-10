@@ -14,6 +14,7 @@ interface MeetingRow {
   title: string;
   goal: string | null;
   brief: string | null;
+  duration_minutes: number | null;
   scheduled_at: string | null;
   created_by: string | null;
   created_at: string;
@@ -58,7 +59,7 @@ function parseLimit(value: unknown, fallback = 10, max = 50): number {
 async function getMeeting(id: string): Promise<MeetingRow | undefined> {
   const result = await db.query<MeetingRow>(
     `
-    SELECT id, org_id, project_id, title, goal, brief, scheduled_at, created_by, created_at
+    SELECT id, org_id, project_id, title, goal, brief, duration_minutes, scheduled_at, created_by, created_at
     FROM meetings
     WHERE id = $1
     `,
@@ -356,6 +357,12 @@ meetingRouter.post("/", requireAuth, async (req, res) => {
     const goal = typeof req.body?.goal === "string" ? req.body.goal.trim() || null : null;
     const brief = typeof req.body?.brief === "string" ? req.body.brief.trim() || null : null;
 
+    const rawDuration = req.body?.durationMinutes ?? req.body?.duration_minutes;
+    const durationMinutes =
+      typeof rawDuration === "number" && Number.isFinite(rawDuration) && rawDuration > 0
+        ? Math.min(Math.round(rawDuration), 480)
+        : null;
+
     if (!title) return res.status(400).json({ ok: false, error: "body.title is required" });
     if (!projectId) return res.status(400).json({ ok: false, error: "body.projectId is required" });
 
@@ -369,11 +376,11 @@ meetingRouter.post("/", requireAuth, async (req, res) => {
     await db.query(
       `
       INSERT INTO meetings (
-        id, org_id, project_id, title, goal, brief, scheduled_at, created_by, created_at
+        id, org_id, project_id, title, goal, brief, duration_minutes, scheduled_at, created_by, created_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       `,
-      [id, req.auth!.orgId, projectId, title, goal, brief, scheduledAt, req.auth!.sub, timestamp]
+      [id, req.auth!.orgId, projectId, title, goal, brief, durationMinutes, scheduledAt, req.auth!.sub, timestamp]
     );
 
     const createdMeeting = await getMeeting(id);
