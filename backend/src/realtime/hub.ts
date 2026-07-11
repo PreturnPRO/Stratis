@@ -10,7 +10,6 @@ interface Client {
   claims: JwtClaims;
 }
 
-// Track connections globally by userId to support real-time notification push
 const userConnections = new Map<string, Set<WebSocket>>();
 const facilitators = new Map<string, Set<Client>>();
 let wss: WebSocketServer | null = null;
@@ -61,11 +60,14 @@ function broadcast(sessionId: string, event: WsServerEvent): void {
   for (const c of set) send(c.socket, event);
 }
 
-async function ownsSession(claims: JwtClaims, sessionId: string): Promise<boolean> {
+async function ownsSession(
+  claims: JwtClaims,
+  sessionId: string,
+): Promise<boolean> {
   try {
     const result = await db.query<{ facilitator_id: string }>(
       "SELECT facilitator_id FROM sessions WHERE id = $1",
-      [sessionId]
+      [sessionId],
     );
     const [row] = result.rows;
     if (!row) return true;
@@ -77,13 +79,31 @@ async function ownsSession(claims: JwtClaims, sessionId: string): Promise<boolea
 }
 
 export function attachHub(server: Server): WebSocketServer {
-  wss = new WebSocketServer({ server, path: "/ws" });
+  wss = new WebSocketServer({
+    server,
+    path: "/ws",
+    handleProtocols: (protocols) => {
+      const [protocol] = Array.from(protocols);
+      return protocol ? protocol.trim() : false;
+    },
+  });
 
   wss.on("connection", async (socket, req) => {
     try {
       const url = new URL(req.url ?? "", "http://localhost");
-      const token = url.searchParams.get("token") ?? "";
       const sessionId = url.searchParams.get("sessionId") ?? "";
+
+      let token = "";
+      const protocolHeader = req.headers["sec-websocket-protocol"];
+      const headerValue = Array.isArray(protocolHeader)
+        ? protocolHeader[0]
+        : protocolHeader;
+
+      if (typeof headerValue === "string" && headerValue.length > 0) {
+        token = headerValue.split(",")[0]?.trim() ?? "";
+      } else {
+        token = url.searchParams.get("token") ?? "";
+      }
 
       if (!token || !sessionId) {
         socket.close(4400, "Missing credentials");
@@ -116,7 +136,6 @@ export function attachHub(server: Server): WebSocketServer {
       socket.on("error", () => {
         unsubscribe(client);
       });
-
     } catch (e) {
       console.error("[ws:fatal] WS connection failure:", e);
       socket.close(5000, "Internal Server Error");
@@ -133,14 +152,16 @@ export function pushSuggestion(card: SuggestionCard): void {
 export function pushAnswered(
   sessionId: string,
   cardId: string,
-  source: "auto" | "manual"
+  source: "auto" | "manual",
 ): void {
-  broadcast(sessionId, { type: "suggestion:answered", sessionId, cardId, source });
+  broadcast(sessionId, {
+    type: "suggestion:answered",
+    sessionId,
+    cardId,
+    source,
+  });
 }
 
-/**
- * Pushes a notification dynamically to a user's active sockets if they are online [2, 3]
- */
 export function pushNotification(userId: string, notification: any): void {
   const sockets = userConnections.get(userId);
   if (!sockets) return;

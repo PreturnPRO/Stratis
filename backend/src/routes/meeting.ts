@@ -424,98 +424,103 @@ function titleFromProjectId(projectId: string): string {
  */
 meetingRouter.get("/projects", requireAuth, async (req, res) => {
   try {
-    const params: unknown[] = [req.auth!.orgId];
-    const where: string[] = ["m.org_id = $1"];
-    
-    if (req.auth!.role === "facilitator") {
-      where.push("m.created_by = $2");
-      params.push(req.auth!.sub);
+    const orgId = req.auth!.orgId;
+    const userId = req.auth!.sub;
+    const role = req.auth!.role;
+
+    const params: unknown[] = [orgId];
+    let meetingQueryFilter = "m.org_id = $1";
+
+    if (role === "facilitator") {
+      meetingQueryFilter += " AND m.created_by = $2";
+      params.push(userId);
     }
-    
-    const rows = await db.query<ProjectListRow>(
-      `
-      SELECT
-        m.project_id,
-        COUNT(*) AS meeting_count,
-        MAX(COALESCE(m.scheduled_at, m.created_at)) AS last_meeting_at
-      FROM meetings m
-      WHERE ${where.join(" AND ")}
-      GROUP BY m.project_id
-      ORDER BY last_meeting_at DESC
-      `,
+
+    // Advanced relational query: aggregates count and latest datetime via LEFT JOIN
+    const rows = await db.query<{
+      id: string;
+      name: string;
+      slug: string;
+      meeting_count: string;
+      last_meeting_at: string | null;
+    }>(
+      `SELECT p.id, p.name, p.slug, 
+              COUNT(m.id) AS meeting_count, 
+              MAX(COALESCE(m.scheduled_at, m.created_at)) AS last_meeting_at
+       FROM projects p
+       LEFT JOIN meetings m ON m.project_id = p.id AND ${meetingQueryFilter}
+       WHERE p.org_id = $1
+       GROUP BY p.id, p.name, p.slug
+       ORDER BY last_meeting_at DESC NULLS LAST, p.created_at DESC`,
       params
     );
-    
+
     res.json({
       ok: true,
       data: {
         projects: rows.rows.map((row) => ({
-          id: row.project_id,
-          projectId: row.project_id,
-          name: titleFromProjectId(row.project_id),
+          id: row.id,
+          projectId: row.id,
+          name: row.name,
           meetingCount: Number(row.meeting_count ?? 0),
           lastMeetingAt: row.last_meeting_at,
         })),
       },
     });
   } catch (error) {
-    console.error("Projects list error:", error);
+    console.error("Projects list retrieval error:", error);
     res.status(500).json({ ok: false, error: "Internal server error loading projects" });
   }
 });
 
 /**
  * POST /api/meeting/projects
+ * Creates a new project in the projects table and initializes its first Kickoff meeting.
  */
 meetingRouter.post("/projects", requireAuth, async (req, res) => {
   try {
+    const orgId = req.auth!.orgId;
+    const userId = req.auth!.sub;
     const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+
     if (!name) {
-      return res.status(400).json({
-        ok: false,
-        error: "Project name is required",
-      });
+      return res.status(400).json({ ok: false, error: "Project name is required" });
     }
-    
-    const baseProjectId = slugifyProjectName(name);
-    if (!baseProjectId) {
-      return res.status(400).json({
-        ok: false,
-        error: "Project name must contain letters or numbers",
-      });
+
+    const baseSlug = slugifyProjectName(name);
+    if (!baseSlug) {
+      return res.status(400).json({ ok: false, error: "Project name must contain letters or numbers" });
     }
-    
-    let projectId = baseProjectId;
-    
-    const existing = await db.query<{ project_id: string }>(
-      `
-      SELECT project_id
-      FROM meetings
-      WHERE org_id = $1
-        AND project_id = $2
-      LIMIT 1
-      `,
-      [req.auth!.orgId, projectId]
+
+    let slug = baseSlug;
+    const existing = await db.query<{ slug: string }>(
+      "SELECT slug FROM projects WHERE org_id = $1 AND slug = $2 LIMIT 1",
+      [orgId, slug]
     );
-    
-    if (existing.rows[0]) {
-      projectId = `${baseProjectId}-${Date.now().toString(36)}`;
+
+    if (existing.rows) {
+      slug = `${baseSlug}-${Date.now().toString(36)}`;
     }
-    
+
     const ts = now();
+    const projectId = newId("prj"); // New projects table primary key!
     const meetingId = newId("mtg");
     const title = `Kickoff: ${name}`;
-    
+
+    // 1. Insert directly into the projects relation table
     await db.query(
-      `
-      INSERT INTO meetings (
-        id, org_id, project_id, title, scheduled_at, created_by, created_at
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      `,
-      [meetingId, req.auth!.orgId, projectId, title, null, req.auth!.sub, ts]
+      `INSERT INTO projects (id, org_id, name, slug, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [projectId, orgId, name, slug, ts, ts]
     );
-    
+
+    // 2. Insert kickoff meeting referencing our projects table primary key
+    await db.query(
+      `INSERT INTO meetings (id, org_id, project_id, title, scheduled_at, created_by, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [meetingId, orgId, projectId, title, null, userId, ts]
+    );
+
     res.status(201).json({
       ok: true,
       data: {
@@ -536,7 +541,7 @@ meetingRouter.post("/projects", requireAuth, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error("Project creation error:", error);
+    console.error("Project database creation error:", error);
     res.status(500).json({ ok: false, error: "Internal server error creating project" });
   }
 });

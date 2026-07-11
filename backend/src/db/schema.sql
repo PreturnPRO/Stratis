@@ -1,294 +1,319 @@
 -- ==========================================================
--- STRATIS DATABASE SCHEMA — PostgreSQL
--- Sprint 1 Foundation
+-- STRATIS DATABASE UPGRADE — FINAL ER DIAGRAM (SUPABASE)
 -- ==========================================================
 
--- ==========================================================
--- ORGANIZATIONS
--- ==========================================================
+-- Drop S1 tables if we want to run a clean, synchronized reset
+DROP TABLE IF EXISTS action_items CASCADE;
+DROP TABLE IF EXISTS summary_blocks CASCADE;
+DROP TABLE IF EXISTS participant_summaries CASCADE;
+DROP TABLE IF EXISTS live_card_evidence CASCADE;
+DROP TABLE IF EXISTS live_cards CASCADE;
+DROP TABLE IF EXISTS node_evidence CASCADE;
+DROP TABLE IF EXISTS document_patch_evidence CASCADE;
+DROP TABLE IF EXISTS document_patch_items CASCADE;
+DROP TABLE IF EXISTS document_patches CASCADE;
+DROP TABLE IF EXISTS node_relationships CASCADE;
+DROP TABLE IF EXISTS nodes CASCADE;
+DROP TABLE IF EXISTS document_versions CASCADE;
+DROP TABLE IF EXISTS documents CASCADE;
+DROP TABLE IF EXISTS transcripts CASCADE;
+DROP TABLE IF EXISTS sessions CASCADE;
+DROP TABLE IF EXISTS meetings CASCADE;
+DROP TABLE IF EXISTS projects CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS organizations CASCADE;
+DROP TABLE IF EXISTS consent_logs CASCADE;
+DROP TABLE IF EXISTS notifications CASCADE;
 
+-- 1. ORGANIZATIONS
 CREATE TABLE IF NOT EXISTS organizations (
-  id          VARCHAR(255) PRIMARY KEY,
-  name        VARCHAR(255) NOT NULL,
-  created_at  VARCHAR(255) NOT NULL
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL
 );
 
--- ==========================================================
--- USERS
--- ==========================================================
+-- 2. PROJECTS
+CREATE TABLE IF NOT EXISTS projects (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    UNIQUE(org_id, slug)
+);
 
+-- 3. USERS
 CREATE TABLE IF NOT EXISTS users (
-  id             VARCHAR(255) PRIMARY KEY,
-  org_id         VARCHAR(255) NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-  email          VARCHAR(255) NOT NULL UNIQUE,
-  name           VARCHAR(255) NOT NULL,
-  password_hash  VARCHAR(255) NOT NULL,
-  role           VARCHAR(50) NOT NULL CHECK (role IN ('facilitator', 'participant', 'admin')),
-  created_at     VARCHAR(255) NOT NULL
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    email TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('facilitator', 'participant', 'admin')),
+    created_at TIMESTAMPTZ NOT NULL
 );
 
+-- 4. MEETINGS
+CREATE TABLE IF NOT EXISTS meetings (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    goal TEXT,
+    brief TEXT,
+    duration_minutes INTEGER,
+    scheduled_at TIMESTAMPTZ,
+    created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL
+);
+
+-- 5. SESSIONS
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+    facilitator_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'created' CHECK (status IN ('created', 'active', 'ended')),
+    rolling_summary TEXT,
+    started_at TIMESTAMPTZ,
+    ended_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL
+);
+
+-- 6. TRANSCRIPTS
+CREATE TABLE IF NOT EXISTS transcripts (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    speaker TEXT NOT NULL,
+    text TEXT NOT NULL,
+    chunk_signal TEXT CHECK (chunk_signal IS NULL OR chunk_signal IN ('IMPORTANT', 'LOW_SIGNAL', 'IGNORE')),
+    timestamp TIMESTAMPTZ NOT NULL,
+    source TEXT,
+    metadata_json JSONB
+);
+
+-- 7. DOCUMENTS
+CREATE TABLE IF NOT EXISTS documents (
+    id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    title TEXT,
+    state_json JSONB NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1, -- Named current_version in ER, mapping 'version' for active S1 runtime
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    UNIQUE(project_id, org_id)
+);
+
+-- 8. DOCUMENT VERSIONS
+CREATE TABLE IF NOT EXISTS document_versions (
+    id TEXT PRIMARY KEY,
+    document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+    version INTEGER NOT NULL,
+    state_json JSONB NOT NULL,
+    patch_json JSONB,
+    created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    UNIQUE(document_id, version)
+);
+
+-- 9. DOCUMENT PATCHES (Post-Meeting Patches Metadata)
+CREATE TABLE IF NOT EXISTS document_patches (
+    id TEXT PRIMARY KEY,
+    document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+    version INTEGER NOT NULL,
+    base_document_version INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+    overall_change_summary TEXT,
+    requires_facilitator_review BOOLEAN NOT NULL DEFAULT TRUE,
+    reviewed_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    reviewed_at TIMESTAMPTZ
+);
+
+-- 10. DOCUMENT PATCH ITEMS (Targeted Section Operations)
+CREATE TABLE IF NOT EXISTS document_patch_items (
+    id TEXT PRIMARY KEY,
+    document_patch_id TEXT NOT NULL REFERENCES document_patches(id) ON DELETE CASCADE,
+    operation TEXT NOT NULL CHECK (operation IN ('replace_section', 'append_to_section', 'insert_section')),
+    section_key TEXT NOT NULL CHECK (section_key IN ('project_brief', 'current_status', 'current_project_direction', 'active_risks', 'key_constraints', 'context_needed_for_next_meeting')),
+    section_title TEXT NOT NULL,
+    new_content TEXT NOT NULL,
+    reason TEXT,
+    confidence REAL
+);
+
+-- 11. DOCUMENT PATCH EVIDENCE (Traceability links)
+CREATE TABLE IF NOT EXISTS document_patch_evidence (
+    id TEXT PRIMARY KEY,
+    document_patch_item_id TEXT NOT NULL REFERENCES document_patch_items(id) ON DELETE CASCADE,
+    transcript_id TEXT NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE,
+    timestamp_start TIMESTAMPTZ,
+    timestamp_end TIMESTAMPTZ,
+    speaker TEXT,
+    quote TEXT
+);
+
+-- 12. NODES (Tree Layer)
+CREATE TABLE IF NOT EXISTS nodes (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+    document_version_id TEXT REFERENCES document_versions(id) ON DELETE SET NULL,
+    node_type TEXT NOT NULL CHECK (node_type IN ('MEETING', 'DECISION', 'ASSUMPTION', 'RISK', 'OPEN_QUESTION', 'SUMMARY')),
+    node_category TEXT NOT NULL DEFAULT 'ITEM' CHECK (node_category IN ('CONTAINER', 'ITEM')),
+    title TEXT NOT NULL,
+    content TEXT,
+    status TEXT NOT NULL DEFAULT 'UNVALIDATED' CHECK (status IN ('VALIDATED', 'UNVALIDATED', 'STALLED', 'BLOCKED', 'ARCHIVED')),
+    path_state TEXT DEFAULT 'CHOSEN_PATH' CHECK (path_state IS NULL OR path_state IN ('CHOSEN_PATH', 'ALTERNATIVE', 'SUPERSEDED', 'ARCHIVED')),
+    activity_state TEXT DEFAULT 'ACTIVE' CHECK (activity_state IS NULL OR activity_state IN ('ACTIVE', 'INACTIVE')),
+    source_authority TEXT DEFAULT 'TRANSCRIPT_DERIVED' CHECK (source_authority IS NULL OR source_authority IN ('PM_DOCUMENT_APPROVED', 'FACILITATOR_APPROVED', 'TEMPORARY_AI_NODE', 'TRANSCRIPT_DERIVED')),
+    affects_pm_document BOOLEAN NOT NULL DEFAULT FALSE,
+    is_current BOOLEAN NOT NULL DEFAULT FALSE,
+    is_latest BOOLEAN NOT NULL DEFAULT TRUE,
+    confidence REAL,
+    metadata_json JSONB,
+    evidence_json JSONB,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
+);
+
+-- 13. NODE RELATIONSHIPS
+CREATE TABLE IF NOT EXISTS node_relationships (
+    id TEXT PRIMARY KEY,
+    parent_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    child_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL DEFAULT 'child' CHECK (kind IN ('child', 'depends_on', 'blocks', 'related', 'supersedes', 'references', 'validates', 'conflicts_with')),
+    created_at TIMESTAMPTZ NOT NULL,
+    UNIQUE(parent_id, child_id, kind)
+);
+
+-- 14. NODE EVIDENCE
+CREATE TABLE IF NOT EXISTS node_evidence (
+    id TEXT PRIMARY KEY,
+    node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
+    transcript_id TEXT NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE,
+    timestamp_start TIMESTAMPTZ,
+    timestamp_end TIMESTAMPTZ,
+    speaker TEXT,
+    quote TEXT
+);
+
+-- 15. NOTIFICATIONS
+CREATE TABLE IF NOT EXISTS notifications (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('summary', 'suggestion', 'system')),
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    read BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL
+);
+
+-- 16. CONSENT LOGS
+CREATE TABLE IF NOT EXISTS consent_logs (
+    id TEXT PRIMARY KEY,
+    session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+    user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    action_type TEXT NOT NULL CHECK (action_type IN ('start', 'pause', 'resume', 'end', 'grant', 'revoke')),
+    timestamp TIMESTAMPTZ NOT NULL,
+    metadata_json JSONB
+);
+
+-- 17. LIVE CARDS (Database Suggestions Store)
+CREATE TABLE IF NOT EXISTS live_cards (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    card_type TEXT NOT NULL CHECK (card_type IN ('QUESTION_SUGGESTION', 'DRIFT_ALERT', 'MISSING_DECISION', 'UNRESOLVED_ASSUMPTION')),
+    title TEXT NOT NULL,
+    brief_description TEXT NOT NULL,
+    suggested_question TEXT,
+    urgency TEXT NOT NULL CHECK (urgency IN ('LOW', 'MEDIUM', 'HIGH')),
+    state TEXT NOT NULL DEFAULT 'NEW' CHECK (state IN ('NEW', 'AWARE', 'ANSWERED', 'DISMISSED', 'ESCALATED_TO_OPEN_QUESTION', 'LINKED_TO_DOCUMENT_PATCH')),
+    confidence REAL,
+    answered BOOLEAN NOT NULL DEFAULT FALSE,
+    answered_by TEXT CHECK (answered_by IN ('auto', 'manual')),
+    created_at TIMESTAMPTZ NOT NULL,
+    answered_at TIMESTAMPTZ
+);
+
+-- 18. LIVE CARD EVIDENCE
+CREATE TABLE IF NOT EXISTS live_card_evidence (
+    id TEXT PRIMARY KEY,
+    live_card_id TEXT NOT NULL REFERENCES live_cards(id) ON DELETE CASCADE,
+    transcript_id TEXT NOT NULL REFERENCES transcripts(id) ON DELETE CASCADE,
+    timestamp_start TIMESTAMPTZ,
+    timestamp_end TIMESTAMPTZ,
+    speaker TEXT,
+    quote TEXT
+);
+
+-- 19. PARTICIPANT SUMMARIES
+CREATE TABLE IF NOT EXISTS participant_summaries (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    summary_title TEXT NOT NULL,
+    summary_subtitle TEXT NOT NULL,
+    participants_json JSONB NOT NULL,
+    duration_minutes INTEGER NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    sent_at TIMESTAMPTZ
+);
+
+-- 20. SUMMARY BLOCKS
+CREATE TABLE IF NOT EXISTS summary_blocks (
+    id TEXT PRIMARY KEY,
+    summary_id TEXT NOT NULL REFERENCES participant_summaries(id) ON DELETE CASCADE,
+    block_type TEXT NOT NULL CHECK (block_type IN ('OVERVIEW', 'WHAT_CHANGED', 'DECISIONS', 'OPEN_ITEMS', 'ASSUMPTIONS', 'RISKS', 'ACTION_ITEMS', 'NEXT_STEPS')),
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    visible_to_participants BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_order INTEGER NOT NULL
+);
+
+-- 21. ACTION ITEMS
+CREATE TABLE IF NOT EXISTS action_items (
+    id TEXT PRIMARY KEY,
+    summary_id TEXT NOT NULL REFERENCES participant_summaries(id) ON DELETE CASCADE,
+    task TEXT NOT NULL,
+    owner TEXT NOT NULL,
+    due_date TIMESTAMPTZ,
+    status TEXT NOT NULL DEFAULT 'pending'
+);
+
+-- ==========================================================
+-- PERFORMANCE TUNING INDEX SCALE
+-- ==========================================================
 CREATE INDEX IF NOT EXISTS idx_users_org_id ON users(org_id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
--- ==========================================================
--- MEETINGS
--- ==========================================================
-
-CREATE TABLE IF NOT EXISTS meetings (
-  id            VARCHAR(255) PRIMARY KEY,
-  org_id        VARCHAR(255) NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-  project_id    VARCHAR(255) NOT NULL,
-  title         VARCHAR(255) NOT NULL,
-  goal          TEXT,
-  brief         TEXT,
-  duration_minutes INTEGER,
-  scheduled_at  VARCHAR(255),
-  created_by    VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
-  created_at    VARCHAR(255) NOT NULL
-);
-
--- Column added after initial release; CREATE TABLE IF NOT EXISTS skips
--- existing tables, so re-add idempotently for databases migrated before it.
-ALTER TABLE meetings ADD COLUMN IF NOT EXISTS duration_minutes INTEGER;
+CREATE INDEX IF NOT EXISTS idx_projects_org_id ON projects(org_id);
 
 CREATE INDEX IF NOT EXISTS idx_meetings_org_id ON meetings(org_id);
 CREATE INDEX IF NOT EXISTS idx_meetings_project_id ON meetings(project_id);
-CREATE INDEX IF NOT EXISTS idx_meetings_created_by ON meetings(created_by);
-CREATE INDEX IF NOT EXISTS idx_meetings_scheduled_at ON meetings(scheduled_at);
-
--- ==========================================================
--- SESSIONS
--- ==========================================================
-
-CREATE TABLE IF NOT EXISTS sessions (
-  id              VARCHAR(255) PRIMARY KEY,
-  meeting_id      VARCHAR(255) NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
-  facilitator_id  VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  status          VARCHAR(50) NOT NULL DEFAULT 'created'
-                    CHECK (status IN ('created', 'active', 'ended')),
-  rolling_summary TEXT,
-  started_at      VARCHAR(255),
-  ended_at        VARCHAR(255),
-  created_at      VARCHAR(255) NOT NULL
-);
 
 CREATE INDEX IF NOT EXISTS idx_sessions_meeting_id ON sessions(meeting_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_facilitator_id ON sessions(facilitator_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
-CREATE INDEX IF NOT EXISTS idx_sessions_created_at ON sessions(created_at);
-
--- ==========================================================
--- TRANSCRIPTS
--- ==========================================================
-
-CREATE TABLE IF NOT EXISTS transcripts (
-  id            VARCHAR(255) PRIMARY KEY,
-  session_id    VARCHAR(255) NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-  speaker       VARCHAR(255) NOT NULL,
-  text          TEXT NOT NULL,
-  chunk_signal  VARCHAR(50) CHECK (chunk_signal IS NULL OR chunk_signal IN ('IMPORTANT', 'LOW_SIGNAL', 'IGNORE')),
-  timestamp     VARCHAR(255) NOT NULL
-);
 
 CREATE INDEX IF NOT EXISTS idx_transcripts_session_id ON transcripts(session_id);
 CREATE INDEX IF NOT EXISTS idx_transcripts_timestamp ON transcripts(timestamp);
 
--- ==========================================================
--- DOCUMENTS
--- ==========================================================
-
-CREATE TABLE IF NOT EXISTS documents (
-  id          VARCHAR(255) PRIMARY KEY,
-  project_id  VARCHAR(255) NOT NULL,
-  org_id      VARCHAR(255) NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-  state_json  TEXT NOT NULL,
-  version     INTEGER NOT NULL DEFAULT 1,
-  created_at  VARCHAR(255) NOT NULL,
-  updated_at  VARCHAR(255) NOT NULL,
-  UNIQUE(project_id, org_id)
-);
-
 CREATE INDEX IF NOT EXISTS idx_documents_project_id ON documents(project_id);
-CREATE INDEX IF NOT EXISTS idx_documents_org_id ON documents(org_id);
 
--- ==========================================================
--- DOCUMENT VERSIONS
--- ==========================================================
+CREATE INDEX IF NOT EXISTS idx_document_patches_document_id ON document_patches(document_id);
+CREATE INDEX IF NOT EXISTS idx_document_patches_session_id ON document_patches(session_id);
 
-CREATE TABLE IF NOT EXISTS document_versions (
-  id             VARCHAR(255) PRIMARY KEY,
-  document_id    VARCHAR(255) NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-  session_id     VARCHAR(255) REFERENCES sessions(id) ON DELETE SET NULL,
-  version        INTEGER NOT NULL,
-  state_json     TEXT NOT NULL,
-  patch_json     TEXT,
-  created_by     VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
-  created_at     VARCHAR(255) NOT NULL,
-  UNIQUE(document_id, version)
-);
-
-CREATE INDEX IF NOT EXISTS idx_document_versions_document_id ON document_versions(document_id);
-CREATE INDEX IF NOT EXISTS idx_document_versions_session_id ON document_versions(session_id);
-CREATE INDEX IF NOT EXISTS idx_document_versions_created_at ON document_versions(created_at);
-
--- ==========================================================
--- NODES
--- ==========================================================
-
-CREATE TABLE IF NOT EXISTS nodes (
-  id                   VARCHAR(255) PRIMARY KEY,
-  org_id               VARCHAR(255) NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-  project_id           VARCHAR(255) NOT NULL,
-  session_id           VARCHAR(255) REFERENCES sessions(id) ON DELETE SET NULL,
-  document_version_id  VARCHAR(255) REFERENCES document_versions(id) ON DELETE SET NULL,
-
-  node_type            VARCHAR(50) NOT NULL CHECK (
-                          node_type IN (
-                            'MEETING',
-                            'DECISION',
-                            'ASSUMPTION',
-                            'RISK',
-                            'OPEN_QUESTION',
-                            'SUMMARY'
-                          )
-                        ),
-
-  node_category        VARCHAR(50) NOT NULL DEFAULT 'ITEM'
-                          CHECK (node_category IN ('CONTAINER', 'ITEM')),
-
-  title                TEXT NOT NULL,
-  content              TEXT,
-  status               VARCHAR(50) NOT NULL DEFAULT 'UNVALIDATED'
-                          CHECK (
-                            status IN (
-                              'VALIDATED',
-                              'UNVALIDATED',
-                              'STALLED',
-                              'BLOCKED',
-                              'ARCHIVED'
-                            )
-                          ),
-
-  path_state           VARCHAR(50) DEFAULT 'CHOSEN_PATH'
-                          CHECK (
-                            path_state IS NULL OR path_state IN (
-                              'CHOSEN_PATH',
-                              'ALTERNATIVE',
-                              'SUPERSEDED',
-                              'ARCHIVED'
-                            )
-                          ),
-
-  activity_state       VARCHAR(50) DEFAULT 'ACTIVE'
-                          CHECK (
-                            activity_state IS NULL OR activity_state IN (
-                              'ACTIVE',
-                              'INACTIVE'
-                            )
-                          ),
-
-  source_authority     VARCHAR(50) DEFAULT 'TRANSCRIPT_DERIVED'
-                          CHECK (
-                            source_authority IS NULL OR source_authority IN (
-                              'PM_DOCUMENT_APPROVED',
-                              'FACILITATOR_APPROVED',
-                              'TEMPORARY_AI_NODE',
-                              'TRANSCRIPT_DERIVED'
-                            )
-                          ),
-
-  affects_pm_document  BOOLEAN NOT NULL DEFAULT FALSE,
-  is_current           BOOLEAN NOT NULL DEFAULT FALSE,
-  is_latest            BOOLEAN NOT NULL DEFAULT TRUE,
-
-  confidence           DOUBLE PRECISION,
-  metadata_json        TEXT,
-  evidence_json        TEXT,
-
-  created_at           VARCHAR(255) NOT NULL,
-  updated_at           VARCHAR(255) NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_nodes_org_id ON nodes(org_id);
 CREATE INDEX IF NOT EXISTS idx_nodes_project_id ON nodes(project_id);
-CREATE INDEX IF NOT EXISTS idx_nodes_session_id ON nodes(session_id);
-CREATE INDEX IF NOT EXISTS idx_nodes_document_version_id ON nodes(document_version_id);
-CREATE INDEX IF NOT EXISTS idx_nodes_node_type ON nodes(node_type);
-CREATE INDEX IF NOT EXISTS idx_nodes_status ON nodes(status);
-CREATE INDEX IF NOT EXISTS idx_nodes_current ON nodes(project_id, is_current);
-CREATE INDEX IF NOT EXISTS idx_nodes_latest ON nodes(project_id, is_latest);
-
--- ==========================================================
--- NODE RELATIONSHIPS
--- ==========================================================
-
-CREATE TABLE IF NOT EXISTS node_relationships (
-  id          VARCHAR(255) PRIMARY KEY,
-  parent_id   VARCHAR(255) NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-  child_id    VARCHAR(255) NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
-  kind        VARCHAR(50) NOT NULL DEFAULT 'child'
-                CHECK (
-                  kind IN (
-                    'child',
-                    'depends_on',
-                    'blocks',
-                    'related',
-                    'supersedes',
-                    'references',
-                    'validates',
-                    'conflicts_with'
-                  )
-                ),
-  created_at  VARCHAR(255) NOT NULL,
-  UNIQUE(parent_id, child_id, kind)
-);
-
-CREATE INDEX IF NOT EXISTS idx_node_relationships_parent_id ON node_relationships(parent_id);
-CREATE INDEX IF NOT EXISTS idx_node_relationships_child_id ON node_relationships(child_id);
-CREATE INDEX IF NOT EXISTS idx_node_relationships_kind ON node_relationships(kind);
-
--- ==========================================================
--- NOTIFICATIONS
--- ==========================================================
-
-CREATE TABLE IF NOT EXISTS notifications (
-  id          VARCHAR(255) PRIMARY KEY,
-  user_id     VARCHAR(255) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  session_id  VARCHAR(255) REFERENCES sessions(id) ON DELETE SET NULL,
-  kind        VARCHAR(50) NOT NULL CHECK (kind IN ('summary', 'suggestion', 'system')),
-  title       VARCHAR(255) NOT NULL,
-  body        TEXT NOT NULL,
-  read        BOOLEAN NOT NULL DEFAULT FALSE,
-  created_at  VARCHAR(255) NOT NULL
-);
 
 CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
-CREATE INDEX IF NOT EXISTS idx_notifications_session_id ON notifications(session_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read);
 CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at);
 
--- ==========================================================
--- CONSENT LOGS
--- ==========================================================
-
-CREATE TABLE IF NOT EXISTS consent_logs (
-  id           VARCHAR(255) PRIMARY KEY,
-  session_id   VARCHAR(255) REFERENCES sessions(id) ON DELETE SET NULL,
-  user_id      VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
-  action_type  VARCHAR(50) NOT NULL CHECK (
-                 action_type IN (
-                   'start',
-                   'pause',
-                   'resume',
-                   'end',
-                   'grant',
-                   'revoke'
-                 )
-               ),
-  timestamp    VARCHAR(255) NOT NULL,
-  metadata_json TEXT
-);
+CREATE INDEX IF NOT EXISTS idx_live_cards_session_id ON live_cards(session_id);
+CREATE INDEX IF NOT EXISTS idx_live_cards_answered ON live_cards(answered);
 
 CREATE INDEX IF NOT EXISTS idx_consent_logs_session_id ON consent_logs(session_id);
-CREATE INDEX IF NOT EXISTS idx_consent_logs_user_id ON consent_logs(user_id);
-CREATE INDEX IF NOT EXISTS idx_consent_logs_timestamp ON consent_logs(timestamp);
