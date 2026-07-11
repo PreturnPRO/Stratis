@@ -11,7 +11,6 @@ type UserRole = 'facilitator' | 'participant';
 
 interface SummaryViewProps {
   sessionId?: string;
-  role?: UserRole;
   autoSendCountdownSeconds?: number; // default 300 (5 min)
 }
 
@@ -272,10 +271,10 @@ const ActionItemsSection: React.FC<{ items: ActionItem[] }> = ({ items }) => (
 
 const SummaryView: React.FC<SummaryViewProps> = ({
   sessionId,
-  role = 'participant',
   autoSendCountdownSeconds = 300,
 }) => {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const role: UserRole = user?.role === 'facilitator' ? 'facilitator' : 'participant';
 
   const [summary, setSummary] = useState<ParticipantSummaryOutput | null>(null);
   const [loading, setLoading] = useState(true);

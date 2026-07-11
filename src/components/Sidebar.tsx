@@ -118,14 +118,6 @@ export default function Sidebar({
                 {badge}
               </div>
             )}
-
-            {dot && (
-              <div style={{
-                position: "absolute", top: 10, right: 10,
-                width: 6, height: 6, borderRadius: "50%",
-                background: COLORS.red, pointerEvents: "none",
-              }} />
-            )}
           </div>
         );
       })}
