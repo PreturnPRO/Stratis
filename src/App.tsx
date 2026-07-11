@@ -38,7 +38,7 @@ function renderPage(
       return <Dashboard onNav={handleNav} />;
     case "summary":
       return (
-        <SummaryView role="facilitator" sessionId={navParams?.sessionId} />
+        <SummaryView sessionId={navParams?.sessionId} />
       );
     case "document":
       return (
