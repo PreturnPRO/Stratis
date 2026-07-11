@@ -339,62 +339,56 @@ meetingRouter.get("/dashboard", requireAuth, async (req, res) => {
 meetingRouter.post("/", requireAuth, async (req, res) => {
   try {
     const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
-
-    const projectId =
-      typeof req.body?.projectId === "string"
-        ? req.body.projectId.trim()
-        : typeof req.body?.project_id === "string"
-          ? req.body.project_id.trim()
-          : "";
-
-    const scheduledAt =
-      typeof req.body?.scheduledAt === "string"
-        ? req.body.scheduledAt
-        : typeof req.body?.scheduled_at === "string"
-          ? req.body.scheduled_at
-          : null;
-
-    const goal = typeof req.body?.goal === "string" ? req.body.goal.trim() || null : null;
+    const projectId = typeof req.body?.projectId === "string" ? req.body.projectId.trim() : typeof req.body?.project_id === "string" ? req.body.project_id.trim() : "";
+    const scheduledAt = typeof req.body?.scheduledAt === "string" ? req.body.scheduledAt : typeof req.body?.scheduled_at === "string" ? req.body.scheduled_at : null;
+    const goal = typeof req.body?.goal === "string" ? req.body.goal.trim() || null : null; 
     const brief = typeof req.body?.brief === "string" ? req.body.brief.trim() || null : null;
 
-    const rawDuration = req.body?.durationMinutes ?? req.body?.duration_minutes;
-    const durationMinutes =
-      typeof rawDuration === "number" && Number.isFinite(rawDuration) && rawDuration > 0
-        ? Math.min(Math.round(rawDuration), 480)
-        : null;
+    const rawDuration = req.body?.durationMinutes ?? req.body?.duration_minutes; 
+    const durationMinutes = typeof rawDuration === "number" && Number.isFinite(rawDuration) && rawDuration > 0 ? Math.min(Math.round(rawDuration), 480) : null;
 
-    if (!title) return res.status(400).json({ ok: false, error: "body.title is required" });
+    if (!title) return res.status(400).json({ ok: false, error: "body.title is required" }); 
     if (!projectId) return res.status(400).json({ ok: false, error: "body.projectId is required" });
 
-    if (scheduledAt && new Date(scheduledAt) < new Date()) {
-      return res.status(400).json({ ok: false, error: "Scheduled date cannot be in the past" });
+    if (scheduledAt && new Date(scheduledAt) < new Date()) { 
+      return res.status(400).json({ ok: false, error: "Scheduled date cannot be in the past" }); 
     }
 
-    const id = newId("mtg");
+    // 1. CRITICAL ALIGNMENT: Check if the project exists in our new relational table
+    const projectCheck = await db.query(
+      "SELECT id FROM projects WHERE id = $1 AND org_id = $2 LIMIT 1",
+      [projectId, req.auth!.orgId]
+    );
+
+    // 2. Automatically register the project if it was created on-the-fly from the Dashboard
+    if (projectCheck.rows.length === 0) {
+      const projectName = titleFromProjectId(projectId);
+      const ts = now();
+      await db.query(
+        `INSERT INTO projects (id, org_id, name, slug, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [projectId, req.auth!.orgId, projectName, projectId, ts, ts]
+      );
+    }
+
+    const id = newId("mtg"); 
     const timestamp = now();
 
+    // 3. Insert the meeting (safe from foreign-key violations now!)
     await db.query(
-      `
-      INSERT INTO meetings (
+      `INSERT INTO meetings (
         id, org_id, project_id, title, goal, brief, duration_minutes, scheduled_at, created_by, created_at
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      `,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [id, req.auth!.orgId, projectId, title, goal, brief, durationMinutes, scheduledAt, req.auth!.sub, timestamp]
     );
 
     const createdMeeting = await getMeeting(id);
 
-    res.status(201).json({
-      ok: true,
-      data: {
-        meeting: createdMeeting,
-      },
-    });
-  } catch (error) {
-    console.error("Meeting creation error:", error);
-    res.status(500).json({ ok: false, error: "Internal server error creating meeting" });
-  }
+    res.status(201).json({ ok: true, data: { meeting: createdMeeting } }); 
+  } catch (error) { 
+    console.error("Meeting creation error:", error); 
+    res.status(500).json({ ok: false, error: "Internal server error creating meeting" }); 
+  } 
 });
 
 interface ProjectListRow {
@@ -498,7 +492,7 @@ meetingRouter.post("/projects", requireAuth, async (req, res) => {
       [orgId, slug]
     );
 
-    if (existing.rows) {
+    if (existing.rows.length > 0) {
       slug = `${baseSlug}-${Date.now().toString(36)}`;
     }
 
@@ -514,11 +508,11 @@ meetingRouter.post("/projects", requireAuth, async (req, res) => {
       [projectId, orgId, name, slug, ts, ts]
     );
 
-    // 2. Insert kickoff meeting referencing our projects table primary key
+    // 2. Insert kickoff meeting referencing our projects table primary key with a default 60-minute duration
     await db.query(
-      `INSERT INTO meetings (id, org_id, project_id, title, scheduled_at, created_by, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [meetingId, orgId, projectId, title, null, userId, ts]
+      `INSERT INTO meetings (id, org_id, project_id, title, duration_minutes, scheduled_at, created_by, created_at)
+       VALUES ($1, $2, $3, $4, 60, null, $5, $6)`,
+      [meetingId, orgId, projectId, title, userId, ts]
     );
 
     res.status(201).json({

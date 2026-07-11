@@ -6,101 +6,170 @@ import { newId, now } from "../lib/ids";
 
 const PASSWORD = "password123";
 
-async function seed() {
-  try {
-    const hash = bcrypt.hashSync(PASSWORD, 10);
-    const ts = now();
-
-    const tables = [
-      "consent_logs", "notifications", "node_relationships", "nodes",
-      "document_versions", "documents", "transcripts", "sessions",
-      "meetings", "users", "organizations",
-    ];
-
-    // Wipe tables. PostgreSQL TRUNCATE CASCADE is fastest here.
-    for (const t of tables) {
-      await db.query(`TRUNCATE TABLE ${t} CASCADE`);
-    }
-
-    const orgId = newId("org");
-    await db.query(`INSERT INTO organizations (id,name,created_at) VALUES ($1,$2,$3)`, [orgId, "Stratis Demo Co.", ts]);
-
-    const users = [
-      { role: "facilitator", email: "facilitator@stratis.dev", name: "Sarah K." },
-      { role: "participant", email: "participant@stratis.dev", name: "Mike R." },
-      { role: "admin", email: "admin@stratis.dev", name: "Alex T." },
-    ] as const;
-
-    const ids: Record<string, string> = {};
-    for (const u of users) {
-      const id = newId("usr");
-      ids[u.role] = id;
-      await db.query(
-        `INSERT INTO users (id,org_id,email,name,password_hash,role,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-        [id, orgId, u.email, u.name, hash, u.role, ts]
-      );
-    }
-
-    // Two upcoming meetings + one past meeting with an ended session.
-    const m1 = newId("mtg");
-    const m2 = newId("mtg");
-    const mPast = newId("mtg");
-
-    await db.query(
-      `INSERT INTO meetings (id,org_id,project_id,title,scheduled_at,created_by,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [m1, orgId, "pricing-v2", "Pricing v2 — sprint planning", futureISO(1), ids.facilitator, ts]
-    );
-    await db.query(
-      `INSERT INTO meetings (id,org_id,project_id,title,scheduled_at,created_by,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [m2, orgId, "pricing-v2", "Pricing v2 — exec review", futureISO(3), ids.facilitator, ts]
-    );
-    await db.query(
-      `INSERT INTO meetings (id,org_id,project_id,title,scheduled_at,created_by,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [mPast, orgId, "pricing-v2", "Pricing v2 — kickoff", pastISO(2), ids.facilitator, ts]
-    );
-
-    const pastSession = newId("ses");
-    await db.query(
-      `INSERT INTO sessions (id,meeting_id,facilitator_id,status,started_at,ended_at,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [pastSession, mPast, ids.facilitator, "ended", pastISO(2), pastISO(2), ts]
-    );
-
-    await db.query(
-      `INSERT INTO transcripts (id,session_id,speaker,text,timestamp) VALUES ($1,$2,$3,$4,$5)`,
-      [newId("tx"), pastSession, "Speaker 1", "We missed Q2 by 12% — root cause looks like enterprise pricing.", pastISO(2)]
-    );
-    await db.query(
-      `INSERT INTO transcripts (id,session_id,speaker,text,timestamp) VALUES ($1,$2,$3,$4,$5)`,
-      [newId("tx"), pastSession, "Speaker 2", "Agreed, but sales cycle length played a part too.", pastISO(2)]
-    );
-
-    // Note: read boolean is explicitly false, not 0
-    await db.query(
-      `INSERT INTO notifications (id,user_id,session_id,kind,title,body,read,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [newId("ntf"), ids.facilitator, pastSession, "summary", "Summary: Pricing v2 — kickoff", "Decided: investigate usage-based pricing. Open: validate SMB metered billing.", false, ts]
-    );
-
-    console.log("[seed] done.");
-    console.log("[seed] login with any of:");
-    for (const u of users) console.log(`         ${u.email}  /  ${PASSWORD}   (${u.role})`);
-
-  } catch (err) {
-    console.error("[seed] failed:", err);
-  } finally {
-    process.exit(0);
-  }
+function pastISO(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString();
 }
 
-function futureISO(days: number) {
+function futureISO(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() + days);
   return d.toISOString();
 }
 
-function pastISO(days: number) {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString();
+async function seed() {
+  try {
+    console.log("[seed] starting database backfill under Final ER Diagram constraints...");
+    
+    const hash = bcrypt.hashSync(PASSWORD, 10);
+    const ts = now();
+
+    // 1. SEED ORGANIZATIONS
+    const orgId = "org_default";
+    await db.query(
+      `INSERT INTO organizations (id, name, created_at)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (id) DO NOTHING`,
+      [orgId, "Stratis Enterprise", ts]
+    );
+    console.log("[seed] seeded default organization");
+
+    // 2. SEED USERS WITH DUST-FREE ES6 DESTRUCTURING
+    let facilitatorId = "";
+    let participantId = "";
+    let adminId = "";
+
+    // Resolve or create Facilitator safely
+    const existingFac = await db.query<{ id: string }>(
+      "SELECT id FROM users WHERE email = $1 LIMIT 1",
+      ["facilitator@stratis.dev"]
+    );
+    if (existingFac.rows.length > 0) {
+      const [firstFac] = existingFac.rows;
+      facilitatorId = firstFac.id;
+      console.log(`[seed] resolved existing facilitator with ID: ${facilitatorId}`);
+    } else {
+      facilitatorId = "usr_facilitator";
+      await db.query(
+        `INSERT INTO users (id, org_id, email, name, password_hash, role, created_at)
+         VALUES ($1, $2, 'facilitator@stratis.dev', 'Sarah K.', $3, 'facilitator', $4)`,
+        [facilitatorId, orgId, hash, ts]
+      );
+      console.log("[seed] inserted default facilitator account");
+    }
+
+    // Resolve or create Participant safely
+    const existingPart = await db.query<{ id: string }>(
+      "SELECT id FROM users WHERE email = $1 LIMIT 1",
+      ["participant@stratis.dev"]
+    );
+    if (existingPart.rows.length > 0) {
+      const [firstPart] = existingPart.rows;
+      participantId = firstPart.id;
+      console.log(`[seed] resolved existing participant with ID: ${participantId}`);
+    } else {
+      participantId = "usr_participant";
+      await db.query(
+        `INSERT INTO users (id, org_id, email, name, password_hash, role, created_at)
+         VALUES ($1, $2, 'participant@stratis.dev', 'Mike R.', $3, 'participant', $4)`,
+        [participantId, orgId, hash, ts]
+      );
+      console.log("[seed] inserted default participant account");
+    }
+
+    // Resolve or create Admin safely
+    const existingAdmin = await db.query<{ id: string }>(
+      "SELECT id FROM users WHERE email = $1 LIMIT 1",
+      ["admin@stratis.dev"]
+    );
+    if (existingAdmin.rows.length > 0) {
+      const [firstAdmin] = existingAdmin.rows;
+      adminId = firstAdmin.id;
+      console.log(`[seed] resolved existing admin with ID: ${adminId}`);
+    } else {
+      adminId = "usr_admin";
+      await db.query(
+        `INSERT INTO users (id, org_id, email, name, password_hash, role, created_at)
+         VALUES ($1, $2, 'admin@stratis.dev', 'System Admin', $3, 'admin', $4)`,
+        [adminId, orgId, hash, ts]
+      );
+      console.log("[seed] inserted default admin account");
+    }
+
+    // 3. SEED PROJECTS
+    const projectId = "pricing-v2";
+    await db.query(
+      `INSERT INTO projects (id, org_id, name, slug, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (id) DO NOTHING`,
+      [projectId, orgId, "Pricing v2", "pricing-v2", ts, ts]
+    );
+    console.log("[seed] seeded project relation rows");
+
+    // 4. SEED MEETINGS
+    const pastMeetingId = "mtg_past";
+    const upcomingMeetingId = "mtg_upcoming";
+
+    await db.query(
+      `INSERT INTO meetings (id, org_id, project_id, title, goal, brief, duration_minutes, scheduled_at, created_by, created_at)
+       VALUES 
+         ($1, $2, $3, 'Pricing Model Review', 'Choose the core pricing model for next fiscal year.', 'Review options A, B, and C.', 60, $4, $5, $6),
+         ($7, $8, $9, 'Weekly Strategic Alignment', 'Align on mobile launch and capacity constraints.', 'Go over current blockers.', 45, $10, $11, $12)
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        pastMeetingId, orgId, projectId, pastISO(1), facilitatorId, pastISO(1),
+        upcomingMeetingId, orgId, projectId, futureISO(2), facilitatorId, ts
+      ]
+    );
+    console.log("[seed] seeded historical and scheduled meetings");
+
+    // 5. SEED SESSIONS (Using dynamic facilitatorId mapping)
+    const sessionId = "ses_historical";
+    await db.query(
+      `INSERT INTO sessions (id, meeting_id, facilitator_id, status, rolling_summary, started_at, ended_at, created_at)
+       VALUES ($1, $2, $3, 'ended', 'The team is leaning heavily toward Option B (pure usage-based) pricing based on historical Intercom lift metrics.', $4, $5, $6)
+       ON CONFLICT (id) DO NOTHING`,
+      [sessionId, pastMeetingId, facilitatorId, pastISO(1), pastISO(1), pastISO(1)]
+    );
+    console.log("[seed] seeded meeting session records");
+
+    // 6. SEED TRANSCRIPTS
+    await db.query(
+      `INSERT INTO transcripts (id, session_id, speaker, text, chunk_signal, timestamp, source)
+       VALUES 
+         ($1, $2, 'Sarah K.', 'Okay, let''s look at the Q2 numbers. We missed our target by twelve percent.', 'IMPORTANT', $3, 'audio'),
+         ($4, $5, 'Mike R.', 'I agree the miss is real, but I''m not convinced pricing is the only factor here.', 'IMPORTANT', $6, 'audio'),
+         ($7, $8, 'Sarah K.', 'Option B—pure usage-based—is what the model flagged as highest confidence.', 'IMPORTANT', $9, 'audio')
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        newId("tx"), sessionId, pastISO(1),
+        newId("tx"), sessionId, pastISO(1),
+        newId("tx"), sessionId, pastISO(1)
+      ]
+    );
+    console.log("[seed] seeded meeting audio transcript logs");
+
+    // 7. SEED LIVE CARDS
+    await db.query(
+      `INSERT INTO live_cards (id, session_id, card_type, title, brief_description, suggested_question, urgency, state, confidence, answered, created_at)
+       VALUES 
+         ($1, $2, 'UNRESOLVED_ASSUMPTION', 'Metered Billing Acceptance', 'A core pricing assumption remains unvalidated.', 'Sarah, have we checked if SMB segment clients accept metered billing?', 'HIGH', 'NEW', 0.88, FALSE, $3),
+         ($4, $5, 'QUESTION_SUGGESTION', 'Mobile Capacity Blockers', 'Mobile launch is currently constraining engineer resources.', 'Mike, what are the primary engineering bottlenecks blocking pricing work?', 'MEDIUM', 'NEW', 0.72, FALSE, $6)
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        newId("sug"), sessionId, pastISO(1),
+        newId("sug"), sessionId, pastISO(1)
+      ]
+    );
+    console.log("[seed] seeded persistent live co-facilitator cards");
+
+    console.log("\n[seed] DATABASE SEEDING COMPLETED SUCCESSFULLY!");
+  } catch (err) {
+    console.error("\n[seed] critical crash during seeding pipeline:", err);
+  } finally {
+    process.exit(0);
+  }
 }
 
 seed();
