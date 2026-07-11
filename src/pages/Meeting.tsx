@@ -593,7 +593,7 @@ export default function Meeting({ onNav }: MeetingProps) {
                   {formatElapsed(elapsed)}
                 </div>
                 {durationMin && (
-                  <div style={{ fontSize: FONT.size.micro, color: COLORS.textDim }}>
+                  <div style={{ fontSize: FONT.size.micro, color: COLORS.textMuted }}>
                     TARGET: {durationMin}m {overtime && "(OVERTIME)"}
                   </div>
                 )}
@@ -673,6 +673,9 @@ export default function Meeting({ onNav }: MeetingProps) {
 
             <div
               ref={transcriptScrollRef}
+              role="log"
+              aria-live="polite"
+              aria-label="Live transcript"
               style={{
                 flex: 1,
                 overflowY: "auto",
@@ -766,7 +769,7 @@ export default function Meeting({ onNav }: MeetingProps) {
                 {connected && <Chip color={COLORS.accent} mono>REALTIME SYNCED</Chip>}
               </div>
 
-              <div style={{ flex: 1, overflowY: "auto" }}>
+              <div style={{ flex: 1, overflowY: "auto" }} aria-live="polite" aria-label="Active suggestions">
                 <SuggestionCardStack
                   cards={cards}
                   thinking={isRecording && transcripts.length > 0}
@@ -792,9 +795,9 @@ export default function Meeting({ onNav }: MeetingProps) {
               <div style={{ fontSize: FONT.size.micro, fontWeight: 700, color: COLORS.textMuted, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 12 }}>
                 Strategic Meeting Notes
               </div>
-              <div style={{ flex: 1, overflowY: "auto" }}>
+              <div style={{ flex: 1, overflowY: "auto" }} aria-live="polite" aria-label="Strategic meeting notes">
                 {ai.blocks.length === 0 ? (
-                  <p style={{ fontSize: FONT.size.label, color: COLORS.textDim, margin: 0, fontStyle: "italic" }}>
+                  <p style={{ fontSize: FONT.size.label, color: COLORS.textMuted, margin: 0, fontStyle: "italic" }}>
                     Notes, key arguments, and identified risks will populate here as conversation signal classification completes.
                   </p>
                 ) : (

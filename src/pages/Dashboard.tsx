@@ -409,7 +409,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
                         {s.title}
                       </span>
                       <span style={{ color: COLORS.textMuted, fontSize: FONT.size.label }}>
-                        {s.date ?? ""}
+                        {formatDate(s.date)}
                       </span>
                     </div>
                     <div style={{ fontSize: FONT.size.label, color: COLORS.textMuted }}>

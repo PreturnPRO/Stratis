@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { COLORS, RADIUS, SHADOW, FONT, LETTER_SPACING } from "../tokens/colors";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -272,6 +272,7 @@ export function Modal({
   width?: number;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
 
   // Keep the latest onClose in a ref so the effect below can stay mount-only
   // (empty deps) — depending on `onClose` directly re-ran this effect (and
@@ -313,6 +314,7 @@ export function Modal({
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={title ? titleId : undefined}
         onClick={(e) => e.stopPropagation()}
         style={{
           width,
@@ -327,7 +329,7 @@ export function Modal({
         }}
       >
         {title && (
-          <h2 style={{
+          <h2 id={titleId} style={{
             color: COLORS.text,
             fontSize: FONT.size.heading,
             fontWeight: 600,

@@ -90,6 +90,8 @@ const TimerBar: React.FC<{
     }}
   >
     <div
+      role="status"
+      aria-live="polite"
       style={{
         fontSize: FONT.size.label,
         color: COLORS.amber,
@@ -176,9 +178,9 @@ const SummaryBlockSection: React.FC<{
       </div>
 
       {isList ? (
-        <div>
+        <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
           {lines.map((line, i) => (
-            <div
+            <li
               key={i}
               style={{
                 background: COLORS.surface,
@@ -192,6 +194,7 @@ const SummaryBlockSection: React.FC<{
               }}
             >
               <span
+                aria-hidden="true"
                 style={{
                   width: 6,
                   height: 6,
@@ -204,9 +207,9 @@ const SummaryBlockSection: React.FC<{
               <span style={{ fontSize: FONT.size.body, color: COLORS.textPrimary, lineHeight: 1.5 }}>
                 {line}
               </span>
-            </div>
+            </li>
           ))}
-        </div>
+        </ul>
       ) : (
         <p style={{ fontSize: FONT.size.body, color: COLORS.textMuted, lineHeight: 1.6, margin: 0 }}>
           {block.content}
@@ -232,8 +235,9 @@ const ActionItemsSection: React.FC<{ items: ActionItem[] }> = ({ items }) => (
         Action items
       </span>
     </div>
+    <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
     {items.map((item, i) => (
-      <div
+      <li
         key={i}
         style={{
           background: COLORS.surface,
@@ -262,8 +266,9 @@ const ActionItemsSection: React.FC<{ items: ActionItem[] }> = ({ items }) => (
         >
           {item.owner}
         </span>
-      </div>
+      </li>
     ))}
+    </ul>
   </div>
 );
 
