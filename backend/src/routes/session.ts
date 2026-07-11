@@ -42,7 +42,7 @@ interface MeetingRow {
   created_at: string;
 }
 
-interface SessionWitionhMeetingRow extends SessionRow {
+interface SessionWithMeetingRow  extends SessionRow {
   meeting_title: string | null;
   project_id: string | null;
 }
