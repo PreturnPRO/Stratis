@@ -42,7 +42,7 @@ interface MeetingRow {
   created_at: string;
 }
 
-interface SessionWithMeetingRow extends SessionRow {
+interface SessionWithMeetingRow  extends SessionRow {
   meeting_title: string | null;
   project_id: string | null;
 }
@@ -51,23 +51,17 @@ interface CountRow {
   count: string; // Note: PostgreSQL COUNT() returns a string natively
 }
 
-async function getSession(sessionId: string): Promise<SessionRow | undefined> {
-  const result = await db.query<SessionRow>(
-    `
-    SELECT
-      id,
-      meeting_id,
-      facilitator_id,
-      status,
-      started_at,
-      ended_at,
-      created_at
-    FROM sessions
-    WHERE id = $1
-    `,
+async function getSession(sessionId: string): Promise<any> {
+  const result = await db.query<any>(
+    `SELECT s.id, s.meeting_id, s.facilitator_id, s.status, s.started_at, s.ended_at, s.created_at,
+            m.duration_minutes
+     FROM sessions s
+     LEFT JOIN meetings m ON m.id = s.meeting_id
+     WHERE s.id = $1`,
     [sessionId]
   );
-  return result.rows[0];
+  const [firstRow] = result.rows;
+  return firstRow;
 }
 
 async function getMeeting(meetingId: string): Promise<MeetingRow | undefined> {
@@ -84,17 +78,25 @@ async function getMeeting(meetingId: string): Promise<MeetingRow | undefined> {
     FROM meetings
     WHERE id = $1
     `,
-    [meetingId]
+    [meetingId],
   );
   return result.rows[0];
 }
 
-function canAccessSession(session: SessionRow, userId: string, role: string): boolean {
+function canAccessSession(
+  session: SessionRow,
+  userId: string,
+  role: string,
+): boolean {
   if (role === "admin") return true;
   return session.facilitator_id === userId;
 }
 
-async function requireAccessibleSession(sessionId: string, userId: string, role: string) {
+async function requireAccessibleSession(
+  sessionId: string,
+  userId: string,
+  role: string,
+) {
   const session = await getSession(sessionId);
 
   if (!session) {
@@ -149,7 +151,7 @@ sessionRouter.get("/", requireAuth, async (req, res) => {
         FROM sessions s
         LEFT JOIN meetings m ON m.id = s.meeting_id
         ORDER BY s.created_at DESC
-        `
+        `,
       );
       sessions = result.rows;
     } else {
@@ -170,7 +172,7 @@ sessionRouter.get("/", requireAuth, async (req, res) => {
         WHERE s.facilitator_id = $1
         ORDER BY s.created_at DESC
         `,
-        [userId]
+        [userId],
       );
       sessions = result.rows;
     }
@@ -183,7 +185,9 @@ sessionRouter.get("/", requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error("List sessions error:", error);
-    res.status(500).json({ ok: false, error: "Internal server error retrieving sessions" });
+    res
+      .status(500)
+      .json({ ok: false, error: "Internal server error retrieving sessions" });
   }
 });
 
@@ -218,7 +222,7 @@ sessionRouter.get("/active", requireAuth, async (req, res) => {
         WHERE s.status = 'active'
         ORDER BY s.started_at DESC
         LIMIT 1
-        `
+        `,
       );
       session = result.rows[0];
     } else {
@@ -241,7 +245,7 @@ sessionRouter.get("/active", requireAuth, async (req, res) => {
         ORDER BY s.started_at DESC
         LIMIT 1
         `,
-        [userId]
+        [userId],
       );
       session = result.rows[0];
     }
@@ -254,7 +258,12 @@ sessionRouter.get("/active", requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error("Get active session error:", error);
-    res.status(500).json({ ok: false, error: "Internal server error retrieving active session" });
+    res
+      .status(500)
+      .json({
+        ok: false,
+        error: "Internal server error retrieving active session",
+      });
   }
 });
 
@@ -310,7 +319,7 @@ sessionRouter.post("/", requireAuth, async (req, res) => {
         AND status IN ('created', 'active')
       LIMIT 1
       `,
-      [meetingId]
+      [meetingId],
     );
 
     const existingOpenSession = existingOpenSessionResult.rows[0];
@@ -341,7 +350,7 @@ sessionRouter.post("/", requireAuth, async (req, res) => {
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7)
       `,
-      [sessionId, meetingId, req.auth!.sub, "created", null, null, timestamp]
+      [sessionId, meetingId, req.auth!.sub, "created", null, null, timestamp],
     );
 
     const session = await getSession(sessionId);
@@ -354,7 +363,9 @@ sessionRouter.post("/", requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error("Session creation error:", error);
-    res.status(500).json({ ok: false, error: "Internal server error creating session" });
+    res
+      .status(500)
+      .json({ ok: false, error: "Internal server error creating session" });
   }
 });
 
@@ -411,7 +422,7 @@ sessionRouter.get("/recover", requireAuth, async (req, res) => {
         COALESCE(s.started_at, s.created_at) DESC
       LIMIT 1
       `,
-      [orgId, role, userId]
+      [orgId, role, userId],
     );
 
     const row = result.rows[0];
@@ -436,7 +447,9 @@ sessionRouter.get("/recover", requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error("Session recover error:", error);
-    res.status(500).json({ ok: false, error: "Internal server error recovering session" });
+    res
+      .status(500)
+      .json({ ok: false, error: "Internal server error recovering session" });
   }
 });
 
@@ -450,7 +463,7 @@ sessionRouter.get("/:id", requireAuth, async (req, res) => {
     const accessible = await requireAccessibleSession(
       req.params.id,
       req.auth!.sub,
-      req.auth!.role
+      req.auth!.role,
     );
 
     if (!accessible.ok) {
@@ -466,7 +479,7 @@ sessionRouter.get("/:id", requireAuth, async (req, res) => {
       FROM transcripts
       WHERE session_id = $1
       `,
-      [accessible.session.id]
+      [accessible.session.id],
     );
 
     const notificationCountResult = await db.query<CountRow>(
@@ -475,7 +488,7 @@ sessionRouter.get("/:id", requireAuth, async (req, res) => {
       FROM notifications
       WHERE session_id = $1
       `,
-      [accessible.session.id]
+      [accessible.session.id],
     );
 
     res.json({
@@ -484,13 +497,17 @@ sessionRouter.get("/:id", requireAuth, async (req, res) => {
         session: accessible.session,
         links: {
           transcriptCount: Number(transcriptCountResult.rows[0]?.count ?? 0),
-          notificationCount: Number(notificationCountResult.rows[0]?.count ?? 0),
+          notificationCount: Number(
+            notificationCountResult.rows[0]?.count ?? 0,
+          ),
         },
       },
     });
   } catch (error) {
     console.error("Session fetch error:", error);
-    res.status(500).json({ ok: false, error: "Internal server error retrieving session" });
+    res
+      .status(500)
+      .json({ ok: false, error: "Internal server error retrieving session" });
   }
 });
 
@@ -504,7 +521,7 @@ sessionRouter.post("/:id/start", requireAuth, async (req, res) => {
     const accessible = await requireAccessibleSession(
       req.params.id,
       req.auth!.sub,
-      req.auth!.role
+      req.auth!.role,
     );
 
     if (!accessible.ok) {
@@ -541,7 +558,7 @@ sessionRouter.post("/:id/start", requireAuth, async (req, res) => {
           started_at = COALESCE(started_at, $1)
       WHERE id = $2
       `,
-      [timestamp, session.id]
+      [timestamp, session.id],
     );
 
     const updated = await getSession(session.id);
@@ -554,7 +571,9 @@ sessionRouter.post("/:id/start", requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error("Session start error:", error);
-    res.status(500).json({ ok: false, error: "Internal server error starting session" });
+    res
+      .status(500)
+      .json({ ok: false, error: "Internal server error starting session" });
   }
 });
 
@@ -569,7 +588,7 @@ sessionRouter.post("/:id/end", requireAuth, async (req, res) => {
     const accessible = await requireAccessibleSession(
       req.params.id,
       req.auth!.sub,
-      req.auth!.role
+      req.auth!.role,
     );
 
     if (!accessible.ok) {
@@ -601,7 +620,7 @@ sessionRouter.post("/:id/end", requireAuth, async (req, res) => {
           ended_at = COALESCE(ended_at, $2)
       WHERE id = $3
       `,
-      [timestamp, timestamp, session.id]
+      [timestamp, timestamp, session.id],
     );
 
     clearProjectDocCache(session.id);
@@ -622,6 +641,8 @@ sessionRouter.post("/:id/end", requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error("Session end error:", error);
-    res.status(500).json({ ok: false, error: "Internal server error ending session" });
+    res
+      .status(500)
+      .json({ ok: false, error: "Internal server error ending session" });
   }
 });

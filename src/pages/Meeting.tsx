@@ -423,24 +423,29 @@ export default function Meeting({ onNav }: MeetingProps) {
   // Planned duration: the server-stored value on the meeting wins (it survives
   // cleared localStorage and other devices); localStorage covers sessions
   // created before duration_minutes existed; 60 is the last-resort default.
-  const recoveredDuration =
-    recovery.session?.id === sessionId ? recovery.session?.duration_minutes : null;
+  const recoveredDuration = recovery.session?.id === sessionId ? recovery.session?.duration_minutes : null;
 
-  useEffect(() => {
-    if (!sessionId) {
-      setDurationMin(null);
-      return;
-    }
-    const server = Number(recoveredDuration);
-    if (Number.isFinite(server) && server > 0) {
-      setDurationMin(server);
-      window.localStorage.setItem(`stratis.duration.${sessionId}`, String(server));
-      return;
-    }
+useEffect(() => {
+  if (!sessionId) {
+    setDurationMin(null);
+    return;
+  }
+
+  // 1. If server recovery has finished and returned a valid duration, prioritize it immediately
+  const server = Number(recoveredDuration);
+  if (Number.isFinite(server) && server > 0) {
+    setDurationMin(server);
+    window.localStorage.setItem(`stratis.duration.${sessionId}`, String(server));
+    return;
+  }
+
+  // 2. Wait until recovery finishes loading before falling back to local storage or defaults
+  if (recovery.status !== "loading") {
     const raw = window.localStorage.getItem(`stratis.duration.${sessionId}`);
     const n = raw ? parseInt(raw, 10) : NaN;
     setDurationMin(Number.isFinite(n) && n > 0 ? n : 60);
-  }, [sessionId, recoveredDuration]);
+  }
+}, [sessionId, recoveredDuration, recovery.status]);
 
   useEffect(() => {
     if (!sessionId) return;

@@ -57,157 +57,181 @@ export interface UseSuggestionSocketReturn {
 }
 
 export function useSuggestionSocket(sessionId: string | null | undefined): UseSuggestionSocketReturn {
-  const { token } = useAuth()
-  const [cards, setCards] = useState<UICard[]>([])
-  const [connected, setConnected] = useState(false)
-  const [role, setRole] = useState<UseSuggestionSocketReturn['role']>(null)
-  const wsRef = useRef<WebSocket | null>(null)
+  const { token } = useAuth();
+  const [cards, setCards] = useState<UICard[]>([]);
+  const [connected, setConnected] = useState(false);
+  const [role, setRole] = useState<UseSuggestionSocketReturn['role']>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const validSessionId = isRealSessionId(sessionId) ? sessionId.trim() : null
+  const validSessionId = isRealSessionId(sessionId) ? sessionId.trim() : null;
 
-  // If the page has no real session yet, reset socket state and do nothing.
+  // 1. Reset state instantly if transitioning away from an active session
   useEffect(() => {
-    if (validSessionId) return
-
-    setCards([])
-    setConnected(false)
-    setRole(null)
-
-    if (wsRef.current) {
-      wsRef.current.close()
-      wsRef.current = null
-    }
-  }, [validSessionId])
-
-  // Live updates over /ws, with automatic reconnect. Deployed backends
-  // (Railway et al.) recycle idle websocket connections and restart on
-  // deploys — without a retry the facilitator's live stack dies silently
-  // until a full page reload. On every (re)connect the current stack is
-  // refetched over REST so cards missed while offline reappear.
-  useEffect(() => {
-    if (!token || !validSessionId) return
-
-    let disposed = false
-    let attempt = 0
-    let retryTimer: ReturnType<typeof setTimeout> | undefined
-
-    const loadStack = () => {
-      fetch(`${API_BASE}/api/ai/suggest/${validSessionId}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-        .then((res) => res.json())
-        .then((data: { ok: boolean; data?: { cards: ServerCard[] } }) => {
-          if (disposed || !data.ok || !data.data) return
-          setCards(data.data.cards.map(toUICard))
-        })
-        .catch(() => {
-          // Non-fatal — the live socket still delivers new cards.
-        })
-    }
-
-    const connect = () => {
-      if (disposed) return
-
-      const url = `${WS_BASE}/ws?token=${encodeURIComponent(token)}&sessionId=${encodeURIComponent(validSessionId)}`
-      const ws = new WebSocket(url)
-      wsRef.current = ws
-
-      ws.onopen = () => {
-        attempt = 0
-        setConnected(true)
-        loadStack()
+    if (!validSessionId) {
+      setCards([]);
+      setConnected(false);
+      setRole(null);
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
       }
-
-      ws.onclose = () => {
-        setConnected(false)
-        if (wsRef.current === ws) {
-          wsRef.current = null
-        }
-        if (disposed) return
-        // Capped exponential backoff: 1s, 2s, 4s, 8s, then every 15s.
-        const delay = Math.min(1000 * 2 ** attempt, 15000)
-        attempt += 1
-        retryTimer = setTimeout(connect, delay)
-      }
-
-      ws.onerror = () => {
-        setConnected(false)
-        // 'close' always follows 'error' — the retry is scheduled there.
-      }
-
-      ws.onmessage = (event: MessageEvent<string>) => {
-        let msg: WsServerEvent
-
-        try {
-          msg = JSON.parse(event.data) as WsServerEvent
-        } catch {
-          return
-        }
-
-        switch (msg.type) {
-          case 'connected':
-            setRole(msg.role)
-            break
-
-          case 'suggestion:new':
-            setCards((prev: UICard[]) => [toUICard(msg.card), ...prev])
-            break
-
-          case 'suggestion:answered':
-            setCards((prev: UICard[]) =>
-              prev.map((c) =>
-                c.id === msg.cardId ? { ...c, status: 'answered' as const } : c
-              )
-            )
-            break
-        }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
       }
     }
+  }, [validSessionId]);
 
-    connect()
-
-    return () => {
-      disposed = true
-      if (retryTimer) clearTimeout(retryTimer)
-      wsRef.current?.close()
-      wsRef.current = null
+  // 2. Fetch the current card stack over REST (used for initialization and gap recovery) [1]
+  const fetchCards = useCallback(async () => {
+    if (!token || !validSessionId) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/ai/suggest/${validSessionId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        const serverCards: ServerCard[] = data.data.cards ?? [];
+        setCards(serverCards.map(toUICard));
+      }
+    } catch (err) {
+      console.error('[ws:rest] Failed to sync suggestion stack:', err);
     }
-  }, [validSessionId, token])
+  }, [validSessionId, token]);
 
-  const markAnswered = useCallback(
-    (id: string) => {
-      if (!token || !validSessionId) return
+  // 3. Manual override to resolve a card (updates optimistically, then sinks with server) [1]
+  const markAnswered = useCallback(async (id: string) => {
+    if (!token || !validSessionId) return;
 
-      fetch(`${API_BASE}/api/ai/suggest/answer`, {
+    // Optimistic UI state toggle
+    setCards((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, status: 'answered' as const } : c))
+    );
+
+    try {
+      const res = await fetch(`${API_BASE}/api/ai/suggest/answer`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          sessionId: validSessionId,
-          cardId: id,
-        }),
-      }).catch(() => {
-        // Non-fatal.
-      })
+        body: JSON.stringify({ sessionId: validSessionId, cardId: id }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        console.warn('[ws:manual] Answer sync rejected by server, rolling back state:', data.error);
+        void fetchCards();
+      }
+    } catch (err) {
+      console.error('[ws:manual] Error marking card answered:', err);
+      void fetchCards();
+    }
+  }, [validSessionId, token, fetchCards]);
 
-      setCards((prev) =>
-        prev.map((c) =>
-          c.id === id ? { ...c, status: 'answered' as const } : c
-        )
-      )
-    },
-    [token, validSessionId]
-  )
-
+  // 4. Local-only active state toggle (re-opening cards for review) [1]
   const markActive = useCallback((id: string) => {
     setCards((prev) =>
-      prev.map((c) =>
-        c.id === id ? { ...c, status: 'active' as const } : c
-      )
-    )
-  }, [])
+      prev.map((c) => (c.id === id ? { ...c, status: 'active' as const } : c))
+    );
+  }, []);
+
+  // 5. Secure, auto-reconnecting WebSocket subscription pipeline
+  useEffect(() => {
+    if (!token || !validSessionId) return;
+
+    let isCleanup = false;
+
+    const connect = () => {
+      if (isCleanup) return;
+
+      if (wsRef.current) {
+        try {
+          wsRef.current.close();
+        } catch (e) {}
+        wsRef.current = null;
+      }
+
+      // SECURE HANDSHAKE: Strip token from URL parameter, pass inside subprotocols array [1]
+      const url = `${WS_BASE}/ws?sessionId=${encodeURIComponent(validSessionId)}`;
+      const socket = new WebSocket(url, token ? [token] : []);
+      wsRef.current = socket;
+
+      socket.onopen = () => {
+        if (isCleanup) {
+          socket.close();
+          return;
+        }
+        console.log('[ws] Real-time suggestion stream connected securely.');
+        setConnected(true);
+        // Force sync REST stack on connection to fetch any suggestions generated while offline [1]
+        void fetchCards();
+      };
+
+      socket.onmessage = (event) => {
+        if (isCleanup) return;
+        try {
+          const payload: WsServerEvent = JSON.parse(event.data);
+          switch (payload.type) {
+            case 'connected':
+              setRole(payload.role);
+              break;
+            case 'suggestion:new':
+              setCards((prev) => {
+                if (prev.some((c) => c.id === payload.card.id)) return prev;
+                return [toUICard(payload.card), ...prev];
+              });
+              break;
+            case 'suggestion:answered':
+              setCards((prev) =>
+                prev.map((c) =>
+                  c.id === payload.cardId ? { ...c, status: 'answered' as const } : c
+                )
+              );
+              break;
+            default:
+              break;
+          }
+        } catch (err) {
+          console.error('[ws] Failed to decode incoming WebSocket frame:', err);
+        }
+      };
+
+      socket.onclose = (event) => {
+        if (isCleanup) return;
+        setConnected(false);
+        console.warn(`[ws] Suggestion stream closed: ${event.code} ${event.reason}. Reconnecting in 3s...`);
+        
+        if (reconnectTimeoutRef.current) {
+          clearTimeout(reconnectTimeoutRef.current);
+        }
+        reconnectTimeoutRef.current = setTimeout(() => {
+          connect();
+        }, 3000);
+      };
+
+      socket.onerror = () => {
+        if (isCleanup) return;
+        socket.close();
+      };
+    };
+
+    connect();
+
+    return () => {
+      isCleanup = true;
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+    };
+  }, [validSessionId, token, fetchCards]);
 
   return {
     cards,
@@ -215,5 +239,5 @@ export function useSuggestionSocket(sessionId: string | null | undefined): UseSu
     connected,
     markAnswered,
     markActive,
-  }
+  };
 }
