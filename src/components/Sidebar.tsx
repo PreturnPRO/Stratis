@@ -7,7 +7,7 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import { COLORS, NAV_ITEMS, FONT, RADIUS } from "../constants";
+import { COLORS, NAV_ITEMS, FONT, RADIUS, SPACE } from "../constants";
 import { useAuth } from "../context/AuthContext";
 
 // ─── Icon registry ─────────────────────────────────────────────────────────────
@@ -66,7 +66,7 @@ export default function Sidebar({
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
-      paddingTop: 10,
+      paddingTop: SPACE[2.5],
       paddingBottom: 12,
       flexShrink: 0,
     }}>

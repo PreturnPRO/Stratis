@@ -3,7 +3,7 @@
 // and only appears here as a graceful fallback. Unknown types render as
 // UnknownBlock — never throws.
 
-import { COLORS, FONT, RADIUS } from '../constants'
+import { COLORS, FONT, RADIUS, SPACE } from '../constants'
 import type { AIBlock, AIBlockType } from '../../shared/types'
 
 type Block = AIBlock & { id?: string; timestamp?: string }
@@ -11,7 +11,7 @@ type Block = AIBlock & { id?: string; timestamp?: string }
 function TextBlock({ node }: { node: Block }) {
   return (
     <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: '12px 16px' }}>
-      {node.timestamp && <div style={{ fontSize: FONT.size.caption, color: COLORS.textMuted, marginBottom: 6 }}>{node.timestamp}</div>}
+      {node.timestamp && <div style={{ fontSize: FONT.size.caption, color: COLORS.textMuted, marginBottom: SPACE[1.5] }}>{node.timestamp}</div>}
       <div style={{ fontSize: FONT.size.body, fontWeight: 500, color: COLORS.text, marginBottom: 4 }}>{node.title}</div>
       <div style={{ fontSize: FONT.size.body, color: COLORS.textMuted, lineHeight: 1.5 }}>{node.content}</div>
     </div>
@@ -22,7 +22,7 @@ function DecisionNodeBlock({ node }: { node: Block }) {
   const options = node.metadata?.options as string[] | undefined
   return (
     <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.teal}`, borderRadius: 8, padding: '12px 16px' }}>
-      {node.timestamp && <div style={{ fontSize: FONT.size.caption, color: COLORS.textMuted, marginBottom: 6 }}>{node.timestamp}</div>}
+      {node.timestamp && <div style={{ fontSize: FONT.size.caption, color: COLORS.textMuted, marginBottom: SPACE[1.5] }}>{node.timestamp}</div>}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
         <div style={{ fontSize: FONT.size.body, fontWeight: 500, color: COLORS.text }}>{node.title}</div>
         <span style={{ fontSize: FONT.size.caption, color: COLORS.teal, border: `1px solid ${COLORS.teal}`, borderRadius: RADIUS.sm, padding: '1px 6px' }}>decision</span>
@@ -34,7 +34,7 @@ function DecisionNodeBlock({ node }: { node: Block }) {
       </div>
       <div style={{ fontSize: FONT.size.body, color: COLORS.textMuted, lineHeight: 1.5 }}>{node.content}</div>
       {options && options.length > 0 && (
-        <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: SPACE[1.5] }}>
           {options.map((opt, i) => (
             <span key={i} style={{ fontSize: FONT.size.caption, padding: '2px 8px', borderRadius: RADIUS.sm, background: COLORS.surfaceHover, color: COLORS.textMuted, border: `1px solid ${COLORS.borderLight}` }}>
               {opt}
@@ -49,7 +49,7 @@ function DecisionNodeBlock({ node }: { node: Block }) {
 function SummaryBlock({ node }: { node: Block }) {
   return (
     <div style={{ background: COLORS.surface, border: `1px solid ${COLORS.accent}`, borderRadius: 8, padding: '12px 16px' }}>
-      {node.timestamp && <div style={{ fontSize: FONT.size.caption, color: COLORS.textMuted, marginBottom: 6 }}>{node.timestamp}</div>}
+      {node.timestamp && <div style={{ fontSize: FONT.size.caption, color: COLORS.textMuted, marginBottom: SPACE[1.5] }}>{node.timestamp}</div>}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
         <div style={{ fontSize: FONT.size.body, fontWeight: 500, color: COLORS.text }}>{node.title}</div>
         <span style={{ fontSize: FONT.size.caption, color: COLORS.accent, border: `1px solid ${COLORS.accentDim}`, borderRadius: RADIUS.sm, padding: '1px 6px' }}>summary</span>

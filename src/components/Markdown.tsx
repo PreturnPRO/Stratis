@@ -1,5 +1,5 @@
 import React from "react";
-import { COLORS, FONT, RADIUS } from "../tokens/colors";
+import { COLORS, FONT, RADIUS, SPACE } from "../tokens/colors";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Minimal, dependency-free Markdown renderer for the PM document article view.
@@ -137,13 +137,13 @@ export function Markdown({ children }: { children: string }) {
             return <div key={i} style={H_STYLE[b.level] ?? H_STYLE[3]}>{renderInline(b.text)}</div>;
           case "ul":
             return (
-              <ul key={i} style={{ margin: "8px 0", paddingLeft: 22, display: "flex", flexDirection: "column", gap: 5 }}>
+              <ul key={i} style={{ margin: "8px 0", paddingLeft: SPACE[6], display: "flex", flexDirection: "column", gap: SPACE[1.5] }}>
                 {b.items.map((it, j) => <li key={j}>{renderInline(it)}</li>)}
               </ul>
             );
           case "ol":
             return (
-              <ol key={i} style={{ margin: "8px 0", paddingLeft: 22, display: "flex", flexDirection: "column", gap: 5 }}>
+              <ol key={i} style={{ margin: "8px 0", paddingLeft: SPACE[6], display: "flex", flexDirection: "column", gap: SPACE[1.5] }}>
                 {b.items.map((it, j) => <li key={j}>{renderInline(it)}</li>)}
               </ol>
             );

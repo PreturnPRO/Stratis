@@ -1,5 +1,5 @@
 import React from 'react';
-import { COLORS, FONT, LETTER_SPACING, RADIUS } from '../tokens/colors';
+import { COLORS, FONT, LETTER_SPACING, RADIUS, SPACE } from '../tokens/colors';
 
 // ─── Node type + status enums ────────────────────────────────────────────────
 
@@ -193,7 +193,7 @@ export const NodeCard: React.FC<NodeCardData> = ({
         (e.currentTarget as HTMLDivElement).style.borderColor = COLORS.border;
       }}
     >
-      <div style={{ marginBottom: 6 }}>
+      <div style={{ marginBottom: SPACE[1.5] }}>
         <NodeBadge type={type} size="sm" />
       </div>
       <div
@@ -221,7 +221,7 @@ export const NodeCard: React.FC<NodeCardData> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginTop: 10,
+          marginTop: SPACE[2.5],
         }}
       >
         <span style={{ fontSize: FONT.size.caption, color: COLORS.textMuted }}>

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { COLORS, RADIUS, SHADOW, FONT, LETTER_SPACING } from "../tokens/colors";
+import { COLORS, RADIUS, SHADOW, FONT, LETTER_SPACING, SPACE } from "../tokens/colors";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Legacy style helpers — kept so pages not yet migrated keep working.
@@ -48,7 +48,7 @@ export function Avatar({ initials, color, size = 36 }: { initials: string; color
 
 export function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ color: COLORS.textMuted, fontSize: FONT.size.label, letterSpacing: LETTER_SPACING.label, marginBottom: 14 }}>
+    <div style={{ color: COLORS.textMuted, fontSize: FONT.size.label, letterSpacing: LETTER_SPACING.label, marginBottom: SPACE[4] }}>
       {children}
     </div>
   );
@@ -306,7 +306,7 @@ export function Modal({
             display: "flex",
             justifyContent: "flex-end",
             gap: 8,
-            marginTop: 22,
+            marginTop: SPACE[6],
           }}>
             {footer}
           </div>

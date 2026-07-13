@@ -1,5 +1,5 @@
 import React, { useState, type CSSProperties } from 'react'
-import { COLORS, FONT, LETTER_SPACING, RADIUS } from '../constants'
+import { COLORS, FONT, LETTER_SPACING, RADIUS, SPACE } from '../constants'
 import { Button } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { API_BASE } from '../lib/api'
@@ -194,7 +194,7 @@ const formStyle: CSSProperties = {
 const fieldStyle: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
-  gap: 6,
+  gap: SPACE[1.5],
 }
 
 const labelStyle: CSSProperties = {

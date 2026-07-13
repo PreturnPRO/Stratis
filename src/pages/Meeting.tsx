@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Mic, Square } from "lucide-react";
-import { COLORS, FONT } from "../constants";
-import { RADIUS } from "../tokens/colors";
+import { COLORS, FONT, SHADOW } from "../constants";
+import { RADIUS, SPACE } from "../tokens/colors";
 import { Button, Chip, Modal } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { SuggestionCardStack } from "../components/SuggestionCardStack";
@@ -88,7 +88,7 @@ function RecDot() {
           height: 9,
           borderRadius: "50%",
           background: COLORS.red,
-          boxShadow: `0 0 6px ${COLORS.red}`,
+          boxShadow: SHADOW.glow(COLORS.red),
         }}
       />
     </span>
@@ -569,7 +569,7 @@ useEffect(() => {
             >
               {meetingTitle}
             </h1>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: SPACE[2.5] }}>
               <Chip icon={isRecording ? <RecDot /> : <StatusDot color={COLORS.textDim} />} mono>
                 {isRecording ? "LIVE" : "STANDBY"}
               </Chip>
@@ -591,7 +591,7 @@ useEffect(() => {
             </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: SPACE[4] }}>
             {elapsed != null && (
               <div style={{ textAlign: "right" }}>
                 <div style={{ fontSize: FONT.size.subheading, fontWeight: 700, color: timeColor }}>
@@ -684,7 +684,7 @@ useEffect(() => {
                 padding: "20px",
                 display: "flex",
                 flexDirection: "column",
-                gap: 14,
+                gap: SPACE[4],
               }}
             >
               {loadingTranscript && transcripts.length === 0 ? (
@@ -700,7 +700,7 @@ useEffect(() => {
                       key={row.id}
                       style={{
                         borderBottom: `1px solid ${COLORS.border}`,
-                        paddingBottom: 10,
+                        paddingBottom: SPACE[2.5],
                       }}
                     >
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -718,7 +718,7 @@ useEffect(() => {
                   ))}
 
                   {(pendingText || liveText) && (
-                    <div style={{ paddingBottom: 10, opacity: 0.7 }}>
+                    <div style={{ paddingBottom: SPACE[2.5], opacity: 0.7 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                         <span style={{ fontWeight: 600, fontSize: FONT.size.body, color: COLORS.textMuted }}>
                           {user?.name || "Facilitator"}

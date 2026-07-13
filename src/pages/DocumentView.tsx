@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { COLORS, RADIUS, FONT, LETTER_SPACING, SHADOW, GRADIENT } from '../tokens/colors'
+import { COLORS, RADIUS, FONT, LETTER_SPACING, SHADOW, GRADIENT, SPACE } from '../tokens/colors'
 import { useAuth } from '../context/AuthContext'
 import { Button, Modal } from '../components/ui'
 import { Markdown } from '../components/Markdown'
@@ -391,7 +391,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
         </div>
 
         {versions.length > 0 && (
-          <div style={{ marginTop: 28 }}>
+          <div style={{ marginTop: SPACE[8] }}>
             <div style={styles.tocLabel}>Version history</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {versions.slice(0, 8).map((v) => {
@@ -703,7 +703,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   backBtn: {
     background: 'transparent', border: 'none', color: COLORS.accent,
-    cursor: 'pointer', fontSize: FONT.size.label, padding: 0, marginBottom: 22, textAlign: 'left',
+    cursor: 'pointer', fontSize: FONT.size.label, padding: 0, marginBottom: SPACE[6], textAlign: 'left',
   },
 
   // Article
@@ -711,9 +711,9 @@ const styles: Record<string, React.CSSProperties> = {
   article: { maxWidth: 760, margin: '0 auto', padding: '48px 40px 80px' },
   articleHeader: {
     display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
-    gap: 16, marginBottom: 28,
+    gap: 16, marginBottom: SPACE[8],
   },
-  kicker: { fontSize: FONT.size.micro, fontWeight: 700, letterSpacing: LETTER_SPACING.eyebrow, color: COLORS.accent, marginBottom: 10 },
+  kicker: { fontSize: FONT.size.micro, fontWeight: 700, letterSpacing: LETTER_SPACING.eyebrow, color: COLORS.accent, marginBottom: SPACE[2.5] },
   bigTitle: { fontSize: FONT.size.display, fontWeight: 700, margin: 0, color: COLORS.textPrimary, lineHeight: 1.15, letterSpacing: -0.5 },
   subtitle: { fontSize: FONT.size.body, color: COLORS.textMuted, margin: '10px 0 0' },
   dim: { color: COLORS.textMuted },
@@ -742,7 +742,7 @@ const styles: Record<string, React.CSSProperties> = {
   section: { marginBottom: 40, scrollMarginTop: 24 },
   sectionHead: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    gap: 12, marginBottom: 12, paddingBottom: 10, borderBottom: `1px solid ${COLORS.border}`,
+    gap: 12, marginBottom: 12, paddingBottom: SPACE[2.5], borderBottom: `1px solid ${COLORS.border}`,
   },
   sectionTitle: { fontSize: FONT.size.heading, fontWeight: 600, margin: 0, color: COLORS.textPrimary, letterSpacing: -0.2 },
   editLink: {
@@ -753,7 +753,7 @@ const styles: Record<string, React.CSSProperties> = {
   // Proposed change card
   proposed: {
     background: COLORS.surface, border: '1px solid', borderRadius: RADIUS.md,
-    padding: '14px 16px', marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8,
+    padding: '14px 16px', marginTop: SPACE[4], display: 'flex', flexDirection: 'column', gap: 8,
   },
   proposedHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   proposedTag: {
@@ -765,10 +765,10 @@ const styles: Record<string, React.CSSProperties> = {
   proposedEditor: {
     width: '100%', minHeight: 120, background: COLORS.bg,
     border: `1px solid ${COLORS.border}`, color: COLORS.textPrimary,
-    borderRadius: RADIUS.sm, padding: 10, fontSize: FONT.size.body, fontFamily: 'inherit',
+    borderRadius: RADIUS.sm, padding: SPACE[2.5], fontSize: FONT.size.body, fontFamily: 'inherit',
     resize: 'vertical', outline: 'none', lineHeight: 1.6,
   },
-  proposedActions: { display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 2 },
+  proposedActions: { display: 'flex', gap: SPACE[1.5], justifyContent: 'flex-end', marginTop: 2 },
   reviewBtn: {
     padding: '4px 11px', fontSize: FONT.size.caption, fontWeight: 600, borderRadius: RADIUS.sm,
     border: `1px solid ${COLORS.border}`, background: 'transparent',
@@ -776,7 +776,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   // Picker
-  pickerList: { display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 640 },
+  pickerList: { display: 'flex', flexDirection: 'column', gap: SPACE[2.5], maxWidth: 640 },
   pickerRow: {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     background: COLORS.surface, border: `1px solid ${COLORS.border}`,

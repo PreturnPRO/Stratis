@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { FileText } from "lucide-react";
-import { COLORS, FONT, LETTER_SPACING } from "../tokens/colors";
+import { COLORS, FONT, LETTER_SPACING, SPACE } from "../tokens/colors";
 import { Button, Chip, Modal } from "./ui";
 import { useAuth } from "../context/AuthContext";
 import { API_BASE } from "../lib/api";
@@ -131,7 +131,7 @@ export function NewMeetingModal({
           </div>
         )}
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: SPACE[1.5] }}>
           <label htmlFor="new-meeting-title" style={fieldLabelStyle}>
             Meeting title
           </label>
@@ -145,7 +145,7 @@ export function NewMeetingModal({
           />
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: SPACE[1.5] }}>
           <label htmlFor="new-meeting-project" style={fieldLabelStyle}>
             Project
           </label>
@@ -178,7 +178,7 @@ export function NewMeetingModal({
           <label style={fieldLabelStyle}>
             Planned duration — Stratis warns you when 15 minutes remain
           </label>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: SPACE[1.5], flexWrap: "wrap", alignItems: "center" }}>
             {DURATION_PRESETS.map((min) => {
               const selected = durationMinutes === min;
               return (
@@ -214,7 +214,7 @@ export function NewMeetingModal({
           </div>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: SPACE[1.5] }}>
           <label htmlFor="new-meeting-goal" style={fieldLabelStyle}>
             Meeting goal
           </label>
@@ -227,7 +227,7 @@ export function NewMeetingModal({
           />
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: SPACE[1.5] }}>
           <label htmlFor="new-meeting-brief" style={fieldLabelStyle}>
             Brief / agenda <span style={{ fontWeight: 400 }}>(optional)</span>
           </label>
