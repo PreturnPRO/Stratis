@@ -33,17 +33,6 @@ export function btnGhost(extra = {}) {
   };
 }
 
-export function tagStyle(color: string) {
-  return {
-    display: "inline-block",
-    fontSize: FONT.size.caption,
-    padding: "2px 8px",
-    borderRadius: 4,
-    background: `${color}22`,
-    color,
-  };
-}
-
 export function Avatar({ initials, color, size = 36 }: { initials: string; color: string; size?: number }) {
   return (
     <div style={{
@@ -54,12 +43,6 @@ export function Avatar({ initials, color, size = 36 }: { initials: string; color
     }}>
       {initials}
     </div>
-  );
-}
-
-export function Badge({ label, color }: { label: string; color: string }) {
-  return (
-    <span style={tagStyle(color)}>{label}</span>
   );
 }
 
@@ -200,7 +183,7 @@ export function IconButton({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Chip / Pill — compact status indicators.
+// Chip — compact status indicator.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function Chip({
@@ -231,25 +214,6 @@ export function Chip({
     }}>
       {icon}
       {children}
-    </span>
-  );
-}
-
-export function Pill({ label, color }: { label: string; color: string }) {
-  return (
-    <span style={{
-      display: "inline-flex",
-      alignItems: "center",
-      padding: "2px 8px",
-      borderRadius: RADIUS.pill,
-      background: `${color}1f`,
-      color,
-      fontSize: FONT.size.micro,
-      fontWeight: 700,
-      letterSpacing: LETTER_SPACING.wide,
-      textTransform: "uppercase",
-    }}>
-      {label}
     </span>
   );
 }

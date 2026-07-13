@@ -117,7 +117,7 @@ export function AiPresenceChip({
             style={{
               width: 2.5,
               height: 12,
-              borderRadius: 2,
+              borderRadius: RADIUS.sm,
               background: barColor,
               transformOrigin: "center",
               transition: "background 0.3s ease",

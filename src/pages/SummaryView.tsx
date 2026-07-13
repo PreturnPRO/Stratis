@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { COLORS, FONT, LETTER_SPACING } from '../tokens/colors';
+import { COLORS, FONT, LETTER_SPACING, RADIUS } from '../tokens/colors';
 import { NodeBadge as _NodeBadge } from '../components/NodeTypes';
 import { ParticipantSummaryOutput, SummaryBlock, ActionItem } from '../mocks/summaryMock';
 import { useAuth } from '../context/AuthContext';
@@ -119,7 +119,7 @@ const TimerBar: React.FC<{
           fontSize: FONT.size.caption,
           fontWeight: 500,
           padding: '5px 12px',
-          borderRadius: 5,
+          borderRadius: RADIUS.sm,
           border: `1px solid ${COLORS.border}`,
           background: COLORS.surface,
           color: COLORS.textMuted,
@@ -134,7 +134,7 @@ const TimerBar: React.FC<{
           fontSize: FONT.size.caption,
           fontWeight: 500,
           padding: '5px 12px',
-          borderRadius: 5,
+          borderRadius: RADIUS.sm,
           border: `1px solid ${COLORS.teal}55`,
           background: COLORS.tealBg,
           color: COLORS.teal,
@@ -254,7 +254,7 @@ const ActionItemsSection: React.FC<{ items: ActionItem[] }> = ({ items }) => (
             color: COLORS.textMuted,
             background: COLORS.surfaceMuted,
             border: `1px solid ${COLORS.border}`,
-            borderRadius: 4,
+            borderRadius: RADIUS.sm,
             padding: '2px 8px',
             whiteSpace: 'nowrap',
             flexShrink: 0,

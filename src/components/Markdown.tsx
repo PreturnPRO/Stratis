@@ -1,5 +1,5 @@
 import React from "react";
-import { COLORS, FONT } from "../tokens/colors";
+import { COLORS, FONT, RADIUS } from "../tokens/colors";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Minimal, dependency-free Markdown renderer for the PM document article view.
@@ -13,7 +13,7 @@ const codeStyle: React.CSSProperties = {
   fontSize: "0.88em",
   background: COLORS.surfaceMuted,
   border: `1px solid ${COLORS.border}`,
-  borderRadius: 4,
+  borderRadius: RADIUS.sm,
   padding: "1px 5px",
 };
 

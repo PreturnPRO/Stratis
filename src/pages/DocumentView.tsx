@@ -747,7 +747,7 @@ const styles: Record<string, React.CSSProperties> = {
   sectionTitle: { fontSize: FONT.size.heading, fontWeight: 600, margin: 0, color: COLORS.textPrimary, letterSpacing: -0.2 },
   editLink: {
     background: 'transparent', border: 'none', color: COLORS.textMuted,
-    fontSize: FONT.size.label, cursor: 'pointer', padding: '2px 6px', borderRadius: 4,
+    fontSize: FONT.size.label, cursor: 'pointer', padding: '2px 6px', borderRadius: RADIUS.sm,
   },
 
   // Proposed change card
