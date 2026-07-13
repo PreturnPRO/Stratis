@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { COLORS, FONT } from "./constants";
+import { COLORS, FONT, RADIUS, SPACE } from "./constants";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Sidebar from "./components/Sidebar";
 import MeetingTransition from "./components/MeetingTransition";
@@ -211,7 +211,7 @@ function AppShell() {
             display: "flex",
             alignItems: "center",
             padding: "0 12px",
-            gap: 6,
+            gap: SPACE[1.5],
             flexShrink: 0,
           }}
         >
@@ -222,7 +222,7 @@ function AppShell() {
             style={{
               width: 26,
               height: 26,
-              borderRadius: 5,
+              borderRadius: RADIUS.sm,
               background: "transparent",
               border: "none",
               color: canBack ? COLORS.textMuted : COLORS.textDim,
@@ -243,7 +243,7 @@ function AppShell() {
             style={{
               width: 26,
               height: 26,
-              borderRadius: 5,
+              borderRadius: RADIUS.sm,
               background: "transparent",
               border: "none",
               color: canForward ? COLORS.textMuted : COLORS.textDim,
@@ -299,7 +299,7 @@ function AppShell() {
                       fontWeight: isCurrent ? 500 : 400,
                       color: isCurrent ? COLORS.text : COLORS.textMuted,
                       cursor: isClickable ? "pointer" : "default",
-                      borderRadius: 4,
+                      borderRadius: RADIUS.sm,
                     }}
                   >
                     {PAGE_LABELS[entry.page] ?? entry.page}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { COLORS, FONT, LETTER_SPACING, RADIUS } from "../tokens/colors";
+import { COLORS, FONT, LETTER_SPACING, RADIUS, SPACE } from "../tokens/colors";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Live-meeting ambient signifiers:
@@ -89,7 +89,7 @@ export function AiPresenceChip({
       style={{
         display: "inline-flex",
         alignItems: "center",
-        gap: 6,
+        gap: SPACE[1.5],
         padding: "3px 9px",
         borderRadius: RADIUS.pill,
         background: COLORS.surface,
@@ -117,7 +117,7 @@ export function AiPresenceChip({
             style={{
               width: 2.5,
               height: 12,
-              borderRadius: 2,
+              borderRadius: RADIUS.sm,
               background: barColor,
               transformOrigin: "center",
               transition: "background 0.3s ease",

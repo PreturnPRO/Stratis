@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { COLORS, FONT, LETTER_SPACING } from '../tokens/colors';
+import { COLORS, FONT, LETTER_SPACING, RADIUS, SPACE } from '../tokens/colors';
 import { NodeBadge as _NodeBadge } from '../components/NodeTypes';
 import { ParticipantSummaryOutput, SummaryBlock, ActionItem } from '../mocks/summaryMock';
 import { useAuth } from '../context/AuthContext';
@@ -64,7 +64,7 @@ const FacilitatorBadge: React.FC = () => (
       border: `1px solid ${COLORS.cyan}55`,
       borderRadius: 3,
       padding: '1px 6px',
-      marginLeft: 6,
+      marginLeft: SPACE[1.5],
       fontWeight: 500,
     }}
   >
@@ -119,7 +119,7 @@ const TimerBar: React.FC<{
           fontSize: FONT.size.caption,
           fontWeight: 500,
           padding: '5px 12px',
-          borderRadius: 5,
+          borderRadius: RADIUS.sm,
           border: `1px solid ${COLORS.border}`,
           background: COLORS.surface,
           color: COLORS.textMuted,
@@ -134,7 +134,7 @@ const TimerBar: React.FC<{
           fontSize: FONT.size.caption,
           fontWeight: 500,
           padding: '5px 12px',
-          borderRadius: 5,
+          borderRadius: RADIUS.sm,
           border: `1px solid ${COLORS.teal}55`,
           background: COLORS.tealBg,
           color: COLORS.teal,
@@ -157,7 +157,7 @@ const SummaryBlockSection: React.FC<{
 
   return (
     <div style={{ marginBottom: 20 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: SPACE[2.5] }}>
         <span aria-hidden="true" style={{ fontSize: FONT.size.body, color: cfg.color, fontWeight: 500, width: 16, textAlign: 'center' }}>
           {cfg.icon}
         </span>
@@ -185,10 +185,10 @@ const SummaryBlockSection: React.FC<{
                 border: `1px solid ${COLORS.border}`,
                 borderRadius: 6,
                 padding: '10px 12px',
-                marginBottom: 6,
+                marginBottom: SPACE[1.5],
                 display: 'flex',
                 alignItems: 'flex-start',
-                gap: 10,
+                gap: SPACE[2.5],
               }}
             >
               <span
@@ -197,7 +197,7 @@ const SummaryBlockSection: React.FC<{
                   height: 6,
                   borderRadius: '50%',
                   background: cfg.color,
-                  marginTop: 5,
+                  marginTop: SPACE[1.5],
                   flexShrink: 0,
                 }}
               />
@@ -218,7 +218,7 @@ const SummaryBlockSection: React.FC<{
 
 const ActionItemsSection: React.FC<{ items: ActionItem[] }> = ({ items }) => (
   <div style={{ marginBottom: 20 }}>
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: SPACE[2.5] }}>
       <span aria-hidden="true" style={{ fontSize: FONT.size.body, color: COLORS.teal, fontWeight: 500, width: 16, textAlign: 'center' }}>✓</span>
       <span
         style={{
@@ -240,7 +240,7 @@ const ActionItemsSection: React.FC<{ items: ActionItem[] }> = ({ items }) => (
           border: `1px solid ${COLORS.border}`,
           borderRadius: 6,
           padding: '10px 12px',
-          marginBottom: 6,
+          marginBottom: SPACE[1.5],
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -254,7 +254,7 @@ const ActionItemsSection: React.FC<{ items: ActionItem[] }> = ({ items }) => (
             color: COLORS.textMuted,
             background: COLORS.surfaceMuted,
             border: `1px solid ${COLORS.border}`,
-            borderRadius: 4,
+            borderRadius: RADIUS.sm,
             padding: '2px 8px',
             whiteSpace: 'nowrap',
             flexShrink: 0,

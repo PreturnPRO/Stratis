@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { COLORS, FONT, SHADOW, TRANSITION, GRADIENT } from "../constants";
+import { COLORS, FONT, SHADOW, TRANSITION, GRADIENT, SPACE } from "../constants";
 import { Button } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { NewMeetingModal } from "../components/NewMeetingModal";
@@ -258,7 +258,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
             color: COLORS.red,
             borderRadius: 8,
             padding: "10px 12px",
-            marginBottom: 18,
+            marginBottom: SPACE[5],
             fontSize: FONT.size.body,
           }}
         >
@@ -305,7 +305,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
               <EmptyState message="No meetings yet. Create your first meeting." />
             ) : (
               <div
-                style={{ display: "flex", flexDirection: "column", gap: 10 }}
+                style={{ display: "flex", flexDirection: "column", gap: SPACE[2.5] }}
               >
                 {meetings.map((m) => (
                   <HoverLift
@@ -331,7 +331,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
                             color: COLORS.text,
                             fontSize: FONT.size.body,
                             fontWeight: 500,
-                            marginBottom: 6,
+                            marginBottom: SPACE[1.5],
                           }}
                         >
                           {m.title}
@@ -372,7 +372,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
               <EmptyState message="No summaries yet. End a meeting to generate one." />
             ) : (
               <div
-                style={{ display: "flex", flexDirection: "column", gap: 10 }}
+                style={{ display: "flex", flexDirection: "column", gap: SPACE[2.5] }}
               >
                 {summaries.map((s) => (
                   <HoverLift

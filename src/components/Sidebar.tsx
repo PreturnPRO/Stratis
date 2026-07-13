@@ -7,7 +7,7 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import { COLORS, NAV_ITEMS, FONT } from "../constants";
+import { COLORS, NAV_ITEMS, FONT, RADIUS, SPACE } from "../constants";
 import { useAuth } from "../context/AuthContext";
 
 // ─── Icon registry ─────────────────────────────────────────────────────────────
@@ -21,9 +21,12 @@ const ICON_MAP: Record<string, LucideIcon> = {
 
 // ─── Avatar helpers ────────────────────────────────────────────────────────────
 
+// Kept independent from the semantic COLORS palette (name-hash lookup, not
+// status meaning), but must not visually collide with it — avoid shades near
+// COLORS.danger and COLORS.teal.
 const AVATAR_COLORS = [
-  "#c0392b", "#2e86c1", "#1a7a4a", "#8e44ad",
-  "#d35400", "#16a085", "#2c3e50", "#7f8c8d",
+  "#a8556c", "#2e86c1", "#1a7a4a", "#8e44ad",
+  "#d35400", "#5c7a89", "#2c3e50", "#7f8c8d",
 ];
 
 function nameToInitials(name: string): string {
@@ -63,7 +66,7 @@ export default function Sidebar({
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
-      paddingTop: 10,
+      paddingTop: SPACE[2.5],
       paddingBottom: 12,
       flexShrink: 0,
     }}>
@@ -93,7 +96,7 @@ export default function Sidebar({
               title={item.label}
               onClick={() => onNav(item.id)}
               style={{
-                width: 56, height: 56, borderRadius: 10,
+                width: 56, height: 56, borderRadius: RADIUS.lg,
                 background: isActive ? COLORS.surfaceHover : "transparent",
                 border: "none", cursor: "pointer",
                 display: "flex", alignItems: "center", justifyContent: "center",
