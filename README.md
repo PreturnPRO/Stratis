@@ -63,7 +63,6 @@ export const WS_BASE  = import.meta.env.VITE_WS_BASE  ?? API_BASE.replace(/^http
   - `mock`
   - `typhoon` (Typhoon Whisper turbo via HuggingFace inference)
 
----
 
 ## Project Structure
 
@@ -738,3 +737,5 @@ npm run db:reset
 npm run typecheck
 npm run build
 ```
+
+---

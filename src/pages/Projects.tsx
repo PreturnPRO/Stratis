@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { COLORS, RADIUS, FONT, LETTER_SPACING } from "../tokens/colors";
+import { COLORS, RADIUS, FONT, LETTER_SPACING, SPACE } from "../tokens/colors";
 import { Button, Modal } from "../components/ui";
 import { NewMeetingModal } from "../components/NewMeetingModal";
 import { useAuth } from "../context/AuthContext";
@@ -127,7 +127,7 @@ export default function Projects({ onNav }: Props) {
       {error && (
         <div style={{
           background: COLORS.redBg, border: `1px solid ${COLORS.red}`, color: COLORS.red,
-          borderRadius: RADIUS.md, padding: "10px 14px", fontSize: FONT.size.body, marginBottom: 18,
+          borderRadius: RADIUS.md, padding: "10px 14px", fontSize: FONT.size.body, marginBottom: SPACE[5],
         }}>
           {error}
         </div>
@@ -216,7 +216,7 @@ export default function Projects({ onNav }: Props) {
             </>
           }
         >
-          <label htmlFor="new-project-name" style={{ color: COLORS.textMuted, fontSize: FONT.size.label, letterSpacing: LETTER_SPACING.wide, display: "block", marginBottom: 6 }}>
+          <label htmlFor="new-project-name" style={{ color: COLORS.textMuted, fontSize: FONT.size.label, letterSpacing: LETTER_SPACING.wide, display: "block", marginBottom: SPACE[1.5] }}>
             Project name
           </label>
           <input

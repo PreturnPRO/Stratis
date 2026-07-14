@@ -57,7 +57,12 @@ export type ColorToken = keyof typeof COLORS;
 // 4pt base. 8-12px = tight grouping (related elements); 48-96px = generous
 // separation (distinct sections). See layout.md rhythm guidance.
 export const SPACE = {
-  0: 0, 1: 4, 2: 8, 3: 12, 4: 16, 5: 20, 6: 24, 8: 32, 10: 40, 12: 48, 16: 64, 24: 96,
+  0: 0, 1: 4,
+  // half-steps — an unofficial pattern used often enough across the app
+  // (icon-to-label gaps, tight badge padding) to promote to real tokens
+  // rather than retrofit to the nearest full step.
+  1.5: 6, 2: 8, 2.5: 10,
+  3: 12, 4: 16, 5: 20, 6: 24, 8: 32, 10: 40, 12: 48, 16: 64, 24: 96,
 } as const;
 
 // ── Corner radii ──────────────────────────────────────────────────────────────
@@ -78,6 +83,8 @@ export const SHADOW = {
   // content (not standing surfaces) — e.g. the live suggestion stack.
   float: "0 10px 28px rgba(0,0,0,0.42), 0 2px 6px rgba(0,0,0,0.30)",
   lg: "0 16px 40px rgba(0,0,0,0.50)",
+  // marketing-surface only — the deep product-shot lift on Landing, never used in-app
+  hero: "0 30px 80px rgba(0,0,0,0.55)",
   // accent glow — pass any hex color
   glow: (c: string) => `0 0 0 1px ${c}33, 0 6px 20px ${c}22`,
 } as const;

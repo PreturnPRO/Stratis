@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { COLORS, FONT, LETTER_SPACING, SHADOW, GLASS } from '../tokens/colors'
+import { COLORS, FONT, LETTER_SPACING, SHADOW, GLASS, SPACE } from '../tokens/colors'
 import type { LiveCardType, LiveCardUrgency } from '../../shared/types'
 
 export type CardStatus = 'active' | 'answered'
@@ -140,7 +140,7 @@ export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkAct
                 <span style={{
                   ...styles.dot,
                   background: COLORS.accent,
-                  marginRight: 6,
+                  marginRight: SPACE[1.5],
                   ...(queuedActive.length > 5 ? styles.backlogDotPulse : null),
                 }} />
               )}
@@ -358,7 +358,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '12px 14px',
     display: 'flex',
     flexDirection: 'column',
-    gap: 6,
+    gap: SPACE[1.5],
     border: `1px solid ${COLORS.border}`,
     boxShadow: SHADOW.sm,
     animation: 'cardIn 0.22s ease',
@@ -372,7 +372,7 @@ const styles: Record<string, React.CSSProperties> = {
   tag: {
     display: 'flex',
     alignItems: 'center',
-    gap: 5,
+    gap: SPACE[1.5],
   },
   dot: {
     width: 6,
@@ -477,7 +477,7 @@ const styles: Record<string, React.CSSProperties> = {
   queuedRow: {
     display: 'flex',
     alignItems: 'center',
-    gap: 6,
+    gap: SPACE[1.5],
     borderBottom: `1px solid ${COLORS.border}`,
   },
   queuedRowMain: {
@@ -519,7 +519,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '10px 14px',
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
+    gap: SPACE[2.5],
     border: `1px solid ${COLORS.border}`,
     background: COLORS.surfaceMuted,
     animation: 'cardIn 0.22s ease',

@@ -1,5 +1,5 @@
 import React from 'react';
-import { COLORS, FONT, LETTER_SPACING } from '../tokens/colors';
+import { COLORS, FONT, LETTER_SPACING, RADIUS, SPACE } from '../tokens/colors';
 
 // ─── Node type + status enums ────────────────────────────────────────────────
 
@@ -30,41 +30,41 @@ interface NodeTypeTokens {
 
 export const NODE_TYPE_TOKENS: Record<NodeType, NodeTypeTokens> = {
   DECISION: {
-    dot: '#378add',
-    accent: '#378add',
-    badgeBg: '#0c1e38',
-    badgeText: '#5ba3e8',
-    badgeBorder: '#1a3a5c',
+    dot: COLORS.cyan,
+    accent: COLORS.cyan,
+    badgeBg: COLORS.cyanBg,
+    badgeText: COLORS.cyan,
+    badgeBorder: COLORS.cyan,
     label: 'Decision',
   },
   ASSUMPTION: {
-    dot: COLORS.accent,
-    accent: COLORS.accent,
-    badgeBg: COLORS.amberSubtle,
-    badgeText: '#ef9f27',
-    badgeBorder: '#3a2800',
+    dot: COLORS.teal,
+    accent: COLORS.teal,
+    badgeBg: COLORS.tealBg,
+    badgeText: COLORS.teal,
+    badgeBorder: COLORS.teal,
     label: 'Assumption',
   },
   OPEN_QUESTION: {
     dot: COLORS.red,
     accent: COLORS.red,
     badgeBg: COLORS.redBg,
-    badgeText: '#e8776e',
-    badgeBorder: '#4a1e1a',
+    badgeText: COLORS.red,
+    badgeBorder: COLORS.red,
     label: 'Open question',
   },
   RISK: {
     dot: COLORS.orange,
     accent: COLORS.orange,
-    badgeBg: '#1e1000',
-    badgeText: '#e8861a',
-    badgeBorder: '#3a1e00',
+    badgeBg: COLORS.orangeBg,
+    badgeText: COLORS.orange,
+    badgeBorder: COLORS.orange,
     label: 'Risk',
   },
   SUMMARY: {
     dot: COLORS.textMuted,
     accent: COLORS.textDim,
-    badgeBg: '#151515',
+    badgeBg: COLORS.surfaceMuted,
     badgeText: COLORS.textMuted,
     badgeBorder: COLORS.border,
     label: 'Summary',
@@ -89,7 +89,7 @@ export const NodeBadge: React.FC<NodeBadgeProps> = ({ type, size = 'md' }) => {
         alignItems: 'center',
         gap: isSm ? 4 : 5,
         padding: isSm ? '2px 7px' : '3px 9px',
-        borderRadius: 4,
+        borderRadius: RADIUS.sm,
         fontSize: isSm ? FONT.size.micro : FONT.size.caption,
         fontWeight: 500,
         letterSpacing: LETTER_SPACING.wide,
@@ -115,11 +115,11 @@ export const NodeBadge: React.FC<NodeBadgeProps> = ({ type, size = 'md' }) => {
 // ─── NodeStatusPill ───────────────────────────────────────────────────────────
 
 const STATUS_TOKENS: Record<NodeStatus, { bg: string; text: string }> = {
-  VALIDATED:   { bg: '#0c1e38', text: '#5ba3e8' },
-  UNVALIDATED: { bg: '#1a1200', text: '#ef9f27' },
-  STALLED:     { bg: '#2a0f0d', text: '#e8776e' },
-  BLOCKED:     { bg: '#1e1000', text: '#e8861a' },
-  ARCHIVED:    { bg: '#151515', text: '#666666' },
+  VALIDATED:   { bg: COLORS.cyanBg,   text: COLORS.cyan },
+  UNVALIDATED: { bg: COLORS.orangeBg, text: COLORS.orange },
+  STALLED:     { bg: COLORS.redBg,    text: COLORS.red },
+  BLOCKED:     { bg: COLORS.orangeBg, text: COLORS.orange },
+  ARCHIVED:    { bg: COLORS.surfaceMuted, text: COLORS.textMuted },
 };
 
 const STATUS_LABELS: Record<NodeStatus, string> = {
@@ -193,7 +193,7 @@ export const NodeCard: React.FC<NodeCardData> = ({
         (e.currentTarget as HTMLDivElement).style.borderColor = COLORS.border;
       }}
     >
-      <div style={{ marginBottom: 6 }}>
+      <div style={{ marginBottom: SPACE[1.5] }}>
         <NodeBadge type={type} size="sm" />
       </div>
       <div
@@ -221,7 +221,7 @@ export const NodeCard: React.FC<NodeCardData> = ({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          marginTop: 10,
+          marginTop: SPACE[2.5],
         }}
       >
         <span style={{ fontSize: FONT.size.caption, color: COLORS.textMuted }}>

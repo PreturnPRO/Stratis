@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Mic, Square, ChevronDown } from "lucide-react";
 import { COLORS, FONT, SHADOW, LETTER_SPACING } from "../constants";
-import { RADIUS } from "../tokens/colors";
+import { RADIUS, SPACE } from "../tokens/colors";
 import { Button, Chip, Modal } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { SuggestionCardStack } from "../components/SuggestionCardStack";
@@ -95,7 +95,7 @@ function RecDot() {
           height: 9,
           borderRadius: "50%",
           background: COLORS.red,
-          boxShadow: `0 0 6px ${COLORS.red}`,
+          boxShadow: SHADOW.glow(COLORS.red),
         }}
       />
     </span>
@@ -445,24 +445,29 @@ export default function Meeting({ onNav }: MeetingProps) {
   // Planned duration: the server-stored value on the meeting wins (it survives
   // cleared localStorage and other devices); localStorage covers sessions
   // created before duration_minutes existed; 60 is the last-resort default.
-  const recoveredDuration =
-    recovery.session?.id === sessionId ? recovery.session?.duration_minutes : null;
+  const recoveredDuration = recovery.session?.id === sessionId ? recovery.session?.duration_minutes : null;
 
-  useEffect(() => {
-    if (!sessionId) {
-      setDurationMin(null);
-      return;
-    }
-    const server = Number(recoveredDuration);
-    if (Number.isFinite(server) && server > 0) {
-      setDurationMin(server);
-      window.localStorage.setItem(`stratis.duration.${sessionId}`, String(server));
-      return;
-    }
+useEffect(() => {
+  if (!sessionId) {
+    setDurationMin(null);
+    return;
+  }
+
+  // 1. If server recovery has finished and returned a valid duration, prioritize it immediately
+  const server = Number(recoveredDuration);
+  if (Number.isFinite(server) && server > 0) {
+    setDurationMin(server);
+    window.localStorage.setItem(`stratis.duration.${sessionId}`, String(server));
+    return;
+  }
+
+  // 2. Wait until recovery finishes loading before falling back to local storage or defaults
+  if (recovery.status !== "loading") {
     const raw = window.localStorage.getItem(`stratis.duration.${sessionId}`);
     const n = raw ? parseInt(raw, 10) : NaN;
     setDurationMin(Number.isFinite(n) && n > 0 ? n : 60);
-  }, [sessionId, recoveredDuration]);
+  }
+}, [sessionId, recoveredDuration, recovery.status]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -601,7 +606,7 @@ export default function Meeting({ onNav }: MeetingProps) {
             >
               {meetingTitle}
             </h1>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: SPACE[2.5] }}>
               <Chip icon={isRecording ? <RecDot /> : <StatusDot color={COLORS.textDim} />} mono>
                 {isRecording ? "LIVE" : "STANDBY"}
               </Chip>
@@ -623,7 +628,7 @@ export default function Meeting({ onNav }: MeetingProps) {
             </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: SPACE[4] }}>
             {elapsed != null && (
               <div style={{ textAlign: "right" }}>
                 <div style={{ fontSize: FONT.size.subheading, fontWeight: 700, color: timeColor }}>
@@ -722,7 +727,7 @@ export default function Meeting({ onNav }: MeetingProps) {
                 padding: "20px",
                 display: "flex",
                 flexDirection: "column",
-                gap: 14,
+                gap: SPACE[4],
               }}
             >
               {loadingTranscript && transcripts.length === 0 ? (
@@ -738,7 +743,7 @@ export default function Meeting({ onNav }: MeetingProps) {
                       key={row.id}
                       style={{
                         borderBottom: `1px solid ${COLORS.border}`,
-                        paddingBottom: 10,
+                        paddingBottom: SPACE[2.5],
                       }}
                     >
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -756,7 +761,7 @@ export default function Meeting({ onNav }: MeetingProps) {
                   ))}
 
                   {(pendingText || liveText) && (
-                    <div style={{ paddingBottom: 10, opacity: 0.7 }}>
+                    <div style={{ paddingBottom: SPACE[2.5], opacity: 0.7 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                         <span style={{ fontWeight: 600, fontSize: FONT.size.body, color: COLORS.textMuted }}>
                           {user?.name || "Facilitator"}
