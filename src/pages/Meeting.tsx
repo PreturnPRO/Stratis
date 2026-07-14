@@ -16,17 +16,25 @@ import { useAiBlocks } from "../hooks/useAiBlocks";
 import { useSuggestionSocket } from "../hooks/useSuggestionSocket";
 import { useAuth } from "../context/AuthContext";
 import { useSessionRecovery } from "../hooks/useSessionRecovery";
+import { useMediaRecorder } from "../hooks/useMediaRecorder";
 import { API_BASE } from "../lib/api";
 
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 
-// Adaptive AI chunking: recognized words render instantly in the transcript
-// (ghost row) WITHOUT calling the question AI. A chunk is sent to the AI only
-// when the speaker pauses on a finalized sentence with enough substance, or
-// when the hard time cap is reached — whichever comes first. Thai has no word
-// spaces, so "substance" is measured in characters, not words.
-const CHUNK_MAX_MS = 7000;
-const CHUNK_MIN_CHARS = 40;
+// Mic capture cadence: record short standalone WebM/Opus clips and POST each to
+// the backend, which runs Google Speech v2 chirp_2 (th-TH,en-US). Short clips
+// (not timesliced fragments) keep every upload independently decodable.
+const CHUNK_MAX_MS = 2000;
+
+// Blob → base64 data URL. The backend strips the `data:...;base64,` prefix.
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(String(reader.result));
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
 
 interface MeetingProps {
   onNav?: (id: string, params?: Record<string, string>) => void;
@@ -132,10 +140,7 @@ export default function Meeting({ onNav }: MeetingProps) {
   const [ending, setEnding] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
 
-  // Web Speech API Native Recording States
   const [isRecording, setIsRecording] = useState(false);
-  const isRecordingRef = useRef(false);
-  const recognitionRef = useRef<any>(null);
 
   const [durationMin, setDurationMin] = useState<number | null>(null);
   const [startMs, setStartMs] = useState<number | null>(null);
@@ -147,7 +152,7 @@ export default function Meeting({ onNav }: MeetingProps) {
   // Ghost-row state: words shown instantly, before any backend/AI round-trip.
   // liveText = recognized but not yet flushed; pendingText = flushed chunk
   // still in flight to the backend.
-  const [liveText, setLiveText] = useState("");
+  const [liveText] = useState("");
   const [pendingText, setPendingText] = useState("");
 
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
@@ -165,13 +170,19 @@ export default function Meeting({ onNav }: MeetingProps) {
     });
   }, []);
 
-  // --- Real-Time STT Chunk Ingestion Pipeline ---
-  const sendTextChunk = useCallback(async (text: string) => {
-    if (!token || !sessionId || !text.trim()) return;
+  // --- Real-Time STT: mic → MediaRecorder → Chirp 2 (all browsers) ---
+  // The old path used the browser Web Speech API, which only exists in
+  // Chrome/Edge/Safari (Firefox has none) and transcribes on Google's consumer
+  // endpoint — never our Chirp 2 project. MediaRecorder + getUserMedia work in
+  // every modern browser; each short clip POSTs to /api/transcript/audio-chunk,
+  // which runs Speech v2 chirp_2 (th-TH,en-US) and returns Thai transcript rows.
+  const sendAudioChunk = useCallback(async (blob: Blob) => {
+    if (!token || !sessionId || blob.size === 0) return;
     setSendingChunk(true);
-    setPendingText(text.trim());
+    setPendingText("Transcribing…");
     try {
-      const response = await fetch(`${API_BASE}/api/transcript/chunk`, {
+      const audioBase64 = await blobToBase64(blob);
+      const response = await fetch(`${API_BASE}/api/transcript/audio-chunk`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -180,188 +191,48 @@ export default function Meeting({ onNav }: MeetingProps) {
         body: JSON.stringify({
           sessionId,
           session_id: sessionId,
-          text: text.trim(),
+          audioBase64,
+          mimeType: blob.type || "audio/webm",
           speaker: user?.name || "Facilitator",
-          timestamp: new Date().toISOString(),
         }),
       });
 
       const payload = await response.json();
       if (response.ok && payload.ok && payload.data?.transcript) {
         appendTranscript(payload.data.transcript);
+        setLastSpeechMs(Date.now());
         if (payload.data.ai?.blocks) {
           ai.append(payload.data.ai.blocks, payload.data.ai.provider);
         }
-      } else {
-        console.warn("[speech:chunk] Pipeline rejected request:", payload.error);
+      } else if (!payload.ok) {
+        console.warn("[speech:audio] Pipeline rejected chunk:", payload.error);
       }
     } catch (err) {
-      console.error("[speech:chunk] Connection fault:", err);
+      console.error("[speech:audio] Connection fault:", err);
     } finally {
       setSendingChunk(false);
       setPendingText("");
     }
   }, [token, sessionId, authHeaders, user?.name, appendTranscript, ai]);
 
-  const sendTextChunkRef = useRef(sendTextChunk);
-  useEffect(() => {
-    sendTextChunkRef.current = sendTextChunk;
-  }, [sendTextChunk]);
-
-  // Dual-buffer silence-resistant accumulation strategy
-  const bufferRef = useRef<string>("");
-  const interimRef = useRef<string>("");
-  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const flushBuffer = useCallback(() => {
-    if (flushTimerRef.current) {
-      clearTimeout(flushTimerRef.current);
-      flushTimerRef.current = null;
-    }
-
-    let text = bufferRef.current.trim();
-    if (interimRef.current.trim()) {
-      text = (text + " " + interimRef.current.trim()).trim();
-    }
-
-    bufferRef.current = "";
-    interimRef.current = "";
-    setLiveText("");
-
-    if (text) {
-      sendTextChunkRef.current(text);
-    }
-  }, []);
+  const {
+    error: recError,
+    start: startRec,
+    stop: stopRec,
+  } = useMediaRecorder({ onChunk: sendAudioChunk, chunkIntervalMs: CHUNK_MAX_MS });
 
   useEffect(() => {
-    const SpeechRecognitionEngine =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognitionEngine) {
-      console.warn("[speech] Native SpeechRecognition not available in this host environment.");
-      return;
-    }
-
-    const rec = new SpeechRecognitionEngine();
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.lang = "th-TH"; // Web Speech API supports one language per recognition instance; Thai only
-
-    rec.onstart = () => {
-      console.log("[speech] Recognition pipeline active.");
-    };
-
-    rec.onresult = (event: any) => {
-      let finalTranscript = "";
-      let interimTranscript = "";
-
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        // Correctly index SpeechRecognitionAlternative using item(0) (bracket-free!)
-        const alternative = event.results[i].item(0);
-        const transcript = alternative ? alternative.transcript : "";
-
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript;
-        } else {
-          interimTranscript += transcript;
-        }
-      }
-
-      // Any recognized speech (final or interim) marks the AI as "hearing you"
-      // for the presence chip.
-      if (finalTranscript || interimTranscript) {
-        setLastSpeechMs(Date.now());
-      }
-
-      if (finalTranscript) {
-        bufferRef.current = (bufferRef.current + " " + finalTranscript).trim();
-        interimRef.current = "";
-      } else {
-        interimRef.current = interimTranscript;
-      }
-
-      // Ghost row: mirror every recognized word to the transcript instantly —
-      // no backend or AI round-trip involved.
-      setLiveText((bufferRef.current + " " + interimRef.current).trim());
-
-      // Adaptive flush: a finalized sentence with no trailing interim means
-      // the speaker paused — hand the chunk to the question AI now, on a
-      // natural thought boundary, instead of waiting for the cap.
-      if (
-        finalTranscript &&
-        !interimTranscript &&
-        bufferRef.current.length >= CHUNK_MIN_CHARS
-      ) {
-        flushBuffer();
-        return;
-      }
-
-      // Hard cap: even mid-monologue, flush at least every CHUNK_MAX_MS.
-      if (bufferRef.current.trim() || interimRef.current.trim()) {
-        if (!flushTimerRef.current) {
-          flushTimerRef.current = setTimeout(() => {
-            flushBuffer();
-          }, CHUNK_MAX_MS);
-        }
-      }
-    };
-
-    rec.onerror = (event: any) => {
-      console.error("[speech] Capture engine error:", event.error);
-      if (event.error === "not-allowed") {
-        setIsRecording(false);
-        isRecordingRef.current = false;
-      }
-    };
-
-    rec.onend = () => {
-      console.log("[speech] Mic stream went silent or disconnected.");
-      flushBuffer();
-
-      if (isRecordingRef.current) {
-        console.log("[speech] Re-initiating active capture stream...");
-        try {
-          rec.start();
-        } catch (e) {
-          console.warn("[speech] Auto-restart sequence missed:", e);
-        }
-      }
-    };
-
-    recognitionRef.current = rec;
-
-    return () => {
-      if (rec) {
-        rec.onend = null;
-        rec.onerror = null;
-        rec.onresult = null;
-        try {
-          rec.stop();
-        } catch (e) {}
-      }
-      if (flushTimerRef.current) {
-        clearTimeout(flushTimerRef.current);
-      }
-    };
-  }, [flushBuffer]);
+    if (recError) setError(recError);
+  }, [recError]);
 
   const startListening = () => {
-    if (!recognitionRef.current) return;
     setIsRecording(true);
-    isRecordingRef.current = true;
-    try {
-      recognitionRef.current.start();
-    } catch (e) {
-      console.warn("[speech] Already listening - start aborted:", e);
-    }
+    void startRec();
   };
 
   const stopListening = () => {
-    if (!recognitionRef.current) return;
     setIsRecording(false);
-    isRecordingRef.current = false;
-    recognitionRef.current.stop();
-    flushBuffer();
+    stopRec();
   };
 
   // --- Past Transcript Syncing ---

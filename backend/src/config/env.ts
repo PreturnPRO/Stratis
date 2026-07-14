@@ -48,7 +48,11 @@ export const env = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "7d",
 
   ai: {
-    provider: (process.env.AI_PROVIDER ?? "groq") as "groq" | "ollama" | "mock" | "typhoon",
+    provider: (process.env.AI_PROVIDER ?? "groq") as
+      | "groq"
+      | "ollama"
+      | "mock"
+      | "typhoon",
     timeoutMs: Number(process.env.AI_TIMEOUT_MS ?? 10000),
     groq: {
       apiKey: process.env.GROQ_API_KEY ?? "",
@@ -63,16 +67,33 @@ export const env = {
       apiKey: process.env.TYPHOON_API_KEY ?? "",
       model: "typhoon-v1.5x-70b-instruct",
       baseUrl: "https://api.opentyphoon.ai/v1",
-    }
+    },
   },
 
   stt: {
-    provider: (process.env.STT_PROVIDER ?? "mock") as "deepgram" | "mock",
+    provider: (process.env.STT_PROVIDER ?? "mock") as "google" | "mock",
     timeoutMs: Number(process.env.STT_TIMEOUT_MS ?? 15000),
-    deepgram: {
-      apiKey: process.env.DEEPGRAM_API_KEY ?? "",
-      model: process.env.DEEPGRAM_MODEL ?? "nova-3",
-      baseUrl: "https://api.deepgram.com/v1/listen",
+    google: {
+      // Chirp 2 / Speech v2 authenticates with OAuth2 (service account), NOT an
+      // API key. Prefer a key-file path; fall back to inline JSON, else
+      // Application Default Credentials.
+      keyFile:
+        process.env.GOOGLE_APPLICATION_CREDENTIALS ??
+        process.env.STT_GOOGLE_KEY_FILE ??
+        "",
+      serviceAccountJson: process.env.GOOGLE_SERVICE_ACCOUNT_JSON ?? "",
+      apiKey: process.env.GOOGLE_API_KEY ?? "", // legacy v1 only — ignored by Chirp 2
+      // Chirp 2 is region-scoped: the recognizer and API endpoint live here.
+      location: process.env.STT_LOCATION ?? "us-central1",
+      // Optional explicit project id; otherwise resolved from the credentials.
+      projectId: process.env.STT_GOOGLE_PROJECT_ID ?? "",
+      // model + languages drive code-switching. chirp_2 transcribes mixed
+      // Thai+English inside a single utterance when given multiple BCP-47 codes.
+      model: process.env.STT_MODEL ?? "chirp_2",
+      languageCodes: (process.env.STT_LANGUAGES ?? "th-TH")
+        .split(",")
+        .map((c) => c.trim())
+        .filter(Boolean),
     },
   },
 };
