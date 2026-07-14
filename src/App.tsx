@@ -204,7 +204,7 @@ function AppShell() {
           position: "relative",
         }}
       >
-        <div
+        <header
           style={{
             height: 40,
             borderBottom: `1px solid ${COLORS.border}`,
@@ -219,10 +219,11 @@ function AppShell() {
             onClick={handleBack}
             disabled={!canBack}
             title="Back"
+            aria-label="Go back"
             style={{
-              width: 26,
-              height: 26,
-              borderRadius: RADIUS.sm,
+              width: 32,
+              height: 32,
+              borderRadius: 5,
               background: "transparent",
               border: "none",
               color: canBack ? COLORS.textMuted : COLORS.textDim,
@@ -240,10 +241,11 @@ function AppShell() {
             onClick={handleForward}
             disabled={!canForward}
             title="Forward"
+            aria-label="Go forward"
             style={{
-              width: 26,
-              height: 26,
-              borderRadius: RADIUS.sm,
+              width: 32,
+              height: 32,
+              borderRadius: 5,
               background: "transparent",
               border: "none",
               color: canForward ? COLORS.textMuted : COLORS.textDim,
@@ -291,10 +293,11 @@ function AppShell() {
                       setHistoryIndex(i);
                       setNavParams(entry.params);
                     }}
+                    aria-current={isCurrent ? "page" : undefined}
                     style={{
                       background: "transparent",
                       border: "none",
-                      padding: "2px 4px",
+                      padding: "6px 4px",
                       fontSize: FONT.size.label,
                       fontWeight: isCurrent ? 500 : 400,
                       color: isCurrent ? COLORS.text : COLORS.textMuted,
@@ -308,15 +311,15 @@ function AppShell() {
               );
             })}
           </div>
-        </div>
+        </header>
 
-        <div
+        <main
           style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}
         >
           <div style={{ flex: 1, overflow: "hidden", height: "100%" }}>
             {renderPage(active, navParams, handleNav)}
           </div>
-        </div>
+        </main>
       </div>
     </div>
   );

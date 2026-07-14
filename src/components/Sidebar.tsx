@@ -59,7 +59,7 @@ export default function Sidebar({
   const avatarColor = user ? nameToColor(user.name) : COLORS.textDim;
 
   return (
-    <div style={{
+    <nav aria-label="Primary" style={{
       width: 64,
       background: COLORS.bg,
       borderRight: `1px solid ${COLORS.border}`,
@@ -73,9 +73,10 @@ export default function Sidebar({
       {/* Logo */}
       <button
         title="Dashboard"
+        aria-label="Dashboard"
         onClick={() => onNav("dashboard")}
         style={{
-          width: 32, height: 32, marginBottom: 16,
+          width: 44, height: 44, marginBottom: 16,
           display: "flex", alignItems: "center", justifyContent: "center",
           color: COLORS.accent, background: "transparent", border: "none",
           cursor: "pointer", flexShrink: 0,
@@ -94,6 +95,8 @@ export default function Sidebar({
           <div key={item.id} style={{ position: "relative", marginBottom: 2 }}>
             <button
               title={item.label}
+              aria-label={item.label}
+              aria-current={isActive ? "page" : undefined}
               onClick={() => onNav(item.id)}
               style={{
                 width: 56, height: 56, borderRadius: RADIUS.lg,
@@ -142,9 +145,10 @@ export default function Sidebar({
         {onLogout && (
           <button
             title="Sign out"
+            aria-label="Sign out"
             onClick={onLogout}
             style={{
-              width: 40, height: 40, borderRadius: 8,
+              width: 44, height: 44, borderRadius: 8,
               background: "transparent", border: "none",
               color: COLORS.textDim, cursor: "pointer",
               display: "flex", alignItems: "center", justifyContent: "center",
@@ -155,6 +159,6 @@ export default function Sidebar({
           </button>
         )}
       </div>
-    </div>
+    </nav>
   );
 }

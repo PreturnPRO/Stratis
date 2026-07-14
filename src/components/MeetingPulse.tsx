@@ -241,7 +241,7 @@ export function AgendaPulse({
             fontWeight: 700,
             letterSpacing: LETTER_SPACING.wide,
             textTransform: "uppercase",
-            color: COLORS.textDim,
+            color: COLORS.textMuted,
             marginBottom: 3,
           }}
         >

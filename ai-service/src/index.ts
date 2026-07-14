@@ -41,7 +41,22 @@ export {
 export type { ParseResult, LiveCardParseResult, DocPatchParseResult } from "./schema";
 
 /** Pick the active provider. Providers with no key fall back to mock so the call
- * always confirms. */
+ * always confirms — but the downgrade must be LOUD: silently serving mock
+ * cards/summaries in a real meeting reads as "the product is broken". */
+let warnedMockFallback = false;
+function mockFallback(wanted: string, missingKey: string): AIProvider {
+  if (!warnedMockFallback) {
+    warnedMockFallback = true;
+    console.error(
+      `[ai] AI_PROVIDER=${wanted} but ${missingKey} is not set — every AI call ` +
+        `(live cards, summaries, document patches) is being served by the ` +
+        `deterministic MOCK provider. Set ${missingKey} on this service to get ` +
+        `real model output.`,
+    );
+  }
+  return mockProvider;
+}
+
 export function selectProvider(): AIProvider {
   switch (env.ai.provider) {
     case "ollama":
@@ -49,10 +64,14 @@ export function selectProvider(): AIProvider {
     case "mock":
       return mockProvider;
     case "typhoon":
-      return env.ai.typhoon.apiKey ? typhoonProvider : mockProvider;
+      return env.ai.typhoon.apiKey
+        ? typhoonProvider
+        : mockFallback("typhoon", "TYPHOON_API_KEY");
     case "groq":
     default:
-      return env.ai.groq.apiKey ? groqProvider : mockProvider;
+      return env.ai.groq.apiKey
+        ? groqProvider
+        : mockFallback("groq", "GROQ_API_KEY");
   }
 }
 

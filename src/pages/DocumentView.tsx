@@ -361,7 +361,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
   return (
     <div className="document-shell" style={styles.shell}>
       {/* ── Left ToC sidebar ─────────────────────────────────────────────── */}
-      <nav style={styles.toc}>
+      <nav aria-label="Table of contents" style={styles.toc}>
         {!sessionId && (docState || error) && (
           <button
             style={styles.backBtn}
@@ -496,7 +496,11 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
                 <div style={styles.sectionHead}>
                   <h2 style={styles.sectionTitle}>{sec?.title ?? s.title}</h2>
                   {isFacilitator && !isHistorical && !secReviews.length && (
-                    <button style={styles.editLink} onClick={() => openEditSection(s.key, sec?.content ?? '')}>
+                    <button
+                      style={styles.editLink}
+                      aria-label={`Edit ${sec?.title ?? s.title}`}
+                      onClick={() => openEditSection(s.key, sec?.content ?? '')}
+                    >
                       Edit
                     </button>
                   )}
