@@ -87,6 +87,35 @@ input:focus-visible, textarea:focus-visible {
   background-clip: padding-box;
 }
 
+/* Transcript feed — a slightly wider, more present scrollbar (with a rounded
+   track rail and Firefox support) so the live capture panel reads as
+   scrollable at a glance and the thumb has room to grab. */
+.transcript-scroll {
+  scrollbar-width: thin;                 /* Firefox */
+  scrollbar-color: #3a3a42 transparent;  /* thumb, track (Firefox) */
+}
+.transcript-scroll::-webkit-scrollbar {
+  width: 12px;
+}
+.transcript-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+  margin: 4px 0;
+}
+.transcript-scroll::-webkit-scrollbar-thumb {
+  background: #3a3a42;
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+.transcript-scroll::-webkit-scrollbar-thumb:hover {
+  background: #4a4a54;
+  background-clip: padding-box;
+}
+.transcript-scroll:hover {
+  scrollbar-color: #4a4a54 transparent;
+}
+
 /* ── Shared keyframes (used by inline-styled components) ───────────────────── */
 
 @keyframes spin {

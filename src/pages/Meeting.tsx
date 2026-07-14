@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Mic, Square } from "lucide-react";
-import { COLORS, FONT } from "../constants";
+import { Mic, Square, ChevronDown } from "lucide-react";
+import { COLORS, FONT, SHADOW, LETTER_SPACING } from "../constants";
 import { RADIUS } from "../tokens/colors";
 import { Button, Chip, Modal } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
@@ -23,10 +23,17 @@ const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 // Adaptive AI chunking: recognized words render instantly in the transcript
 // (ghost row) WITHOUT calling the question AI. A chunk is sent to the AI only
 // when the speaker pauses on a finalized sentence with enough substance, or
-// when the hard time cap is reached — whichever comes first. Thai has no word
-// spaces, so "substance" is measured in characters, not words.
+// when the hard time cap is reached — whichever comes first. Both flushes send
+// FINALIZED text only; interim words stay in the ghost row until the engine
+// finalizes them (sending interim duplicates it once the final arrives). Thai
+// has no word spaces, so "substance" is measured in characters, not words.
 const CHUNK_MAX_MS = 7000;
 const CHUNK_MIN_CHARS = 40;
+
+// Chat-style auto-follow: within this many px of the bottom counts as "at the
+// bottom", so auto-scroll stays armed despite sub-pixel rounding and the
+// growing live ghost row.
+const NEAR_BOTTOM_PX = 80;
 
 interface MeetingProps {
   onNav?: (id: string, params?: Record<string, string>) => void;
@@ -151,6 +158,10 @@ export default function Meeting({ onNav }: MeetingProps) {
   const [pendingText, setPendingText] = useState("");
 
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
+  // Chat-style auto-follow: pinned to the newest line while the user is at the
+  // bottom; scrolling up to read history pauses it and reveals a "jump to
+  // latest" affordance (Discord-style).
+  const [stickToBottom, setStickToBottom] = useState(true);
 
   const authHeaders = useMemo((): Record<string, string> => {
     return token ? { Authorization: `Bearer ${token}` } : {};
@@ -213,20 +224,27 @@ export default function Meeting({ onNav }: MeetingProps) {
   const interimRef = useRef<string>("");
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const flushBuffer = useCallback(() => {
+  // Interim text must NEVER be sent by mid-session flushes: the engine
+  // re-delivers those same words (often revised) in a later final result,
+  // which would land in the buffer and get flushed again — the transcript
+  // then shows the sentence twice ("old sentence + new section").
+  // includeInterim is reserved for teardown (onend), when the engine is
+  // about to discard that audio and can no longer re-deliver it.
+  const flushBuffer = useCallback((includeInterim = false) => {
     if (flushTimerRef.current) {
       clearTimeout(flushTimerRef.current);
       flushTimerRef.current = null;
     }
 
     let text = bufferRef.current.trim();
-    if (interimRef.current.trim()) {
+    if (includeInterim && interimRef.current.trim()) {
       text = (text + " " + interimRef.current.trim()).trim();
+      interimRef.current = "";
     }
 
     bufferRef.current = "";
-    interimRef.current = "";
-    setLiveText("");
+    // Un-flushed interim stays visible in the ghost row.
+    setLiveText(interimRef.current.trim());
 
     if (text) {
       sendTextChunkRef.current(text);
@@ -316,7 +334,9 @@ export default function Meeting({ onNav }: MeetingProps) {
 
     rec.onend = () => {
       console.log("[speech] Mic stream went silent or disconnected.");
-      flushBuffer();
+      // Teardown flush: include interim — the engine is discarding this audio
+      // and will never re-deliver it (a restart starts a fresh session).
+      flushBuffer(true);
 
       if (isRecordingRef.current) {
         console.log("[speech] Re-initiating active capture stream...");
@@ -360,8 +380,10 @@ export default function Meeting({ onNav }: MeetingProps) {
     if (!recognitionRef.current) return;
     setIsRecording(false);
     isRecordingRef.current = false;
+    // No direct flush here: stop() may still finalize in-flight audio (a last
+    // onresult), and onend — which always fires after stop() — does the single
+    // teardown flush. Flushing here too sent the same words twice.
     recognitionRef.current.stop();
-    flushBuffer();
   };
 
   // --- Past Transcript Syncing ---
@@ -448,16 +470,31 @@ export default function Meeting({ onNav }: MeetingProps) {
     return () => clearInterval(t);
   }, [sessionId]);
 
-  // Keep transcripts scrolled to the bottom — including as the live ghost
-  // row grows word by word.
-  useEffect(() => {
+  // User scroll intent: reaching the bottom re-arms auto-follow; scrolling up
+  // pauses it. Our own programmatic scroll-to-bottom lands here too and simply
+  // keeps auto-follow armed, so no "is this programmatic?" flag is needed.
+  const handleTranscriptScroll = useCallback(() => {
     const el = transcriptScrollRef.current;
     if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
-    if (nearBottom) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [transcripts, liveText, pendingText]);
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setStickToBottom(distanceFromBottom <= NEAR_BOTTOM_PX);
+  }, []);
+
+  const jumpToBottom = useCallback(() => {
+    const el = transcriptScrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    setStickToBottom(true);
+  }, []);
+
+  // While auto-follow is armed, keep the newest line — and the live ghost row
+  // as it grows word by word — pinned to the bottom as content streams in.
+  useEffect(() => {
+    if (!stickToBottom) return;
+    const el = transcriptScrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [transcripts, liveText, pendingText, stickToBottom]);
 
   const handleEndMeeting = async () => {
     if (!token || !sessionId) return;
@@ -535,7 +572,7 @@ export default function Meeting({ onNav }: MeetingProps) {
   }
 
   return (
-    <div style={{ display: "flex", flex: 1, minHeight: 0, background: COLORS.bg }}>
+    <div style={{ display: "flex", flex: 1, height: "100%", minHeight: 0, background: COLORS.bg }}>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0 }}>
         
         {/* Header */}
@@ -658,6 +695,7 @@ export default function Meeting({ onNav }: MeetingProps) {
               display: "flex",
               flexDirection: "column",
               overflow: "hidden",
+              position: "relative",
             }}
           >
             <div style={{ borderBottom: `1px solid ${COLORS.border}`, padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -673,6 +711,8 @@ export default function Meeting({ onNav }: MeetingProps) {
 
             <div
               ref={transcriptScrollRef}
+              onScroll={handleTranscriptScroll}
+              className="transcript-scroll"
               role="log"
               aria-live="polite"
               aria-label="Live transcript"
@@ -739,6 +779,37 @@ export default function Meeting({ onNav }: MeetingProps) {
                 </>
               )}
             </div>
+
+            {/* Jump-to-latest: re-arms auto-scroll after the user has scrolled
+                up to read history. Only shown while auto-follow is paused. */}
+            {!stickToBottom && (
+              <button
+                type="button"
+                onClick={jumpToBottom}
+                aria-label="Jump to latest and resume auto-scroll"
+                style={{
+                  position: "absolute",
+                  bottom: 16,
+                  right: 20,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "7px 12px 7px 14px",
+                  borderRadius: RADIUS.pill,
+                  background: COLORS.surfaceElevated,
+                  border: `1px solid ${COLORS.borderLight}`,
+                  color: COLORS.accent,
+                  fontSize: FONT.size.label,
+                  fontWeight: 600,
+                  letterSpacing: LETTER_SPACING.wide,
+                  boxShadow: SHADOW.float,
+                  animation: "slideUp 0.2s ease",
+                }}
+              >
+                Jump to latest
+                <ChevronDown size={15} strokeWidth={2.5} />
+              </button>
+            )}
           </div>
 
           {/* Column 2: Suggestion Gutter Stack */}
