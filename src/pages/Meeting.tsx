@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Mic, Square } from "lucide-react";
-import { COLORS, FONT } from "../constants";
-import { RADIUS } from "../tokens/colors";
+import { Mic, Square, ChevronDown } from "lucide-react";
+import { COLORS, FONT, SHADOW, LETTER_SPACING } from "../constants";
+import { RADIUS, SPACE } from "../tokens/colors";
 import { Button, Chip, Modal } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { SuggestionCardStack } from "../components/SuggestionCardStack";
@@ -35,6 +35,11 @@ function blobToBase64(blob: Blob): Promise<string> {
     reader.readAsDataURL(blob);
   });
 }
+
+// Chat-style auto-follow: within this many px of the bottom counts as "at the
+// bottom", so auto-scroll stays armed despite sub-pixel rounding and the
+// growing live ghost row.
+const NEAR_BOTTOM_PX = 80;
 
 interface MeetingProps {
   onNav?: (id: string, params?: Record<string, string>) => void;
@@ -96,7 +101,7 @@ function RecDot() {
           height: 9,
           borderRadius: "50%",
           background: COLORS.red,
-          boxShadow: `0 0 6px ${COLORS.red}`,
+          boxShadow: SHADOW.glow(COLORS.red),
         }}
       />
     </span>
@@ -156,6 +161,10 @@ export default function Meeting({ onNav }: MeetingProps) {
   const [pendingText, setPendingText] = useState("");
 
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
+  // Chat-style auto-follow: pinned to the newest line while the user is at the
+  // bottom; scrolling up to read history pauses it and reveals a "jump to
+  // latest" affordance (Discord-style).
+  const [stickToBottom, setStickToBottom] = useState(true);
 
   const authHeaders = useMemo((): Record<string, string> => {
     return token ? { Authorization: `Bearer ${token}` } : {};
@@ -214,7 +223,7 @@ export default function Meeting({ onNav }: MeetingProps) {
       setPendingText("");
     }
   }, [token, sessionId, authHeaders, user?.name, appendTranscript, ai]);
-
+  //delta v
   const {
     error: recError,
     start: startRec,
@@ -224,6 +233,157 @@ export default function Meeting({ onNav }: MeetingProps) {
   useEffect(() => {
     if (recError) setError(recError);
   }, [recError]);
+  //delta^
+  const sendTextChunkRef = useRef(sendTextChunk);
+  useEffect(() => {
+    sendTextChunkRef.current = sendTextChunk;
+  }, [sendTextChunk]);
+
+  // Dual-buffer silence-resistant accumulation strategy
+  const bufferRef = useRef<string>("");
+  const interimRef = useRef<string>("");
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Interim text must NEVER be sent by mid-session flushes: the engine
+  // re-delivers those same words (often revised) in a later final result,
+  // which would land in the buffer and get flushed again — the transcript
+  // then shows the sentence twice ("old sentence + new section").
+  // includeInterim is reserved for teardown (onend), when the engine is
+  // about to discard that audio and can no longer re-deliver it.
+  const flushBuffer = useCallback((includeInterim = false) => {
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+
+    let text = bufferRef.current.trim();
+    if (includeInterim && interimRef.current.trim()) {
+      text = (text + " " + interimRef.current.trim()).trim();
+      interimRef.current = "";
+    }
+
+    bufferRef.current = "";
+    // Un-flushed interim stays visible in the ghost row.
+    setLiveText(interimRef.current.trim());
+
+    if (text) {
+      sendTextChunkRef.current(text);
+    }
+  }, []);
+
+  useEffect(() => {
+    const SpeechRecognitionEngine =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognitionEngine) {
+      console.warn("[speech] Native SpeechRecognition not available in this host environment.");
+      return;
+    }
+
+    const rec = new SpeechRecognitionEngine();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = "th-TH"; // Web Speech API supports one language per recognition instance; Thai only
+
+    rec.onstart = () => {
+      console.log("[speech] Recognition pipeline active.");
+    };
+
+    rec.onresult = (event: any) => {
+      let finalTranscript = "";
+      let interimTranscript = "";
+
+      for (let i = event.resultIndex; i < event.results.length; ++i) {
+        // Correctly index SpeechRecognitionAlternative using item(0) (bracket-free!)
+        const alternative = event.results[i].item(0);
+        const transcript = alternative ? alternative.transcript : "";
+
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+
+      // Any recognized speech (final or interim) marks the AI as "hearing you"
+      // for the presence chip.
+      if (finalTranscript || interimTranscript) {
+        setLastSpeechMs(Date.now());
+      }
+
+      if (finalTranscript) {
+        bufferRef.current = (bufferRef.current + " " + finalTranscript).trim();
+        interimRef.current = "";
+      } else {
+        interimRef.current = interimTranscript;
+      }
+
+      // Ghost row: mirror every recognized word to the transcript instantly —
+      // no backend or AI round-trip involved.
+      setLiveText((bufferRef.current + " " + interimRef.current).trim());
+
+      // Adaptive flush: a finalized sentence with no trailing interim means
+      // the speaker paused — hand the chunk to the question AI now, on a
+      // natural thought boundary, instead of waiting for the cap.
+      if (
+        finalTranscript &&
+        !interimTranscript &&
+        bufferRef.current.length >= CHUNK_MIN_CHARS
+      ) {
+        flushBuffer();
+        return;
+      }
+
+      // Hard cap: even mid-monologue, flush at least every CHUNK_MAX_MS.
+      if (bufferRef.current.trim() || interimRef.current.trim()) {
+        if (!flushTimerRef.current) {
+          flushTimerRef.current = setTimeout(() => {
+            flushBuffer();
+          }, CHUNK_MAX_MS);
+        }
+      }
+    };
+
+    rec.onerror = (event: any) => {
+      console.error("[speech] Capture engine error:", event.error);
+      if (event.error === "not-allowed") {
+        setIsRecording(false);
+        isRecordingRef.current = false;
+      }
+    };
+
+    rec.onend = () => {
+      console.log("[speech] Mic stream went silent or disconnected.");
+      // Teardown flush: include interim — the engine is discarding this audio
+      // and will never re-deliver it (a restart starts a fresh session).
+      flushBuffer(true);
+
+      if (isRecordingRef.current) {
+        console.log("[speech] Re-initiating active capture stream...");
+        try {
+          rec.start();
+        } catch (e) {
+          console.warn("[speech] Auto-restart sequence missed:", e);
+        }
+      }
+    };
+
+    recognitionRef.current = rec;
+
+    return () => {
+      if (rec) {
+        rec.onend = null;
+        rec.onerror = null;
+        rec.onresult = null;
+        try {
+          rec.stop();
+        } catch (e) {}
+      }
+      if (flushTimerRef.current) {
+        clearTimeout(flushTimerRef.current);
+      }
+    };
+  }, [flushBuffer]);
 
   const startListening = () => {
     setIsRecording(true);
@@ -232,7 +392,14 @@ export default function Meeting({ onNav }: MeetingProps) {
 
   const stopListening = () => {
     setIsRecording(false);
-    stopRec();
+    
+    stopRec(); //delta
+    
+    isRecordingRef.current = false;
+    // No direct flush here: stop() may still finalize in-flight audio (a last
+    // onresult), and onend — which always fires after stop() — does the single
+    // teardown flush. Flushing here too sent the same words twice.
+    recognitionRef.current.stop();
   };
 
   // --- Past Transcript Syncing ---
@@ -324,16 +491,31 @@ useEffect(() => {
     return () => clearInterval(t);
   }, [sessionId]);
 
-  // Keep transcripts scrolled to the bottom — including as the live ghost
-  // row grows word by word.
-  useEffect(() => {
+  // User scroll intent: reaching the bottom re-arms auto-follow; scrolling up
+  // pauses it. Our own programmatic scroll-to-bottom lands here too and simply
+  // keeps auto-follow armed, so no "is this programmatic?" flag is needed.
+  const handleTranscriptScroll = useCallback(() => {
     const el = transcriptScrollRef.current;
     if (!el) return;
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
-    if (nearBottom) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [transcripts, liveText, pendingText]);
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setStickToBottom(distanceFromBottom <= NEAR_BOTTOM_PX);
+  }, []);
+
+  const jumpToBottom = useCallback(() => {
+    const el = transcriptScrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    setStickToBottom(true);
+  }, []);
+
+  // While auto-follow is armed, keep the newest line — and the live ghost row
+  // as it grows word by word — pinned to the bottom as content streams in.
+  useEffect(() => {
+    if (!stickToBottom) return;
+    const el = transcriptScrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [transcripts, liveText, pendingText, stickToBottom]);
 
   const handleEndMeeting = async () => {
     if (!token || !sessionId) return;
@@ -411,7 +593,7 @@ useEffect(() => {
   }
 
   return (
-    <div style={{ display: "flex", flex: 1, minHeight: 0, background: COLORS.bg }}>
+    <div style={{ display: "flex", flex: 1, height: "100%", minHeight: 0, background: COLORS.bg }}>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0 }}>
         
         {/* Header */}
@@ -440,7 +622,7 @@ useEffect(() => {
             >
               {meetingTitle}
             </h1>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: SPACE[2.5] }}>
               <Chip icon={isRecording ? <RecDot /> : <StatusDot color={COLORS.textDim} />} mono>
                 {isRecording ? "LIVE" : "STANDBY"}
               </Chip>
@@ -462,14 +644,14 @@ useEffect(() => {
             </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: SPACE[4] }}>
             {elapsed != null && (
               <div style={{ textAlign: "right" }}>
                 <div style={{ fontSize: FONT.size.subheading, fontWeight: 700, color: timeColor }}>
                   {formatElapsed(elapsed)}
                 </div>
                 {durationMin && (
-                  <div style={{ fontSize: FONT.size.micro, color: COLORS.textDim }}>
+                  <div style={{ fontSize: FONT.size.micro, color: COLORS.textMuted }}>
                     TARGET: {durationMin}m {overtime && "(OVERTIME)"}
                   </div>
                 )}
@@ -534,6 +716,7 @@ useEffect(() => {
               display: "flex",
               flexDirection: "column",
               overflow: "hidden",
+              position: "relative",
             }}
           >
             <div style={{ borderBottom: `1px solid ${COLORS.border}`, padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -549,13 +732,18 @@ useEffect(() => {
 
             <div
               ref={transcriptScrollRef}
+              onScroll={handleTranscriptScroll}
+              className="transcript-scroll"
+              role="log"
+              aria-live="polite"
+              aria-label="Live transcript"
               style={{
                 flex: 1,
                 overflowY: "auto",
                 padding: "20px",
                 display: "flex",
                 flexDirection: "column",
-                gap: 14,
+                gap: SPACE[4],
               }}
             >
               {loadingTranscript && transcripts.length === 0 ? (
@@ -571,7 +759,7 @@ useEffect(() => {
                       key={row.id}
                       style={{
                         borderBottom: `1px solid ${COLORS.border}`,
-                        paddingBottom: 10,
+                        paddingBottom: SPACE[2.5],
                       }}
                     >
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -589,7 +777,7 @@ useEffect(() => {
                   ))}
 
                   {(pendingText || liveText) && (
-                    <div style={{ paddingBottom: 10, opacity: 0.7 }}>
+                    <div style={{ paddingBottom: SPACE[2.5], opacity: 0.7 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                         <span style={{ fontWeight: 600, fontSize: FONT.size.body, color: COLORS.textMuted }}>
                           {user?.name || "Facilitator"}
@@ -612,6 +800,37 @@ useEffect(() => {
                 </>
               )}
             </div>
+
+            {/* Jump-to-latest: re-arms auto-scroll after the user has scrolled
+                up to read history. Only shown while auto-follow is paused. */}
+            {!stickToBottom && (
+              <button
+                type="button"
+                onClick={jumpToBottom}
+                aria-label="Jump to latest and resume auto-scroll"
+                style={{
+                  position: "absolute",
+                  bottom: 16,
+                  right: 20,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "7px 12px 7px 14px",
+                  borderRadius: RADIUS.pill,
+                  background: COLORS.surfaceElevated,
+                  border: `1px solid ${COLORS.borderLight}`,
+                  color: COLORS.accent,
+                  fontSize: FONT.size.label,
+                  fontWeight: 600,
+                  letterSpacing: LETTER_SPACING.wide,
+                  boxShadow: SHADOW.float,
+                  animation: "slideUp 0.2s ease",
+                }}
+              >
+                Jump to latest
+                <ChevronDown size={15} strokeWidth={2.5} />
+              </button>
+            )}
           </div>
 
           {/* Column 2: Suggestion Gutter Stack */}
@@ -642,7 +861,7 @@ useEffect(() => {
                 {connected && <Chip color={COLORS.accent} mono>REALTIME SYNCED</Chip>}
               </div>
 
-              <div style={{ flex: 1, overflowY: "auto" }}>
+              <div style={{ flex: 1, overflowY: "auto" }} aria-live="polite" aria-label="Active suggestions">
                 <SuggestionCardStack
                   cards={cards}
                   thinking={isRecording && transcripts.length > 0}
@@ -668,9 +887,9 @@ useEffect(() => {
               <div style={{ fontSize: FONT.size.micro, fontWeight: 700, color: COLORS.textMuted, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 12 }}>
                 Strategic Meeting Notes
               </div>
-              <div style={{ flex: 1, overflowY: "auto" }}>
+              <div style={{ flex: 1, overflowY: "auto" }} aria-live="polite" aria-label="Strategic meeting notes">
                 {ai.blocks.length === 0 ? (
-                  <p style={{ fontSize: FONT.size.label, color: COLORS.textDim, margin: 0, fontStyle: "italic" }}>
+                  <p style={{ fontSize: FONT.size.label, color: COLORS.textMuted, margin: 0, fontStyle: "italic" }}>
                     Notes, key arguments, and identified risks will populate here as conversation signal classification completes.
                   </p>
                 ) : (

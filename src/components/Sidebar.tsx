@@ -7,7 +7,7 @@ import {
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import { COLORS, NAV_ITEMS, FONT } from "../constants";
+import { COLORS, NAV_ITEMS, FONT, RADIUS, SPACE } from "../constants";
 import { useAuth } from "../context/AuthContext";
 
 // ─── Icon registry ─────────────────────────────────────────────────────────────
@@ -21,9 +21,12 @@ const ICON_MAP: Record<string, LucideIcon> = {
 
 // ─── Avatar helpers ────────────────────────────────────────────────────────────
 
+// Kept independent from the semantic COLORS palette (name-hash lookup, not
+// status meaning), but must not visually collide with it — avoid shades near
+// COLORS.danger and COLORS.teal.
 const AVATAR_COLORS = [
-  "#c0392b", "#2e86c1", "#1a7a4a", "#8e44ad",
-  "#d35400", "#16a085", "#2c3e50", "#7f8c8d",
+  "#a8556c", "#2e86c1", "#1a7a4a", "#8e44ad",
+  "#d35400", "#5c7a89", "#2c3e50", "#7f8c8d",
 ];
 
 function nameToInitials(name: string): string {
@@ -56,23 +59,24 @@ export default function Sidebar({
   const avatarColor = user ? nameToColor(user.name) : COLORS.textDim;
 
   return (
-    <div style={{
+    <nav aria-label="Primary" style={{
       width: 64,
       background: COLORS.bg,
       borderRight: `1px solid ${COLORS.border}`,
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
-      paddingTop: 10,
+      paddingTop: SPACE[2.5],
       paddingBottom: 12,
       flexShrink: 0,
     }}>
       {/* Logo */}
       <button
         title="Dashboard"
+        aria-label="Dashboard"
         onClick={() => onNav("dashboard")}
         style={{
-          width: 32, height: 32, marginBottom: 16,
+          width: 44, height: 44, marginBottom: 16,
           display: "flex", alignItems: "center", justifyContent: "center",
           color: COLORS.accent, background: "transparent", border: "none",
           cursor: "pointer", flexShrink: 0,
@@ -91,9 +95,11 @@ export default function Sidebar({
           <div key={item.id} style={{ position: "relative", marginBottom: 2 }}>
             <button
               title={item.label}
+              aria-label={item.label}
+              aria-current={isActive ? "page" : undefined}
               onClick={() => onNav(item.id)}
               style={{
-                width: 56, height: 56, borderRadius: 10,
+                width: 56, height: 56, borderRadius: RADIUS.lg,
                 background: isActive ? COLORS.surfaceHover : "transparent",
                 border: "none", cursor: "pointer",
                 display: "flex", alignItems: "center", justifyContent: "center",
@@ -139,9 +145,10 @@ export default function Sidebar({
         {onLogout && (
           <button
             title="Sign out"
+            aria-label="Sign out"
             onClick={onLogout}
             style={{
-              width: 40, height: 40, borderRadius: 8,
+              width: 44, height: 44, borderRadius: 8,
               background: "transparent", border: "none",
               color: COLORS.textDim, cursor: "pointer",
               display: "flex", alignItems: "center", justifyContent: "center",
@@ -152,6 +159,6 @@ export default function Sidebar({
           </button>
         )}
       </div>
-    </div>
+    </nav>
   );
 }

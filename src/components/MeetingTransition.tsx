@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { COLORS, FONT, LETTER_SPACING } from "../constants";
+import { COLORS, FONT, LETTER_SPACING, SHADOW } from "../constants";
 
 // Quiet priming beat between "start meeting" and the live session — reads as
 // the tool getting ready, not an announcement. Hold, then a quick fade.
@@ -47,7 +47,7 @@ export default function MeetingTransition({ onDone }: { onDone: () => void }) {
             height: 14,
             borderRadius: "50%",
             background: COLORS.accent,
-            boxShadow: `0 0 10px ${COLORS.accent}`,
+            boxShadow: SHADOW.glow(COLORS.accent),
           }}
         />
       </span>

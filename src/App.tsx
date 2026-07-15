@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { COLORS, FONT } from "./constants";
+import { COLORS, FONT, RADIUS, SPACE } from "./constants";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Sidebar from "./components/Sidebar";
 import MeetingTransition from "./components/MeetingTransition";
@@ -204,14 +204,14 @@ function AppShell() {
           position: "relative",
         }}
       >
-        <div
+        <header
           style={{
             height: 40,
             borderBottom: `1px solid ${COLORS.border}`,
             display: "flex",
             alignItems: "center",
             padding: "0 12px",
-            gap: 6,
+            gap: SPACE[1.5],
             flexShrink: 0,
           }}
         >
@@ -219,9 +219,10 @@ function AppShell() {
             onClick={handleBack}
             disabled={!canBack}
             title="Back"
+            aria-label="Go back"
             style={{
-              width: 26,
-              height: 26,
+              width: 32,
+              height: 32,
               borderRadius: 5,
               background: "transparent",
               border: "none",
@@ -240,9 +241,10 @@ function AppShell() {
             onClick={handleForward}
             disabled={!canForward}
             title="Forward"
+            aria-label="Go forward"
             style={{
-              width: 26,
-              height: 26,
+              width: 32,
+              height: 32,
               borderRadius: 5,
               background: "transparent",
               border: "none",
@@ -291,15 +293,16 @@ function AppShell() {
                       setHistoryIndex(i);
                       setNavParams(entry.params);
                     }}
+                    aria-current={isCurrent ? "page" : undefined}
                     style={{
                       background: "transparent",
                       border: "none",
-                      padding: "2px 4px",
+                      padding: "6px 4px",
                       fontSize: FONT.size.label,
                       fontWeight: isCurrent ? 500 : 400,
                       color: isCurrent ? COLORS.text : COLORS.textMuted,
                       cursor: isClickable ? "pointer" : "default",
-                      borderRadius: 4,
+                      borderRadius: RADIUS.sm,
                     }}
                   >
                     {PAGE_LABELS[entry.page] ?? entry.page}
@@ -308,15 +311,15 @@ function AppShell() {
               );
             })}
           </div>
-        </div>
+        </header>
 
-        <div
+        <main
           style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}
         >
           <div style={{ flex: 1, overflow: "hidden", height: "100%" }}>
             {renderPage(active, navParams, handleNav)}
           </div>
-        </div>
+        </main>
       </div>
     </div>
   );
