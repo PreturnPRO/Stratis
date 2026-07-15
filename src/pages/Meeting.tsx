@@ -41,6 +41,23 @@ function blobToBase64(blob: Blob): Promise<string> {
 // growing live ghost row.
 const NEAR_BOTTOM_PX = 80;
 
+// Each CHUNK_MAX_MS audio clip becomes its own transcript row in the DB, so a
+// continuous sentence arrives as a run of short rows. Consecutive rows from
+// the same speaker within this gap render as one flowing block instead of a
+// separate 1-2 word box each.
+const GROUP_GAP_MS = 30_000;
+
+// Thai has no spaces between words — joining Thai chunk texts with " " would
+// scatter spaces mid-sentence. Mirrors the Thai-aware cleanup applied per
+// chunk in backend/src/routes/transcript.ts.
+function joinChunkText(a: string, b: string): string {
+  if (!a) return b;
+  if (!b) return a;
+  const thaiEnd = /[฀-๿]$/;
+  const thaiStart = /^[฀-๿]/;
+  return thaiEnd.test(a) && thaiStart.test(b) ? a + b : `${a} ${b}`;
+}
+
 interface MeetingProps {
   onNav?: (id: string, params?: Record<string, string>) => void;
 }
@@ -159,6 +176,7 @@ export default function Meeting({ onNav }: MeetingProps) {
   // still in flight to the backend.
   const [liveText] = useState("");
   const [pendingText, setPendingText] = useState("");
+  const inFlightChunksRef = useRef(0);
 
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
   // Chat-style auto-follow: pinned to the newest line while the user is at the
@@ -172,10 +190,44 @@ export default function Meeting({ onNav }: MeetingProps) {
 
   const { cards, connected, markAnswered, markActive } = useSuggestionSocket(sessionId);
 
+  // Merge consecutive rows from the same speaker into one continuous display
+  // block — the DB keeps one row per audio clip, but reading a sentence split
+  // across a stack of 1-2 word boxes is unusable.
+  const transcriptGroups = useMemo(() => {
+    const groups: Array<{ id: string; speaker: string; timestamp: string; text: string }> = [];
+    let prevMs = NaN;
+    for (const row of transcripts) {
+      const rowMs = new Date(row.timestamp).getTime();
+      const last = groups[groups.length - 1];
+      if (
+        last &&
+        last.speaker === row.speaker &&
+        Number.isFinite(rowMs) &&
+        Number.isFinite(prevMs) &&
+        rowMs - prevMs <= GROUP_GAP_MS
+      ) {
+        last.text = joinChunkText(last.text, row.text);
+      } else {
+        groups.push({
+          id: row.id,
+          speaker: row.speaker,
+          timestamp: row.timestamp,
+          text: row.text,
+        });
+      }
+      prevMs = rowMs;
+    }
+    return groups;
+  }, [transcripts]);
+
   const appendTranscript = useCallback((row: TranscriptRow) => {
     setTranscripts((prev) => {
       if (prev.some((p) => p.id === row.id)) return prev;
-      return [...prev, row];
+      // Keep rows in timestamp order even if two in-flight uploads resolve
+      // out of order (ISO timestamps sort lexicographically).
+      const next = [...prev, row];
+      next.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+      return next;
     });
   }, []);
 
@@ -187,6 +239,10 @@ export default function Meeting({ onNav }: MeetingProps) {
   // which runs Speech v2 chirp_2 (th-TH,en-US) and returns Thai transcript rows.
   const sendAudioChunk = useCallback(async (blob: Blob) => {
     if (!token || !sessionId || blob.size === 0) return;
+    // Uploads can overlap (a new clip starts while the previous one is still
+    // in flight) — count them so the first response back doesn't clear the
+    // "Transcribing…" indicator out from under the later one.
+    inFlightChunksRef.current += 1;
     setSendingChunk(true);
     setPendingText("Transcribing…");
     try {
@@ -219,8 +275,11 @@ export default function Meeting({ onNav }: MeetingProps) {
     } catch (err) {
       console.error("[speech:audio] Connection fault:", err);
     } finally {
-      setSendingChunk(false);
-      setPendingText("");
+      inFlightChunksRef.current -= 1;
+      if (inFlightChunksRef.current === 0) {
+        setSendingChunk(false);
+        setPendingText("");
+      }
     }
   }, [token, sessionId, authHeaders, user?.name, appendTranscript, ai]);
   
@@ -596,7 +655,7 @@ useEffect(() => {
                 </div>
               ) : (
                 <>
-                  {transcripts.map((row) => (
+                  {transcriptGroups.map((row) => (
                     <div
                       key={row.id}
                       style={{
