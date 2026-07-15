@@ -95,9 +95,13 @@ async function getProjectDocumentForSession(
 }
 
 /** Called when a session ends so a stale/absent cache entry can't leak into a
- * future session reusing the same id space, and to bound cache growth. */
+ * future session reusing the same id space, and to bound cache growth. Also
+ * drops any queued background AI routing so an ended session can't receive a
+ * late suggestion card. */
 export function clearProjectDocCache(sessionId: string): void {
   projectDocCache.delete(sessionId);
+  const running = aiRoutingBySession.get(sessionId);
+  if (running) running.queued = null;
 }
 
 /** Build the live AI context for a session: meeting goal/brief, rolling memory,
@@ -232,6 +236,57 @@ async function routeTextToAi(
   };
 }
 
+// Live-AI routing runs OFF the HTTP request path. The client gets its
+// transcript row back as soon as STT + the DB insert finish; cards and
+// answered-detections still reach the facilitator over the WebSocket hub.
+// (Holding the response on the Groq call — which the rate-limit gate can
+// stall for tens of seconds under 429 backoff — made the live transcript
+// lag minutes behind the meeting.)
+// At most one call runs per session with one queued behind it; intermediate
+// chunks are skipped. Nothing is lost: each call re-reads the recent
+// transcript window from the DB, so skipped chunks still inform the next
+// call — they just miss their per-row chunk_signal classification.
+interface PendingAiChunk {
+  text: string;
+  role: string;
+  transcriptId?: string;
+}
+
+const aiRoutingBySession = new Map<string, { queued: PendingAiChunk | null }>();
+
+function scheduleAiRouting(
+  sessionId: string,
+  text: string,
+  role: string,
+  transcriptId?: string,
+): void {
+  const running = aiRoutingBySession.get(sessionId);
+  if (running) {
+    running.queued = { text, role, transcriptId };
+    return;
+  }
+
+  const state: { queued: PendingAiChunk | null } = { queued: null };
+  aiRoutingBySession.set(sessionId, state);
+
+  void (async () => {
+    let next: PendingAiChunk | null = { text, role, transcriptId };
+    while (next) {
+      try {
+        const routed = await routeTextToAi(sessionId, next.text, next.role, next.transcriptId);
+        if (!routed.ok) {
+          console.warn(`[transcript:ai] Live AI rejected chunk for ${sessionId}: ${routed.error}`);
+        }
+      } catch (err) {
+        console.error(`[transcript:ai] Live AI routing failed for ${sessionId}:`, err);
+      }
+      next = state.queued;
+      state.queued = null;
+    }
+    aiRoutingBySession.delete(sessionId);
+  })();
+}
+
 async function validateSession(req: any, res: any, sessionId: string) {
   const session = await getSession(sessionId);
 
@@ -363,25 +418,15 @@ transcriptRouter.post("/chunk", requireAuth, async (req, res, next) => {
       });
     }
 
-    const routed = await routeTextToAi(sessionId, text, req.auth!.role, row.id);
-
-    if (!routed.ok) {
-      return res.status(routed.status).json({
-        ok: false,
-        error: routed.error,
-        data: {
-          transcript: row,
-          ...routed.data,
-        },
-      });
-    }
+    scheduleAiRouting(sessionId, text, req.auth!.role, row.id);
 
     res.json({
       ok: true,
       data: {
         sessionId,
         transcript: row,
-        ...routed.data,
+        ai: { queued: true },
+        suggestions: { created: [], answered: [] },
       },
     });
   } catch (err) {
@@ -529,19 +574,7 @@ transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
       });
     }
 
-    const routed = await routeTextToAi(sessionId, text, req.auth!.role, row.id);
-
-    if (!routed.ok) {
-      return res.status(routed.status).json({
-        ok: false,
-        error: routed.error,
-        data: {
-          transcript: row,
-          stt: { provider: stt.provider },
-          ...routed.data,
-        },
-      });
-    }
+    scheduleAiRouting(sessionId, text, req.auth!.role, row.id);
 
     res.json({
       ok: true,
@@ -549,7 +582,8 @@ transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
         sessionId,
         transcript: row,
         stt: { provider: stt.provider },
-        ...routed.data,
+        ai: { queued: true },
+        suggestions: { created: [], answered: [] },
       },
     });
   } catch (err) {
