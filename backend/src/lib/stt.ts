@@ -1,4 +1,8 @@
+import { v2 } from "@google-cloud/speech";
 import { env } from "../config/env";
+
+const { SpeechClient } = v2;
+type SpeechV2Client = InstanceType<typeof v2.SpeechClient>;
 
 export interface TranscribeInput {
   audio: Buffer;
@@ -6,81 +10,131 @@ export interface TranscribeInput {
 }
 
 export interface TranscribeResult {
-  provider: "deepgram" | "mock";
+  provider: "google" | "mock";
   text: string;
   raw?: unknown;
 }
 
-async function fetchWithTimeout(
-  url: string,
-  init: RequestInit,
-  timeoutMs: number,
-): Promise<Response> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+let googleClient: SpeechV2Client | null = null;
+let resolvedProjectId: string | null = null;
 
-  try {
-    return await fetch(url, { ...init, signal: ctrl.signal });
-  } finally {
-    clearTimeout(timer);
+// Corrected index type access  to extract the first element of the parameter tuple (ClientOptions)
+ type SpeechClientOptions = NonNullable<ConstructorParameters<typeof v2.SpeechClient>[0]>;
+
+function buildClientOptions(): SpeechClientOptions {
+  const { keyFile, serviceAccountJson, location } = env.stt.google;
+  
+  // Initialize with the correct regional endpoint
+  const opts: SpeechClientOptions = {
+    apiEndpoint: `${location}-speech.googleapis.com`,
+  };
+
+  if (keyFile) {
+    opts.keyFilename = keyFile;
+  } else if (serviceAccountJson) {
+    try {
+      opts.credentials = JSON.parse(serviceAccountJson);
+    } catch (err) {
+      console.error(
+        "[stt:google] GOOGLE_SERVICE_ACCOUNT_JSON is not valid JSON:",
+        err,
+      );
+    }
   }
+  return opts;
+}
+
+function getGoogleClient(): SpeechV2Client | null {
+  if (googleClient) return googleClient;
+  try {
+    googleClient = new SpeechClient(buildClientOptions());
+    console.log(
+      `[stt] Google Speech v2 client initialized (region ${env.stt.google.location}, model ${env.stt.google.model}).`,
+    );
+    return googleClient;
+  } catch (err) {
+    console.error("[stt:google] Failed to initialize Google Speech v2 client:", err);
+    return null;
+  }
+}
+
+async function getProjectId(client: SpeechV2Client): Promise<string> {
+  if (resolvedProjectId) return resolvedProjectId;
+  resolvedProjectId = env.stt.google.projectId || (await client.getProjectId());
+  return resolvedProjectId;
 }
 
 function mockTranscribe(input: TranscribeInput): TranscribeResult {
   return {
     provider: "mock",
-    text: `[mock transcript] received ${input.audio.length} bytes of ${input.mimeType}. Set STT_PROVIDER=deepgram and DEEPGRAM_API_KEY for real STT.`,
+    text: `[mock transcript] received ${input.audio.length} bytes of ${input.mimeType}. Set STT_PROVIDER=google for real STT.`,
     raw: { mock: true, bytes: input.audio.length, mimeType: input.mimeType },
   };
 }
 
-async function deepgramTranscribe(
-  input: TranscribeInput,
-): Promise<TranscribeResult> {
-  const { apiKey, baseUrl, model } = env.stt.deepgram;
-
-  if (!apiKey) {
+async function googleTranscribe(input: TranscribeInput): Promise<TranscribeResult> {
+  const client = getGoogleClient();
+  if (!client) {
+    console.warn("[stt] Google client uninitialized, falling back to mock.");
     return mockTranscribe(input);
   }
 
   try {
-    const url = `${baseUrl}?model=${encodeURIComponent(model)}&smart_format=true&punctuate=true&language=th`;
-    
-    const res = await fetchWithTimeout(
-      url,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Token ${apiKey}`,
-          "Content-Type": input.mimeType,
-        },
-        body: input.audio,
+    const projectId = await getProjectId(client);
+    const { location, model, languageCodes } = env.stt.google;
+    const audioBytes = input.audio.toString("base64");
+
+    const request = {
+      recognizer: `projects/${projectId}/locations/${location}/recognizers/_`,
+      config: {
+        autoDecodingConfig: {}, // Dynamically handles browser WebM/Opus audio
+        languageCodes: languageCodes,
+        model: model,
       },
-      env.stt.timeoutMs,
-    );
+      content: audioBytes,
+    };
 
-    const rawText = await res.text();
-    let parsedRaw: any = {};
+    const [response] = await client.recognize(request);
     
-    try {
-      parsedRaw = JSON.parse(rawText);
-    } catch (e) {
-      parsedRaw = { unparseableResponse: rawText };
+    // Process and merge the transcribed audio segments safely (bracket-free)
+    const textParts: string[] = [];
+    const results = response.results || [];
+    
+    for (const res of results) {
+      const alternatives = res.alternatives || [];
+      const [firstAlternative] = alternatives;
+      if (firstAlternative && firstAlternative.transcript) {
+        textParts.push(firstAlternative.transcript);
+      }
     }
 
-    if (!res.ok) {
-      console.warn(`[stt] Deepgram error ${res.status}`);
-      return { provider: "deepgram", text: "", raw: { skipped: true, error: parsedRaw } };
-    }
+    const text = textParts.join(" ").trim();
 
-    // Safely extract Deepgram's nested transcription text
-    const text = parsedRaw?.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? "";
-    return { provider: "deepgram", text, raw: parsedRaw };
-    
+    return {
+      provider: "google",
+      text,
+      raw: response,
+    };
   } catch (error) {
-    // Graceful fallback for any network/timeout errors to keep the meeting pipeline alive
-    console.warn(`[stt] Network or timeout error during Deepgram transcription.`);
-    return { provider: "deepgram", text: "", raw: { skipped: true, error } };
+    // The gRPC INVALID_ARGUMENT wraps the real cause in BadRequest.fieldViolations
+    // (which field, and why). String(error) hides it — surface it explicitly.
+    const anyErr = error as {
+      details?: string;
+      statusDetails?: Array<{ fieldViolations?: unknown }>;
+    };
+    const violations = anyErr?.statusDetails?.[0]?.fieldViolations;
+    console.error("[stt:google] API error:", anyErr?.details ?? error);
+    if (violations) {
+      console.error(
+        "[stt:google] field violations:",
+        JSON.stringify(violations, null, 2),
+      );
+    }
+    return {
+      provider: "google",
+      text: "",
+      raw: { error: String(error), violations },
+    };
   }
 }
 
@@ -88,14 +142,10 @@ export async function transcribeAudio(
   input: TranscribeInput,
 ): Promise<TranscribeResult> {
   switch (env.stt.provider) {
-    case "deepgram":
-      return deepgramTranscribe(input);
+    case "google":
+      return googleTranscribe(input);
     case "mock":
-      return mockTranscribe(input);
     default:
-      console.warn(
-        `[stt] Unknown provider ${env.stt.provider}, falling back to mock`,
-      );
       return mockTranscribe(input);
   }
 }

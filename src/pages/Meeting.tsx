@@ -16,19 +16,25 @@ import { useAiBlocks } from "../hooks/useAiBlocks";
 import { useSuggestionSocket } from "../hooks/useSuggestionSocket";
 import { useAuth } from "../context/AuthContext";
 import { useSessionRecovery } from "../hooks/useSessionRecovery";
+import { useMediaRecorder } from "../hooks/useMediaRecorder";
 import { API_BASE } from "../lib/api";
 
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 
-// Adaptive AI chunking: recognized words render instantly in the transcript
-// (ghost row) WITHOUT calling the question AI. A chunk is sent to the AI only
-// when the speaker pauses on a finalized sentence with enough substance, or
-// when the hard time cap is reached — whichever comes first. Both flushes send
-// FINALIZED text only; interim words stay in the ghost row until the engine
-// finalizes them (sending interim duplicates it once the final arrives). Thai
-// has no word spaces, so "substance" is measured in characters, not words.
-const CHUNK_MAX_MS = 7000;
-const CHUNK_MIN_CHARS = 40;
+// Mic capture cadence: record short standalone WebM/Opus clips and POST each to
+// the backend, which runs Google Speech v2 chirp_2 (th-TH,en-US). Short clips
+// (not timesliced fragments) keep every upload independently decodable.
+const CHUNK_MAX_MS = 2000;
+
+// Blob → base64 data URL. The backend strips the `data:...;base64,` prefix.
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(String(reader.result));
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
 
 // Chat-style auto-follow: within this many px of the bottom counts as "at the
 // bottom", so auto-scroll stays armed despite sub-pixel rounding and the
@@ -139,10 +145,7 @@ export default function Meeting({ onNav }: MeetingProps) {
   const [ending, setEnding] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
 
-  // Web Speech API Native Recording States
   const [isRecording, setIsRecording] = useState(false);
-  const isRecordingRef = useRef(false);
-  const recognitionRef = useRef<any>(null);
 
   const [durationMin, setDurationMin] = useState<number | null>(null);
   const [startMs, setStartMs] = useState<number | null>(null);
@@ -154,7 +157,7 @@ export default function Meeting({ onNav }: MeetingProps) {
   // Ghost-row state: words shown instantly, before any backend/AI round-trip.
   // liveText = recognized but not yet flushed; pendingText = flushed chunk
   // still in flight to the backend.
-  const [liveText, setLiveText] = useState("");
+  const [liveText] = useState("");
   const [pendingText, setPendingText] = useState("");
 
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
@@ -176,13 +179,19 @@ export default function Meeting({ onNav }: MeetingProps) {
     });
   }, []);
 
-  // --- Real-Time STT Chunk Ingestion Pipeline ---
-  const sendTextChunk = useCallback(async (text: string) => {
-    if (!token || !sessionId || !text.trim()) return;
+  // --- Real-Time STT: mic → MediaRecorder → Chirp 2 (all browsers) ---
+  // The old path used the browser Web Speech API, which only exists in
+  // Chrome/Edge/Safari (Firefox has none) and transcribes on Google's consumer
+  // endpoint — never our Chirp 2 project. MediaRecorder + getUserMedia work in
+  // every modern browser; each short clip POSTs to /api/transcript/audio-chunk,
+  // which runs Speech v2 chirp_2 (th-TH,en-US) and returns Thai transcript rows.
+  const sendAudioChunk = useCallback(async (blob: Blob) => {
+    if (!token || !sessionId || blob.size === 0) return;
     setSendingChunk(true);
-    setPendingText(text.trim());
+    setPendingText("Transcribing…");
     try {
-      const response = await fetch(`${API_BASE}/api/transcript/chunk`, {
+      const audioBase64 = await blobToBase64(blob);
+      const response = await fetch(`${API_BASE}/api/transcript/audio-chunk`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -191,29 +200,40 @@ export default function Meeting({ onNav }: MeetingProps) {
         body: JSON.stringify({
           sessionId,
           session_id: sessionId,
-          text: text.trim(),
+          audioBase64,
+          mimeType: blob.type || "audio/webm",
           speaker: user?.name || "Facilitator",
-          timestamp: new Date().toISOString(),
         }),
       });
 
       const payload = await response.json();
       if (response.ok && payload.ok && payload.data?.transcript) {
         appendTranscript(payload.data.transcript);
+        setLastSpeechMs(Date.now());
         if (payload.data.ai?.blocks) {
           ai.append(payload.data.ai.blocks, payload.data.ai.provider);
         }
-      } else {
-        console.warn("[speech:chunk] Pipeline rejected request:", payload.error);
+      } else if (!payload.ok) {
+        console.warn("[speech:audio] Pipeline rejected chunk:", payload.error);
       }
     } catch (err) {
-      console.error("[speech:chunk] Connection fault:", err);
+      console.error("[speech:audio] Connection fault:", err);
     } finally {
       setSendingChunk(false);
       setPendingText("");
     }
   }, [token, sessionId, authHeaders, user?.name, appendTranscript, ai]);
+  //delta v
+  const {
+    error: recError,
+    start: startRec,
+    stop: stopRec,
+  } = useMediaRecorder({ onChunk: sendAudioChunk, chunkIntervalMs: CHUNK_MAX_MS });
 
+  useEffect(() => {
+    if (recError) setError(recError);
+  }, [recError]);
+  //delta^
   const sendTextChunkRef = useRef(sendTextChunk);
   useEffect(() => {
     sendTextChunkRef.current = sendTextChunk;
@@ -366,19 +386,15 @@ export default function Meeting({ onNav }: MeetingProps) {
   }, [flushBuffer]);
 
   const startListening = () => {
-    if (!recognitionRef.current) return;
     setIsRecording(true);
-    isRecordingRef.current = true;
-    try {
-      recognitionRef.current.start();
-    } catch (e) {
-      console.warn("[speech] Already listening - start aborted:", e);
-    }
+    void startRec();
   };
 
   const stopListening = () => {
-    if (!recognitionRef.current) return;
     setIsRecording(false);
+    
+    stopRec(); //delta
+    
     isRecordingRef.current = false;
     // No direct flush here: stop() may still finalize in-flight audio (a last
     // onresult), and onend — which always fires after stop() — does the single

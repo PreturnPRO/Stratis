@@ -16,6 +16,15 @@ build/
 !.env.example
 !**/.env.example
 
+# Service-account / cloud credential keys — NEVER commit private keys
+project-*.json
+**/project-*.json
+*-service-account*.json
+**/*-service-account*.json
+gcp-*.json
+credentials*.json
+*.key.json
+
 # Database (local dev only)
 data/
 *.db
@@ -31,6 +40,8 @@ data/
 .playwright-mcp/
 *.swp
 *.swo
+.tokensave/
+.playwright/
 
 # Design scratch images at the repo root (mockup exports, drafts — local only;
 # real assets belong in src/ or public/ and are unaffected)
