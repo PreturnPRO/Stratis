@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
-import { COLORS, RADIUS, SHADOW, FONT, LETTER_SPACING } from "../tokens/colors";
+import React, { useEffect, useId, useRef, useState } from "react";
+import { COLORS, RADIUS, SHADOW, FONT, LETTER_SPACING, SPACE } from "../tokens/colors";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Legacy style helpers — kept so pages not yet migrated keep working.
@@ -33,17 +33,6 @@ export function btnGhost(extra = {}) {
   };
 }
 
-export function tagStyle(color: string) {
-  return {
-    display: "inline-block",
-    fontSize: FONT.size.caption,
-    padding: "2px 8px",
-    borderRadius: 4,
-    background: `${color}22`,
-    color,
-  };
-}
-
 export function Avatar({ initials, color, size = 36 }: { initials: string; color: string; size?: number }) {
   return (
     <div style={{
@@ -57,15 +46,9 @@ export function Avatar({ initials, color, size = 36 }: { initials: string; color
   );
 }
 
-export function Badge({ label, color }: { label: string; color: string }) {
-  return (
-    <span style={tagStyle(color)}>{label}</span>
-  );
-}
-
 export function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ color: COLORS.textMuted, fontSize: FONT.size.label, letterSpacing: LETTER_SPACING.label, marginBottom: 14 }}>
+    <div style={{ color: COLORS.textMuted, fontSize: FONT.size.label, letterSpacing: LETTER_SPACING.label, marginBottom: SPACE[4] }}>
       {children}
     </div>
   );
@@ -200,7 +183,7 @@ export function IconButton({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Chip / Pill — compact status indicators.
+// Chip — compact status indicator.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function Chip({
@@ -235,25 +218,6 @@ export function Chip({
   );
 }
 
-export function Pill({ label, color }: { label: string; color: string }) {
-  return (
-    <span style={{
-      display: "inline-flex",
-      alignItems: "center",
-      padding: "2px 8px",
-      borderRadius: RADIUS.pill,
-      background: `${color}1f`,
-      color,
-      fontSize: FONT.size.micro,
-      fontWeight: 700,
-      letterSpacing: LETTER_SPACING.wide,
-      textTransform: "uppercase",
-    }}>
-      {label}
-    </span>
-  );
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Modal — backdrop fade, panel pop, Esc-to-close, click-outside, focus capture.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -272,6 +236,7 @@ export function Modal({
   width?: number;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
 
   // Keep the latest onClose in a ref so the effect below can stay mount-only
   // (empty deps) — depending on `onClose` directly re-ran this effect (and
@@ -313,6 +278,7 @@ export function Modal({
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={title ? titleId : undefined}
         onClick={(e) => e.stopPropagation()}
         style={{
           width,
@@ -327,7 +293,7 @@ export function Modal({
         }}
       >
         {title && (
-          <h2 style={{
+          <h2 id={titleId} style={{
             color: COLORS.text,
             fontSize: FONT.size.heading,
             fontWeight: 600,
@@ -342,7 +308,7 @@ export function Modal({
             display: "flex",
             justifyContent: "flex-end",
             gap: 8,
-            marginTop: 22,
+            marginTop: SPACE[6],
           }}>
             {footer}
           </div>

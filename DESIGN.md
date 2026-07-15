@@ -29,17 +29,22 @@ colors:
 typography:
   display:
     fontFamily: "'Inter', 'Helvetica Neue', Arial, sans-serif"
-    fontSize: "34px"
+    fontSize: "32px"
     fontWeight: 700
     lineHeight: 1.15
-  headline:
+  title:
     fontFamily: "'Inter', 'Helvetica Neue', Arial, sans-serif"
     fontSize: "24px"
     fontWeight: 600
     lineHeight: 1.25
-  title:
+  heading:
     fontFamily: "'Inter', 'Helvetica Neue', Arial, sans-serif"
-    fontSize: "18px"
+    fontSize: "20px"
+    fontWeight: 600
+    lineHeight: 1.3
+  subheading:
+    fontFamily: "'Inter', 'Helvetica Neue', Arial, sans-serif"
+    fontSize: "16px"
     fontWeight: 600
     lineHeight: 1.3
   body:
@@ -49,9 +54,17 @@ typography:
     lineHeight: 1.5
   label:
     fontFamily: "'Inter', 'Helvetica Neue', Arial, sans-serif"
-    fontSize: "11px"
+    fontSize: "12px"
     fontWeight: 500
     letterSpacing: "0.02em"
+  caption:
+    fontFamily: "'Inter', 'Helvetica Neue', Arial, sans-serif"
+    fontSize: "11px"
+    fontWeight: 400
+  micro:
+    fontFamily: "'Inter', 'Helvetica Neue', Arial, sans-serif"
+    fontSize: "10px"
+    fontWeight: 500
   mono:
     fontFamily: "'SF Mono', 'JetBrains Mono', ui-monospace, Menlo, monospace"
     fontSize: "12px"
@@ -167,11 +180,14 @@ A near-monochrome dark palette with a single warm signal color; every other hue 
 **Character:** A single, highly legible grotesque carries the whole system at varying weights — no display/body pairing drama. This matches the Control Room posture: information density and clarity over typographic personality.
 
 ### Hierarchy
-- **Display** (700, 34px, 1.15): Rare — top-level page headers only.
-- **Headline** (600, 24px, 1.25): Section headers within a page (e.g. a Dashboard panel title).
-- **Title** (600, 18px, 1.3): Card/modal/component titles (Modal's `<h2>` uses this).
-- **Body** (400, 14px, 1.5): Default UI text. Cap prose blocks at 65–75ch where they appear.
-- **Label** (500, 11px, letter-spacing 0.02em): SectionLabel and similar small metadata captions.
+- **Display** (700, 32px, 1.15): Rare — hero-scale emphasis only.
+- **Title** (600, 24px, 1.25): Page-level headers.
+- **Heading** (600, 20px, 1.3): Section headers within a page (e.g. a Dashboard panel title).
+- **Subheading** (600, 16px, 1.3): Card/modal/list-item titles (Modal's `<h2>` uses this).
+- **Body** (400, 14px, 1.5): Default UI text — the workhorse. Cap prose blocks at 65–75ch where they appear.
+- **Label** (500, 12px, letter-spacing 0.02em): Uppercase tracked section/field labels, toggles.
+- **Caption** (400, 11px): Timestamps, dim metadata, mono technical readouts.
+- **Micro** (500, 10px): Tiny uppercase pill/tag labels (urgency chips, type tags).
 - **Mono** (400, 12px): Technical/status readouts.
 
 ### Named Rules

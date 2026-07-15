@@ -58,3 +58,11 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# Working / closeout docs — new, local-only files (not tracked source):
+# the docs/ folder (markdown + exported .pdf/.docx) and root working notes.
+# Anchored paths so the tracked project docs (README.md, DESIGN.md, PRODUCT.md)
+# and any *.md elsewhere are unaffected.
+/CHANGES.md
+/PRESENT-DATABASE.md
+/docs/

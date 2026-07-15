@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Zap, ChevronDown } from 'lucide-react'
-import { COLORS, FONT, LETTER_SPACING } from '../tokens/colors'
+import { COLORS, FONT, LETTER_SPACING, SHADOW, SPACE } from '../tokens/colors'
 import { Button } from '../components/ui'
 
 interface Props {
@@ -89,7 +89,7 @@ export default function Landing({ onNavigate }: Props) {
               fontSize: FONT.size.label,
               letterSpacing: 2.5,
               fontWeight: 600,
-              marginBottom: 22,
+              marginBottom: SPACE[6],
             }}
           >
             <Zap size={15} strokeWidth={2.2} />
@@ -174,7 +174,7 @@ export default function Landing({ onNavigate }: Props) {
           card1Visible={card1Visible}
           card0Answered={card0Answered}
         />
-        <p style={{ color: COLORS.textMuted, fontSize: FONT.size.body, marginTop: 26, textAlign: 'center', maxWidth: 520, lineHeight: 1.6 }}>
+        <p style={{ color: COLORS.textMuted, fontSize: FONT.size.body, marginTop: SPACE[6], textAlign: 'center', maxWidth: 520, lineHeight: 1.6 }}>
           As the conversation unfolds, Stratis surfaces the question nobody thought to
           ask — privately, to the facilitator — and marks it answered when the room
           gets there.
@@ -202,7 +202,7 @@ function MeetingDemo({
         background: COLORS.surface,
         border: `1px solid ${COLORS.borderLight}`,
         borderRadius: 14,
-        boxShadow: '0 30px 80px rgba(0,0,0,0.55)',
+        boxShadow: SHADOW.hero,
         overflow: 'hidden',
       }}
     >
@@ -233,7 +233,7 @@ function MeetingDemo({
 
       {/* body: transcript + floating suggestion stack */}
       <div style={{ position: 'relative', height: 320, padding: 20 }}>
-        <div style={{ color: COLORS.textMuted, fontSize: FONT.size.caption, fontWeight: 600, letterSpacing: LETTER_SPACING.label, marginBottom: 14 }}>
+        <div style={{ color: COLORS.textMuted, fontSize: FONT.size.caption, fontWeight: 600, letterSpacing: LETTER_SPACING.label, marginBottom: SPACE[4] }}>
           TRANSCRIPT
         </div>
 
@@ -294,13 +294,13 @@ function DemoCard({
         border: `1px solid ${COLORS.border}`,
         borderRadius: 10,
         padding: '10px 12px',
-        boxShadow: '0 10px 26px rgba(0,0,0,0.4)',
+        boxShadow: SHADOW.float,
         animation: 'cardIn 0.32s ease',
         opacity: answered ? 0.7 : 1,
         transition: 'opacity 0.4s ease',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 5 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: SPACE[1.5] }}>
         <span style={{ width: 5, height: 5, borderRadius: '50%', background: card.color }} />
         <span style={{ color: card.color, fontSize: FONT.size.micro, fontWeight: 700, letterSpacing: LETTER_SPACING.wide }}>
           {card.tag}

@@ -11,6 +11,7 @@ import { apiRouter } from "./routes";
 import { requireAuth } from "./auth/middleware";
 import { errorHandler, notFound } from "./middleware/errorHandler";
 import { attachHub } from "./realtime/hub";
+import { selectProvider } from "@ai/index";
 // Importing the db module ensures the SQLite file + WAL pragmas initialise on boot.
 import "./db/database";
 
@@ -45,4 +46,9 @@ attachHub(server);
 server.listen(env.port, "0.0.0.0", () => {
   console.log(`[stratis] backend listening on port ${env.port} (${env.nodeEnv})`);
   console.log(`[stratis] websocket hub on ws://0.0.0.0:${env.port}/ws`);
+  // Resolve the provider once at boot so a misconfigured deploy (missing API
+  // key → silent mock) is visible in the logs immediately, not mid-meeting.
+  console.log(
+    `[stratis] AI provider: ${selectProvider().name} (AI_PROVIDER=${env.ai.provider})`,
+  );
 });
