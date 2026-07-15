@@ -223,7 +223,7 @@ export default function Meeting({ onNav }: MeetingProps) {
       setPendingText("");
     }
   }, [token, sessionId, authHeaders, user?.name, appendTranscript, ai]);
-  //delta v
+  
   const {
     error: recError,
     start: startRec,
@@ -233,157 +233,6 @@ export default function Meeting({ onNav }: MeetingProps) {
   useEffect(() => {
     if (recError) setError(recError);
   }, [recError]);
-  //delta^
-  const sendTextChunkRef = useRef(sendTextChunk);
-  useEffect(() => {
-    sendTextChunkRef.current = sendTextChunk;
-  }, [sendTextChunk]);
-
-  // Dual-buffer silence-resistant accumulation strategy
-  const bufferRef = useRef<string>("");
-  const interimRef = useRef<string>("");
-  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Interim text must NEVER be sent by mid-session flushes: the engine
-  // re-delivers those same words (often revised) in a later final result,
-  // which would land in the buffer and get flushed again — the transcript
-  // then shows the sentence twice ("old sentence + new section").
-  // includeInterim is reserved for teardown (onend), when the engine is
-  // about to discard that audio and can no longer re-deliver it.
-  const flushBuffer = useCallback((includeInterim = false) => {
-    if (flushTimerRef.current) {
-      clearTimeout(flushTimerRef.current);
-      flushTimerRef.current = null;
-    }
-
-    let text = bufferRef.current.trim();
-    if (includeInterim && interimRef.current.trim()) {
-      text = (text + " " + interimRef.current.trim()).trim();
-      interimRef.current = "";
-    }
-
-    bufferRef.current = "";
-    // Un-flushed interim stays visible in the ghost row.
-    setLiveText(interimRef.current.trim());
-
-    if (text) {
-      sendTextChunkRef.current(text);
-    }
-  }, []);
-
-  useEffect(() => {
-    const SpeechRecognitionEngine =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognitionEngine) {
-      console.warn("[speech] Native SpeechRecognition not available in this host environment.");
-      return;
-    }
-
-    const rec = new SpeechRecognitionEngine();
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.lang = "th-TH"; // Web Speech API supports one language per recognition instance; Thai only
-
-    rec.onstart = () => {
-      console.log("[speech] Recognition pipeline active.");
-    };
-
-    rec.onresult = (event: any) => {
-      let finalTranscript = "";
-      let interimTranscript = "";
-
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        // Correctly index SpeechRecognitionAlternative using item(0) (bracket-free!)
-        const alternative = event.results[i].item(0);
-        const transcript = alternative ? alternative.transcript : "";
-
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript;
-        } else {
-          interimTranscript += transcript;
-        }
-      }
-
-      // Any recognized speech (final or interim) marks the AI as "hearing you"
-      // for the presence chip.
-      if (finalTranscript || interimTranscript) {
-        setLastSpeechMs(Date.now());
-      }
-
-      if (finalTranscript) {
-        bufferRef.current = (bufferRef.current + " " + finalTranscript).trim();
-        interimRef.current = "";
-      } else {
-        interimRef.current = interimTranscript;
-      }
-
-      // Ghost row: mirror every recognized word to the transcript instantly —
-      // no backend or AI round-trip involved.
-      setLiveText((bufferRef.current + " " + interimRef.current).trim());
-
-      // Adaptive flush: a finalized sentence with no trailing interim means
-      // the speaker paused — hand the chunk to the question AI now, on a
-      // natural thought boundary, instead of waiting for the cap.
-      if (
-        finalTranscript &&
-        !interimTranscript &&
-        bufferRef.current.length >= CHUNK_MIN_CHARS
-      ) {
-        flushBuffer();
-        return;
-      }
-
-      // Hard cap: even mid-monologue, flush at least every CHUNK_MAX_MS.
-      if (bufferRef.current.trim() || interimRef.current.trim()) {
-        if (!flushTimerRef.current) {
-          flushTimerRef.current = setTimeout(() => {
-            flushBuffer();
-          }, CHUNK_MAX_MS);
-        }
-      }
-    };
-
-    rec.onerror = (event: any) => {
-      console.error("[speech] Capture engine error:", event.error);
-      if (event.error === "not-allowed") {
-        setIsRecording(false);
-        isRecordingRef.current = false;
-      }
-    };
-
-    rec.onend = () => {
-      console.log("[speech] Mic stream went silent or disconnected.");
-      // Teardown flush: include interim — the engine is discarding this audio
-      // and will never re-deliver it (a restart starts a fresh session).
-      flushBuffer(true);
-
-      if (isRecordingRef.current) {
-        console.log("[speech] Re-initiating active capture stream...");
-        try {
-          rec.start();
-        } catch (e) {
-          console.warn("[speech] Auto-restart sequence missed:", e);
-        }
-      }
-    };
-
-    recognitionRef.current = rec;
-
-    return () => {
-      if (rec) {
-        rec.onend = null;
-        rec.onerror = null;
-        rec.onresult = null;
-        try {
-          rec.stop();
-        } catch (e) {}
-      }
-      if (flushTimerRef.current) {
-        clearTimeout(flushTimerRef.current);
-      }
-    };
-  }, [flushBuffer]);
 
   const startListening = () => {
     setIsRecording(true);
@@ -392,14 +241,7 @@ export default function Meeting({ onNav }: MeetingProps) {
 
   const stopListening = () => {
     setIsRecording(false);
-    
-    stopRec(); //delta
-    
-    isRecordingRef.current = false;
-    // No direct flush here: stop() may still finalize in-flight audio (a last
-    // onresult), and onend — which always fires after stop() — does the single
-    // teardown flush. Flushing here too sent the same words twice.
-    recognitionRef.current.stop();
+    stopRec();
   };
 
   // --- Past Transcript Syncing ---
