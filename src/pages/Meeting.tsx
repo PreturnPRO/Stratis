@@ -24,7 +24,7 @@ const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 // Mic capture cadence: record short standalone WebM/Opus clips and POST each to
 // the backend, which runs Google Speech v2 chirp_2 (th-TH,en-US). Short clips
 // (not timesliced fragments) keep every upload independently decodable.
-const CHUNK_MAX_MS = 2000;
+const CHUNK_MAX_MS = 6000;
 
 // Blob → base64 data URL. The backend strips the `data:...;base64,` prefix.
 function blobToBase64(blob: Blob): Promise<string> {
