@@ -242,11 +242,31 @@ export interface SuggestionCard {
   confidence?: number;
 }
 
+/** A saved transcript row as broadcast over /ws (matches the transcripts table). */
+export interface WsTranscriptRow {
+  id: string;
+  session_id: string;
+  speaker: string;
+  text: string;
+  timestamp: string;
+}
+
 /** Events the server pushes to a connected facilitator over /ws. */
 export type WsServerEvent =
   | { type: "connected"; sessionId: string; role: Role }
   | { type: "suggestion:new"; card: SuggestionCard }
-  | { type: "suggestion:answered"; sessionId: string; cardId: string; source: AnsweredSource };
+  | { type: "suggestion:answered"; sessionId: string; cardId: string; source: AnsweredSource }
+  // Streaming STT (S-EXP): interim goes only to the socket that streams audio;
+  // finals broadcast to the session so every open tab stays in sync.
+  | { type: "stt:interim"; sessionId: string; text: string }
+  | { type: "transcript:final"; sessionId: string; transcript: WsTranscriptRow }
+  | { type: "stt:error"; sessionId: string; message: string };
+
+/** Control messages a client may send over /ws. Binary frames on the same
+ * socket carry raw PCM16LE mono audio for the active STT stream. */
+export type WsClientEvent =
+  | { type: "stt:start"; sampleRate: number; speaker?: string }
+  | { type: "stt:stop" };
 
 /** Placeholder until S1-T03-F provides real session IDs from the meeting lifecycle. */
 export const DEMO_SESSION_ID = "session_demo";

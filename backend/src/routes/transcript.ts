@@ -6,7 +6,7 @@ import { liveCardCall, type LiveContext } from "@ai/index";
 import { transcribeAudio } from "../lib/stt";
 import * as suggestions from "../realtime/suggestions";
 import { detectAnswered } from "../realtime/autodetect";
-import { pushSuggestion, pushAnswered } from "../realtime/hub";
+import { pushSuggestion, pushAnswered, registerStreamIngest } from "../realtime/hub";
 import { getDocumentRow, rowToDocument, renderDocument } from "../lib/pmDocument";
 
 export const transcriptRouter = Router();
@@ -287,6 +287,31 @@ function scheduleAiRouting(
   })();
 }
 
+// Google STT inserts spaces between Thai tokens; Thai has no spaces between
+// words, so strip whitespace that sits between two Thai characters.
+function cleanSttText(raw: string): string {
+  return raw.replace(/([฀-๿])\s+(?=[฀-๿])/g, "$1").trim();
+}
+
+// ── Streaming STT ingest (S-EXP) ─────────────────────────────────────────────
+// Final text arriving over the WebSocket streaming path lands here — the same
+// save + live-AI routing the REST audio-chunk route runs, minus the HTTP
+// request/response wrapping. Registered with the hub (which this module
+// already sits downstream of) to avoid an import cycle.
+registerStreamIngest(async ({ sessionId, speaker, text, role }) => {
+  const clean = cleanSttText(text);
+  if (!clean) return null;
+
+  // The WS handshake authorized this user for the session; re-check only the
+  // parts that can change mid-connection (session deleted or ended).
+  const session = await getSession(sessionId);
+  if (!session || session.status === "ended") return null;
+
+  const row = await saveTranscriptChunk({ sessionId, speaker, text: clean });
+  scheduleAiRouting(sessionId, clean, role, row.id);
+  return row;
+});
+
 async function validateSession(req: any, res: any, sessionId: string) {
   const session = await getSession(sessionId);
 
@@ -543,7 +568,7 @@ transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
       });
     }
 
-    const text = stt.text.replace(/([\u0E00-\u0E7F])\s+(?=[\u0E00-\u0E7F])/g, '$1').trim();
+    const text = cleanSttText(stt.text);
 
     if (!text) {
       return res.json({
