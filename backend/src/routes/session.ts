@@ -17,6 +17,7 @@ import { requireAuth } from "../auth/middleware";
 import { db } from "../db/database";
 import { newId, now } from "../lib/ids";
 import { clearProjectDocCache } from "./transcript";
+import { forgetSession } from "../realtime/liveness";
 
 export const sessionRouter = Router();
 
@@ -119,6 +120,40 @@ async function requireAccessibleSession(
     ok: true as const,
     session,
   };
+}
+
+/**
+ * End a session: mark it ended, stamp timestamps, drop caches, release liveness
+ * tracking, and expose the summary-generation trigger seam. Shared by
+ * POST /:id/end and the idle-session sweeper so a manually-ended and an
+ * auto-ended session are indistinguishable downstream. Returns the updated
+ * session, or undefined if the session no longer exists.
+ */
+export async function endSession(sessionId: string): Promise<any> {
+  const session = await getSession(sessionId);
+  if (!session) return undefined;
+  if (session.status === "ended") return session;
+
+  const timestamp = now();
+
+  await db.query(
+    `
+    UPDATE sessions
+    SET status = 'ended',
+        started_at = COALESCE(started_at, $1),
+        ended_at = COALESCE(ended_at, $2)
+    WHERE id = $3
+    `,
+    [timestamp, timestamp, session.id],
+  );
+
+  clearProjectDocCache(session.id);
+  forgetSession(session.id);
+
+  // S1-T03-F trigger point — post-meeting summary generation hooks here.
+  console.log(`[session:end] session=${session.id} summary trigger stubbed`);
+
+  return getSession(session.id);
 }
 
 /**
@@ -610,27 +645,7 @@ sessionRouter.post("/:id/end", requireAuth, async (req, res) => {
       });
     }
 
-    const timestamp = now();
-
-    await db.query(
-      `
-      UPDATE sessions
-      SET status = 'ended',
-          started_at = COALESCE(started_at, $1),
-          ended_at = COALESCE(ended_at, $2)
-      WHERE id = $3
-      `,
-      [timestamp, timestamp, session.id],
-    );
-
-    clearProjectDocCache(session.id);
-
-    const updated = await getSession(session.id);
-
-    // S1-T03-F trigger point.
-    // Full post-meeting participant summary generation is implemented later,
-    // but ending the session must expose the hook now.
-    console.log(`[session:end] session=${session.id} summary trigger stubbed`);
+    const updated = await endSession(session.id);
 
     res.json({
       ok: true,
