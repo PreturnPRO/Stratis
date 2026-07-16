@@ -10,6 +10,7 @@ import type {
 import { verifyToken, type JwtClaims } from "../auth/jwt";
 import { db } from "../db/database";
 import { createSttStream, type SttStreamHandle } from "../lib/sttStream";
+import { markAudio } from "./liveness";
 
 interface Client {
   socket: WebSocket;
@@ -17,6 +18,9 @@ interface Client {
   claims: JwtClaims;
   /** Active streaming-STT session, if the client sent "stt:start". */
   stt?: SttStreamHandle | null;
+  /** Heartbeat liveness — set false before each ping, true on pong. A client
+   * still false at the next tick is a dead/half-open socket and is terminated. */
+  isAlive: boolean;
 }
 
 // ── Streaming STT ingest (S-EXP) ─────────────────────────────────────────────
@@ -88,6 +92,12 @@ function broadcast(sessionId: string, event: WsServerEvent): void {
   for (const c of set) send(c.socket, event);
 }
 
+/** Live facilitator WebSocket connections for a session — read by the session
+ * sweeper to decide whether an idle session has truly been abandoned. */
+export function facilitatorCount(sessionId: string): number {
+  return facilitators.get(sessionId)?.size ?? 0;
+}
+
 async function ownsSession(
   claims: JwtClaims,
   sessionId: string,
@@ -146,7 +156,7 @@ export function attachHub(server: Server): WebSocketServer {
         return;
       }
 
-      const client: Client = { socket, sessionId, claims, stt: null };
+      const client: Client = { socket, sessionId, claims, stt: null, isAlive: true };
 
       // Listeners must attach synchronously with the connection event — the
       // ownership check below awaits a DB round-trip, and ws drops (not
@@ -162,6 +172,7 @@ export function attachHub(server: Server): WebSocketServer {
         // Binary frames carry PCM16 audio for the active STT stream; text
         // frames are JSON control messages (WsClientEvent).
         if (isBinary) {
+          markAudio(client.sessionId);
           client.stt?.write(data);
           return;
         }
@@ -183,6 +194,10 @@ export function attachHub(server: Server): WebSocketServer {
           preAuthQueue.shift(); // keep newest; oldest audio is the least useful
         }
         preAuthQueue.push({ data: data as Buffer, isBinary });
+      });
+
+      socket.on("pong", () => {
+        client.isAlive = true;
       });
 
       socket.on("close", () => {
@@ -213,6 +228,30 @@ export function attachHub(server: Server): WebSocketServer {
       socket.close(5000, "Internal Server Error");
     }
   });
+
+  // Heartbeat: ping every client each interval; a client that hasn't ponged
+  // since the last tick is a dead/half-open socket (laptop sleep, NAT/proxy
+  // idle timeout) and is terminated so its Client entry leaves the maps and we
+  // stop broadcasting into a void. terminate() fires "close", which unsubscribes.
+  const HEARTBEAT_MS = 30_000;
+  const heartbeat = setInterval(() => {
+    const clients: Client[] = [];
+    for (const set of facilitators.values()) for (const c of set) clients.push(c);
+    for (const client of clients) {
+      if (!client.isAlive) {
+        client.socket.terminate();
+        continue;
+      }
+      client.isAlive = false;
+      try {
+        client.socket.ping();
+      } catch {
+        /* socket already tearing down */
+      }
+    }
+  }, HEARTBEAT_MS);
+  heartbeat.unref?.();
+  wss.on("close", () => clearInterval(heartbeat));
 
   return wss;
 }
