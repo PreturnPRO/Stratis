@@ -18,6 +18,7 @@ import { useAuth } from "../context/AuthContext";
 import { useSessionRecovery } from "../hooks/useSessionRecovery";
 import { useMediaRecorder } from "../hooks/useMediaRecorder";
 import { usePcmStream } from "../hooks/usePcmStream";
+import { mergeTranscripts } from "../lib/mergeTranscripts";
 import { API_BASE } from "../lib/api";
 
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
@@ -407,6 +408,36 @@ export default function Meeting({ onNav }: MeetingProps) {
       void loadTranscript();
     }
   }, [sessionId, loadTranscript]);
+
+  // Reconnect backfill: rows finalized during a socket drop are broadcast while
+  // we're disconnected and never reach this client. On every reconnect (not the
+  // first connect — the mount load above covers that) refetch and merge so the
+  // panel matches the database with no silent gap. Silent: no spinner, dedup by id.
+  const backfillTranscript = useCallback(async () => {
+    if (!token || !sessionId) return;
+    try {
+      const response = await fetch(`${API_BASE}/api/transcript/session/${sessionId}`, {
+        headers: authHeaders,
+      });
+      const payload = await response.json();
+      if (response.ok && payload.ok) {
+        const rows: TranscriptRow[] = payload.data?.transcripts || [];
+        setTranscripts((prev) => mergeTranscripts(prev, rows));
+      }
+    } catch (err) {
+      console.error("[meeting] Transcript backfill on reconnect failed:", err);
+    }
+  }, [sessionId, token, authHeaders]);
+
+  const hadConnectionRef = useRef(false);
+  useEffect(() => {
+    if (!connected) return;
+    if (!hadConnectionRef.current) {
+      hadConnectionRef.current = true; // first connect — mount load already ran
+      return;
+    }
+    void backfillTranscript();
+  }, [connected, backfillTranscript]);
 
   // Sync starting server timestamps
   useEffect(() => {
