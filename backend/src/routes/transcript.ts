@@ -153,7 +153,7 @@ async function buildLiveContext(sessionId: string, latestText: string): Promise<
     goal: meta?.goal ?? null,
     brief: meta?.brief ?? null,
     rollingSummary: meta?.rolling_summary ?? null,
-    openQuestions: suggestions.openCards(sessionId).map((c) => c.question),
+    surfacedQuestions: suggestions.allCards(sessionId).map((c) => c.question),
     recentTranscript,
     projectDocument,
   };
