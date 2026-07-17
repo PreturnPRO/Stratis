@@ -143,7 +143,8 @@ export async function getStoredSummary(sessionId: string): Promise<StoredSummary
     created_at: string;
   }>(
     `SELECT id, session_id, summary_title, summary_subtitle, participants_json, duration_minutes, created_at
-     FROM participant_summaries WHERE session_id = $1`,
+     FROM participant_summaries WHERE session_id = $1
+     ORDER BY created_at ASC LIMIT 1`,
     [sessionId],
   );
   const row = summaryResult.rows[0];
@@ -202,10 +203,14 @@ export async function generateAndSaveSummary(sessionId: string): Promise<StoredS
   const participants = uniqueParticipants(transcripts);
   const durationMinutes = minutesBetween(meta.started_at, meta.ended_at);
 
-  await db.query(
+  // The session-end hook and this function's lazy-GET caller can race; the
+  // unique index on session_id makes the loser's insert a silent no-op, and
+  // blocks are only written by the winner.
+  const inserted = await db.query(
     `INSERT INTO participant_summaries
        (id, session_id, summary_title, summary_subtitle, participants_json, duration_minutes, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (session_id) DO NOTHING`,
     [
       id,
       sessionId,
@@ -217,13 +222,15 @@ export async function generateAndSaveSummary(sessionId: string): Promise<StoredS
     ],
   );
 
-  for (let i = 0; i < blocks.length; i++) {
-    const b = blocks[i];
-    await db.query(
-      `INSERT INTO summary_blocks (id, summary_id, block_type, title, content, visible_to_participants, sort_order)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [newId("blk"), id, b.block_type, b.title, b.content, b.visible_to_participants, i],
-    );
+  if (inserted.rowCount === 1) {
+    for (let i = 0; i < blocks.length; i++) {
+      const b = blocks[i];
+      await db.query(
+        `INSERT INTO summary_blocks (id, summary_id, block_type, title, content, visible_to_participants, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [newId("blk"), id, b.block_type, b.title, b.content, b.visible_to_participants, i],
+      );
+    }
   }
 
   const stored = await getStoredSummary(sessionId);

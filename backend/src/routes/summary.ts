@@ -1,16 +1,16 @@
 // /api/summary
 //
-// MVP summary generation:
-// End meeting -> SummaryView fetches GET /api/summary/:sessionId
-// -> backend loads saved transcript rows
-// -> transcript is sent to existing validated AI structuredCall()
-// -> backend maps AI blocks into participant_summary_output shape.
+// Honest summary: generated ONCE (session-end hook, or lazily on first view for
+// older sessions) and persisted by lib/summaryStore. This route serves the
+// stored record plus the session's decisions joined live from the decisions
+// table, so checkpoint edits show up and the ratified summary never silently
+// changes between page views.
 
 import { Router } from "express";
 import { requireAuth } from "../auth/middleware";
 import { db } from "../db/database";
-import { structuredCall } from "@ai/index";
-import type { AIBlock } from "@shared/types";
+import { getStoredSummary, generateAndSaveSummary } from "../lib/summaryStore";
+import { getDecisions, completenessFromRecords } from "../lib/decisions";
 
 export const summaryRouter = Router();
 
@@ -25,14 +25,6 @@ interface SessionSummaryRow {
   meeting_title: string;
   project_id: string;
   org_id: string;
-}
-
-interface TranscriptRow {
-  id: string;
-  session_id: string;
-  speaker: string;
-  text: string;
-  timestamp: string;
 }
 
 interface SummaryBlock {
@@ -97,97 +89,6 @@ async function getSessionForSummary(
   return result.rows[0];
 }
 
-async function getTranscripts(sessionId: string): Promise<TranscriptRow[]> {
-  const result = await db.query<TranscriptRow>(
-    `
-    SELECT id, session_id, speaker, text, timestamp
-    FROM transcripts
-    WHERE session_id = $1
-    ORDER BY timestamp ASC
-    `,
-    [sessionId]
-  );
-  return result.rows;
-}
-
-function minutesBetween(start: string | null, end: string | null): number {
-  if (!start || !end) return 0;
-
-  const startMs = new Date(start).getTime();
-  const endMs = new Date(end).getTime();
-
-  if (Number.isNaN(startMs) || Number.isNaN(endMs)) return 0;
-
-  return Math.max(0, Math.round((endMs - startMs) / 60_000));
-}
-
-function uniqueParticipants(rows: TranscriptRow[]): string[] {
-  const names = new Set<string>();
-
-  for (const row of rows) {
-    const clean = row.speaker?.trim();
-    if (clean) names.add(clean);
-  }
-
-  return [...names];
-}
-
-function transcriptToPrompt(
-  session: SessionSummaryRow,
-  rows: TranscriptRow[],
-): string {
-  const transcript = rows
-    .map((row) => {
-      return `[${row.timestamp}] ${row.speaker}: ${row.text}`;
-    })
-    .join("\n");
-
-  return `
-Create a concise post-meeting summary for this Stratis meeting.
-
-Meeting title:
-${session.meeting_title}
-
-Instructions:
-- Use the transcript only.
-- The transcript may contain conversational Thai and English. Smoothly parse, translate, and synthesize the context across both languages.
-- Produce useful participant-facing summary content.
-- Organize custom output blocks prioritizing dynamic block structures for: Decisions, Action Items, Open Questions, and Risks.
-- Include overview, assumptions, and next steps when present.
-- Keep it concise and clear.
-- Return valid Stratis AI structured blocks only.
-
-Transcript:
-${transcript}
-`.trim();
-}
-
-function blockTypeFromAI(block: AIBlock): SummaryBlock["block_type"] {
-  if (block.type === "DecisionNode") return "DECISIONS";
-  if (block.type === "QuestionSuggestion") return "OPEN_ITEMS";
-  if (block.type === "SummaryBlock") return "OVERVIEW";
-  return "OVERVIEW";
-}
-
-function aiBlocksToSummaryBlocks(blocks: AIBlock[]): SummaryBlock[] {
-  return blocks.map((block) => ({
-    block_type: blockTypeFromAI(block),
-    title: block.title,
-    content: block.content,
-    visible_to_participants: block.type !== "QuestionSuggestion",
-  }));
-}
-
-function fallbackSummaryBlock(rows: TranscriptRow[]): SummaryBlock {
-  const text = rows.map((row) => `${row.speaker}: ${row.text}`).join("\n");
-
-  return {
-    block_type: "OVERVIEW",
-    title: "Meeting summary",
-    content: text.slice(0, 1500) || "No transcript content was available.",
-    visible_to_participants: true,
-  };
-}
 
 summaryRouter.get("/", requireAuth, (_req, res) => {
   res.json({
@@ -218,47 +119,33 @@ summaryRouter.get("/:sessionId", requireAuth, async (req, res, next) => {
       });
     }
 
-    const transcripts = await getTranscripts(sessionId);
-
-    if (transcripts.length === 0) {
+    // Serve the stored summary — generated once at session end. Sessions ended
+    // before persistence existed (or whose end-hook failed) lazily generate and
+    // store here, once; every later view is a fast DB read. The summary a team
+    // ratified must not silently change per page view.
+    let stored = await getStoredSummary(sessionId);
+    if (!stored) {
+      stored = await generateAndSaveSummary(sessionId);
+    }
+    if (!stored) {
       return res.status(409).json({
         ok: false,
         error: "No transcript rows found for this session",
       });
     }
 
-    const participants = uniqueParticipants(transcripts);
-    const durationMinutes = minutesBetween(session.started_at, session.ended_at);
-
-    const prompt = transcriptToPrompt(session, transcripts);
-    const aiResult = await structuredCall(prompt);
-
-    if (!aiResult.ok) {
-      return res.status(422).json({
-        ok: false,
-        error: `Summary AI output failed validation: ${aiResult.error}`,
-        data: {
-          provider: aiResult.provider,
-          rawText: aiResult.rawText,
-        },
-      });
-    }
-
-    const summaryBlocks =
-      aiResult.data.blocks.length > 0
-        ? aiBlocksToSummaryBlocks(aiResult.data.blocks)
-        : [fallbackSummaryBlock(transcripts)];
+    // Decisions join live (not snapshotted) so facilitator checkpoint edits
+    // after the meeting show up — the decisions table is the verified record.
+    const decisions = await getDecisions(sessionId);
 
     const summary: ParticipantSummaryOutput = {
       output_type: "participant_summary_output",
       session_id: session.id,
-      summary_title: `Summary: ${session.meeting_title}`,
-      summary_subtitle: `${durationMinutes} min · ${participants.length} participant${
-        participants.length === 1 ? "" : "s"
-      }`,
-      participants,
-      duration_minutes: durationMinutes,
-      summary_blocks: summaryBlocks,
+      summary_title: stored.summaryTitle,
+      summary_subtitle: stored.summarySubtitle,
+      participants: stored.participants,
+      duration_minutes: stored.durationMinutes,
+      summary_blocks: stored.blocks as SummaryBlock[],
       action_items: [],
     };
 
@@ -266,8 +153,10 @@ summaryRouter.get("/:sessionId", requireAuth, async (req, res, next) => {
       ok: true,
       data: {
         summary,
-        provider: aiResult.provider,
-        transcriptCount: transcripts.length,
+        decisions,
+        metric: completenessFromRecords(decisions),
+        provider: stored.provider ?? "stored",
+        transcriptCount: stored.blocks.length,
       },
     });
   } catch (err) {

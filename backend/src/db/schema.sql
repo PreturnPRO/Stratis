@@ -344,3 +344,8 @@ CREATE INDEX IF NOT EXISTS idx_consent_logs_session_id ON consent_logs(session_i
 
 CREATE INDEX IF NOT EXISTS idx_decisions_session_id ON decisions(session_id);
 CREATE INDEX IF NOT EXISTS idx_decisions_meeting_id ON decisions(meeting_id);
+
+-- One summary per session — the session-end hook and the summary GET's lazy
+-- backfill can race; the unique index makes the second writer a no-op.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_participant_summaries_session
+  ON participant_summaries(session_id);

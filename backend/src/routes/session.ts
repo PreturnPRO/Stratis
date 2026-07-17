@@ -25,6 +25,7 @@ import {
   updateDecision,
   type DecisionPatch,
 } from "../lib/decisions";
+import { generateAndSaveSummary } from "../lib/summaryStore";
 
 export const sessionRouter = Router();
 
@@ -157,14 +158,23 @@ export async function endSession(sessionId: string): Promise<any> {
   clearProjectDocCache(session.id);
   forgetSession(session.id);
 
-  // Decision extraction for the honest summary + completeness metric. Runs off
-  // the response path — the extract call is a heavy whole-transcript call that
-  // can take tens of seconds, and End Meeting must return immediately. If the
-  // checkpoint already extracted at wrap-up, this refreshes with the final
-  // transcript; facilitator-confirmed rows are preserved.
-  void extractAndSaveDecisions(session.id).catch((err) =>
-    console.error(`[session:end] decision extraction failed for ${session.id}:`, err),
-  );
+  // Decision extraction + summary persistence, chained off the response path —
+  // both are heavy whole-transcript AI calls and End Meeting must return
+  // immediately. Decisions run first (the summary page joins them); a failed
+  // extraction still lets the summary persist. If the checkpoint already
+  // extracted at wrap-up, extraction refreshes with the final transcript;
+  // facilitator-confirmed rows are preserved.
+  void extractAndSaveDecisions(session.id)
+    .catch((err) =>
+      console.error(`[session:end] decision extraction failed for ${session.id}:`, err),
+    )
+    .then(() => generateAndSaveSummary(session.id))
+    .then((stored) => {
+      if (stored) console.log(`[session:end] summary stored for ${session.id}`);
+    })
+    .catch((err) =>
+      console.error(`[session:end] summary persist failed for ${session.id}:`, err),
+    );
 
   return getSession(session.id);
 }
