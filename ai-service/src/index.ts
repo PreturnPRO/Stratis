@@ -7,11 +7,16 @@
 // Scope note: turning responses into validated JSON blocks is S1-T03-C; this
 // task only proves we can reach a model and get a response back.
 import { env } from "../../backend/src/config/env";
-import type { AIProvider, ChatMessage, CompletionResult } from "./providers/types";
+import type {
+  AIProvider,
+  ChatMessage,
+  CompletionResult,
+} from "./providers/types";
 import { groqProvider } from "./providers/groq";
 import { ollamaProvider } from "./providers/ollama";
 import { mockProvider } from "./providers/mock";
 import { typhoonProvider } from "./providers/typhoon";
+import { geminiProvider } from "./providers/gemini";
 import {
   SYSTEM_PROMPT_JSON,
   SYSTEM_PROMPT_LIVE_CARD,
@@ -38,7 +43,11 @@ export {
   parseLiveCard,
   parseDocumentPatch,
 } from "./schema";
-export type { ParseResult, LiveCardParseResult, DocPatchParseResult } from "./schema";
+export type {
+  ParseResult,
+  LiveCardParseResult,
+  DocPatchParseResult,
+} from "./schema";
 
 /** Pick the active provider. Providers with no key fall back to mock so the call
  * always confirms — but the downgrade must be LOUD: silently serving mock
@@ -67,6 +76,10 @@ export function selectProvider(): AIProvider {
       return env.ai.typhoon.apiKey
         ? typhoonProvider
         : mockFallback("typhoon", "TYPHOON_API_KEY");
+    case "gemini":
+      return env.ai.gemini.apiKey
+        ? geminiProvider
+        : mockFallback("gemini", "GEMINI_API_KEY"); // 2. Add switch case
     case "groq":
     default:
       return env.ai.groq.apiKey
@@ -75,7 +88,9 @@ export function selectProvider(): AIProvider {
   }
 }
 
-export async function complete(messages: ChatMessage[]): Promise<CompletionResult> {
+export async function complete(
+  messages: ChatMessage[],
+): Promise<CompletionResult> {
   const provider = selectProvider();
   return provider.complete(messages);
 }
@@ -84,8 +99,14 @@ export async function complete(messages: ChatMessage[]): Promise<CompletionResul
 export async function firstCall(): Promise<CompletionResult> {
   const provider = selectProvider();
   const messages: ChatMessage[] = [
-    { role: "system", content: "You are Stratis, a concise meeting decision assistant." },
-    { role: "user", content: "Reply with one short sentence confirming you are online." },
+    {
+      role: "system",
+      content: "You are Stratis, a concise meeting decision assistant.",
+    },
+    {
+      role: "user",
+      content: "Reply with one short sentence confirming you are online.",
+    },
   ];
 
   console.log(`[ai] first call via provider="${provider.name}" model-check…`);
@@ -101,9 +122,17 @@ export async function firstCall(): Promise<CompletionResult> {
  * locked schema BEFORE returning. Callers receive a discriminated result and
  * must never pass an unvalidated payload downstream.
  */
-export async function structuredCall(input: string): Promise<
+export async function structuredCall(
+  input: string,
+): Promise<
   | { ok: true; provider: string; data: AIStructuredResponse; raw: unknown }
-  | { ok: false; provider: string; error: string; rawText: string; raw: unknown }
+  | {
+      ok: false;
+      provider: string;
+      error: string;
+      rawText: string;
+      raw: unknown;
+    }
 > {
   const provider = selectProvider();
   const messages: ChatMessage[] = [
@@ -124,7 +153,12 @@ export async function structuredCall(input: string): Promise<
       raw: result.raw,
     };
   }
-  return { ok: true, provider: provider.name, data: parsed.data, raw: result.raw };
+  return {
+    ok: true,
+    provider: provider.name,
+    data: parsed.data,
+    raw: result.raw,
+  };
 }
 
 /** Context the live meeting AI receives each chunk (schema spec §6.4). */
@@ -168,9 +202,17 @@ function liveContextPrompt(ctx: LiveContext): string {
  * Live meeting gateway: classify the latest transcript window and surface
  * facilitator cards. Returns a validated `live_card_output` (session_id injected).
  */
-export async function liveCardCall(ctx: LiveContext): Promise<
+export async function liveCardCall(
+  ctx: LiveContext,
+): Promise<
   | { ok: true; provider: string; data: LiveCardOutput; raw: unknown }
-  | { ok: false; provider: string; error: string; rawText: string; raw: unknown }
+  | {
+      ok: false;
+      provider: string;
+      error: string;
+      rawText: string;
+      raw: unknown;
+    }
 > {
   const provider = selectProvider();
   const messages: ChatMessage[] = [
@@ -223,9 +265,17 @@ function docPatchPrompt(ctx: DocPatchContext): string {
  * validated `document_patch_output` (backend injects ids/version). Patches may
  * be empty when the meeting changed nothing about project state.
  */
-export async function documentPatchCall(ctx: DocPatchContext): Promise<
+export async function documentPatchCall(
+  ctx: DocPatchContext,
+): Promise<
   | { ok: true; provider: string; data: DocumentPatchOutput; raw: unknown }
-  | { ok: false; provider: string; error: string; rawText: string; raw: unknown }
+  | {
+      ok: false;
+      provider: string;
+      error: string;
+      rawText: string;
+      raw: unknown;
+    }
 > {
   const provider = selectProvider();
   const messages: ChatMessage[] = [
