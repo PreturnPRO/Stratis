@@ -17,6 +17,8 @@ import { useSuggestionSocket } from "../hooks/useSuggestionSocket";
 import { useAuth } from "../context/AuthContext";
 import { useSessionRecovery } from "../hooks/useSessionRecovery";
 import { useMediaRecorder } from "../hooks/useMediaRecorder";
+import { usePcmStream } from "../hooks/usePcmStream";
+import { mergeTranscripts } from "../lib/mergeTranscripts";
 import { API_BASE } from "../lib/api";
 
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
@@ -25,6 +27,12 @@ const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 // the backend, which runs Google Speech v2 chirp_2 (th-TH,en-US). Short clips
 // (not timesliced fragments) keep every upload independently decodable.
 const CHUNK_MAX_MS = 6000;
+
+// S-EXP — streaming STT: raw PCM over the /ws hub into Google v2
+// StreamingRecognize, with live interim text in the ghost row and no clip
+// boundaries to split words. Set VITE_STT_STREAMING=0 to fall back to the
+// 6s clip-batch REST path above.
+const USE_STREAMING_STT = (import.meta.env.VITE_STT_STREAMING ?? "1") !== "0";
 
 // Blob → base64 data URL. The backend strips the `data:...;base64,` prefix.
 function blobToBase64(blob: Blob): Promise<string> {
@@ -188,8 +196,6 @@ export default function Meeting({ onNav }: MeetingProps) {
     return token ? { Authorization: `Bearer ${token}` } : {};
   }, [token]);
 
-  const { cards, connected, markAnswered, markActive } = useSuggestionSocket(sessionId);
-
   // Merge consecutive rows from the same speaker into one continuous display
   // block — the DB keeps one row per audio clip, but reading a sentence split
   // across a stack of 1-2 word boxes is unusable.
@@ -230,6 +236,23 @@ export default function Meeting({ onNav }: MeetingProps) {
       return next;
     });
   }, []);
+
+  // Placed after appendTranscript so the streaming handlers can reference it.
+  // Interim text drives the same ghost row the clip path uses; finals are
+  // saved server-side and arrive here as ordinary transcript rows.
+  const { cards, connected, markAnswered, markActive, sendControl, sendAudioFrame } =
+    useSuggestionSocket(sessionId, {
+      onSttInterim: (text) => {
+        setPendingText(text);
+        setLastSpeechMs(Date.now());
+      },
+      onTranscriptFinal: (row) => {
+        appendTranscript(row);
+        setPendingText("");
+        setLastSpeechMs(Date.now());
+      },
+      onSttError: (message) => setError(message),
+    });
 
   // --- Real-Time STT: mic → MediaRecorder → Chirp 2 (all browsers) ---
   // The old path used the browser Web Speech API, which only exists in
@@ -293,13 +316,67 @@ export default function Meeting({ onNav }: MeetingProps) {
     if (recError) setError(recError);
   }, [recError]);
 
+  // --- Streaming STT path (S-EXP) ---
+  // Mic → AudioWorklet PCM frames → binary WS frames → backend
+  // StreamingRecognize. Interim/final results come back over the same socket
+  // (see the useSuggestionSocket handlers above).
+  const streamingActiveRef = useRef(false);
+  const streamSampleRateRef = useRef<number | null>(null);
+
+  const pcm = usePcmStream({
+    onFrame: (frame) => {
+      if (streamingActiveRef.current) sendAudioFrame(frame);
+    },
+  });
+
+  useEffect(() => {
+    if (pcm.error) setError(pcm.error);
+  }, [pcm.error]);
+
+  // If the socket drops mid-meeting, the backend loses its stream state — re-arm
+  // it on reconnect so audio keeps transcribing.
+  useEffect(() => {
+    if (connected && streamingActiveRef.current && streamSampleRateRef.current) {
+      sendControl({
+        type: "stt:start",
+        sampleRate: streamSampleRateRef.current,
+        speaker: user?.name || "Facilitator",
+      });
+    }
+  }, [connected, sendControl, user?.name]);
+
   const startListening = () => {
     setIsRecording(true);
-    void startRec();
+    if (USE_STREAMING_STT && connected) {
+      streamingActiveRef.current = true;
+      void pcm
+        .start((sampleRate) => {
+          streamSampleRateRef.current = sampleRate;
+          sendControl({
+            type: "stt:start",
+            sampleRate,
+            speaker: user?.name || "Facilitator",
+          });
+        })
+        .catch((err) => {
+          // Worklet/mic failure on this browser — fall back to the clip path.
+          console.warn("[speech:stream] PCM capture failed, using clip upload:", err);
+          streamingActiveRef.current = false;
+          void startRec();
+        });
+    } else {
+      void startRec();
+    }
   };
 
   const stopListening = () => {
     setIsRecording(false);
+    if (streamingActiveRef.current) {
+      streamingActiveRef.current = false;
+      pcm.stop();
+      sendControl({ type: "stt:stop" });
+      setPendingText("");
+    }
     stopRec();
   };
 
@@ -331,6 +408,36 @@ export default function Meeting({ onNav }: MeetingProps) {
       void loadTranscript();
     }
   }, [sessionId, loadTranscript]);
+
+  // Reconnect backfill: rows finalized during a socket drop are broadcast while
+  // we're disconnected and never reach this client. On every reconnect (not the
+  // first connect — the mount load above covers that) refetch and merge so the
+  // panel matches the database with no silent gap. Silent: no spinner, dedup by id.
+  const backfillTranscript = useCallback(async () => {
+    if (!token || !sessionId) return;
+    try {
+      const response = await fetch(`${API_BASE}/api/transcript/session/${sessionId}`, {
+        headers: authHeaders,
+      });
+      const payload = await response.json();
+      if (response.ok && payload.ok) {
+        const rows: TranscriptRow[] = payload.data?.transcripts || [];
+        setTranscripts((prev) => mergeTranscripts(prev, rows));
+      }
+    } catch (err) {
+      console.error("[meeting] Transcript backfill on reconnect failed:", err);
+    }
+  }, [sessionId, token, authHeaders]);
+
+  const hadConnectionRef = useRef(false);
+  useEffect(() => {
+    if (!connected) return;
+    if (!hadConnectionRef.current) {
+      hadConnectionRef.current = true; // first connect — mount load already ran
+      return;
+    }
+    void backfillTranscript();
+  }, [connected, backfillTranscript]);
 
   // Sync starting server timestamps
   useEffect(() => {

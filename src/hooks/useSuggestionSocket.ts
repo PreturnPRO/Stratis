@@ -17,7 +17,12 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
-import type { SuggestionCard as ServerCard, WsServerEvent } from '../../shared/types'
+import type {
+  SuggestionCard as ServerCard,
+  WsClientEvent,
+  WsServerEvent,
+  WsTranscriptRow,
+} from '../../shared/types'
 import type { SuggestionCard as UICard } from '../components/SuggestionCardStack'
 
 import { API_BASE, WS_BASE } from '../lib/api'
@@ -48,21 +53,43 @@ function toUICard(card: ServerCard): UICard {
   }
 }
 
+// S-EXP — streaming STT events arriving on the same socket. Optional so
+// existing card-only callers are unaffected.
+export interface SuggestionSocketHandlers {
+  onSttInterim?: (text: string) => void
+  onTranscriptFinal?: (row: WsTranscriptRow) => void
+  onSttError?: (message: string) => void
+}
+
 export interface UseSuggestionSocketReturn {
   cards: UICard[]
   role: 'facilitator' | 'participant' | 'admin' | null
   connected: boolean
   markAnswered: (id: string) => void
   markActive: (id: string) => void
+  /** Send a JSON control message (e.g. stt:start). False if not connected. */
+  sendControl: (msg: WsClientEvent) => boolean
+  /** Send a binary PCM16 audio frame. False if not connected. */
+  sendAudioFrame: (frame: ArrayBuffer) => boolean
 }
 
-export function useSuggestionSocket(sessionId: string | null | undefined): UseSuggestionSocketReturn {
+export function useSuggestionSocket(
+  sessionId: string | null | undefined,
+  handlers?: SuggestionSocketHandlers,
+): UseSuggestionSocketReturn {
   const { token } = useAuth();
   const [cards, setCards] = useState<UICard[]>([]);
   const [connected, setConnected] = useState(false);
   const [role, setRole] = useState<UseSuggestionSocketReturn['role']>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Kept fresh each render so socket callbacks always see current handlers
+  // without re-opening the connection.
+  const handlersRef = useRef<SuggestionSocketHandlers | undefined>(handlers);
+  useEffect(() => {
+    handlersRef.current = handlers;
+  });
 
   const validSessionId = isRealSessionId(sessionId) ? sessionId.trim() : null;
 
@@ -191,6 +218,15 @@ export function useSuggestionSocket(sessionId: string | null | undefined): UseSu
                 )
               );
               break;
+            case 'stt:interim':
+              handlersRef.current?.onSttInterim?.(payload.text);
+              break;
+            case 'transcript:final':
+              handlersRef.current?.onTranscriptFinal?.(payload.transcript);
+              break;
+            case 'stt:error':
+              handlersRef.current?.onSttError?.(payload.message);
+              break;
             default:
               break;
           }
@@ -233,11 +269,27 @@ export function useSuggestionSocket(sessionId: string | null | undefined): UseSu
     };
   }, [validSessionId, token, fetchCards]);
 
+  const sendControl = useCallback((msg: WsClientEvent): boolean => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+    ws.send(JSON.stringify(msg));
+    return true;
+  }, []);
+
+  const sendAudioFrame = useCallback((frame: ArrayBuffer): boolean => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+    ws.send(frame);
+    return true;
+  }, []);
+
   return {
     cards,
     role,
     connected,
     markAnswered,
     markActive,
+    sendControl,
+    sendAudioFrame,
   };
 }

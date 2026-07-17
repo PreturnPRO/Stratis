@@ -149,3 +149,33 @@ export async function transcribeAudio(
       return mockTranscribe(input);
   }
 }
+
+// ── Streaming STT (S-EXP) ────────────────────────────────────────────────────
+// Shared context for lib/sttStream.ts, which drives Speech v2 StreamingRecognize
+// over the same client, recognizer path, and language/model config as the
+// batch path above.
+
+export interface GoogleStreamingContext {
+  client: SpeechV2Client;
+  recognizer: string;
+  model: string;
+  languageCodes: string[];
+}
+
+/** Null when STT_PROVIDER is not "google" or the client cannot initialize —
+ * callers should fall back to mock streaming. */
+export async function getGoogleStreamingContext(): Promise<GoogleStreamingContext | null> {
+  if (env.stt.provider !== "google") return null;
+  const client = getGoogleClient();
+  if (!client) return null;
+
+  const projectId = await getProjectId(client);
+  const { location, model, languageCodes } = env.stt.google;
+
+  return {
+    client,
+    recognizer: `projects/${projectId}/locations/${location}/recognizers/_`,
+    model,
+    languageCodes,
+  };
+}

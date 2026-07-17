@@ -6,8 +6,9 @@ import { liveCardCall, type LiveContext } from "@ai/index";
 import { transcribeAudio } from "../lib/stt";
 import * as suggestions from "../realtime/suggestions";
 import { detectAnswered } from "../realtime/autodetect";
-import { pushSuggestion, pushAnswered } from "../realtime/hub";
+import { pushSuggestion, pushAnswered, registerStreamIngest } from "../realtime/hub";
 import { getDocumentRow, rowToDocument, renderDocument } from "../lib/pmDocument";
+import { withRetry } from "../lib/withRetry";
 
 export const transcriptRouter = Router();
 
@@ -287,6 +288,86 @@ function scheduleAiRouting(
   })();
 }
 
+// Google STT inserts spaces between Thai tokens; Thai has no spaces between
+// words, so strip whitespace that sits between two Thai characters.
+function cleanSttText(raw: string): string {
+  return raw.replace(/([฀-๿])\s+(?=[฀-๿])/g, "$1").trim();
+}
+
+// ── Streaming STT ingest (S-EXP) ─────────────────────────────────────────────
+// Final text arriving over the WebSocket streaming path lands here — the same
+// save + live-AI routing the REST audio-chunk route runs, minus the HTTP
+// request/response wrapping. Registered with the hub (which this module
+// already sits downstream of) to avoid an import cycle.
+// Dead-letter buffer: finalized utterances whose DB insert failed even after
+// retries. Flushed on the next ingest attempt for the same session so a
+// transient DB blip never silently drops a decision. In-memory only — a full
+// process crash still loses these (see meeting-reliability spec, component 2).
+const ingestDeadLetter = new Map<string, Array<{ speaker: string; text: string }>>();
+const INGEST_RETRY = { retries: 3, baseMs: 300 } as const;
+
+/** Best-effort retry of any previously buffered utterances for this session.
+ * Rows that still fail are re-buffered; successful ones resume AI routing. */
+async function flushIngestDeadLetter(sessionId: string, role: string): Promise<void> {
+  const buffered = ingestDeadLetter.get(sessionId);
+  if (!buffered || buffered.length === 0) return;
+  ingestDeadLetter.delete(sessionId);
+
+  const stillFailing: Array<{ speaker: string; text: string }> = [];
+  for (const item of buffered) {
+    try {
+      const row = await withRetry(
+        () => saveTranscriptChunk({ sessionId, speaker: item.speaker, text: item.text }),
+        INGEST_RETRY,
+      );
+      scheduleAiRouting(sessionId, item.text, role, row.id);
+    } catch {
+      stillFailing.push(item);
+    }
+  }
+  if (stillFailing.length) {
+    const current = ingestDeadLetter.get(sessionId) ?? [];
+    ingestDeadLetter.set(sessionId, [...stillFailing, ...current]);
+  }
+}
+
+registerStreamIngest(async ({ sessionId, speaker, text, role }) => {
+  const clean = cleanSttText(text);
+  if (!clean) return null;
+
+  // The WS handshake authorized this user for the session; re-check only the
+  // parts that can change mid-connection (session deleted or ended).
+  const session = await getSession(sessionId);
+  if (!session || session.status === "ended") return null;
+
+  // Retry any earlier buffered utterances before this one so order is preserved.
+  await flushIngestDeadLetter(sessionId, role);
+
+  let row: TranscriptRow;
+  try {
+    row = await withRetry(
+      () => saveTranscriptChunk({ sessionId, speaker, text: clean }),
+      INGEST_RETRY,
+    );
+  } catch (err) {
+    // Retries exhausted: buffer the utterance instead of losing it. Returning
+    // null keeps the hub quiet (no stt:error alarm for a transient blip we're
+    // handling); the row lands on a later flush and the client's next refetch.
+    const buffer = ingestDeadLetter.get(sessionId) ?? [];
+    buffer.push({ speaker, text: clean });
+    ingestDeadLetter.set(sessionId, buffer);
+    console.error(
+      `[stt:ingest] Save failed after retries for session ${sessionId}; ` +
+        `buffered (${buffer.length} pending):`,
+      err,
+    );
+    return null;
+  }
+
+  scheduleAiRouting(sessionId, clean, role, row.id);
+  return row;
+});
+
 async function validateSession(req: any, res: any, sessionId: string) {
   const session = await getSession(sessionId);
 
@@ -543,7 +624,7 @@ transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
       });
     }
 
-    const text = stt.text.replace(/([\u0E00-\u0E7F])\s+(?=[\u0E00-\u0E7F])/g, '$1').trim();
+    const text = cleanSttText(stt.text);
 
     if (!text) {
       return res.json({
