@@ -52,7 +52,8 @@ export const env = {
       | "groq"
       | "ollama"
       | "mock"
-      | "typhoon",
+      | "typhoon"
+      | "gemini",
     timeoutMs: Number(process.env.AI_TIMEOUT_MS ?? 10000),
     groq: {
       apiKey: process.env.GROQ_API_KEY ?? "",
@@ -67,6 +68,12 @@ export const env = {
       apiKey: process.env.TYPHOON_API_KEY ?? "",
       model: "typhoon-v1.5x-70b-instruct",
       baseUrl: "https://api.opentyphoon.ai/v1",
+    },
+    // 2. Add Gemini credentials block using the OpenAI-compatible endpoint
+    gemini: {
+      apiKey: process.env.GEMINI_API_KEY ?? "",
+      model: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
     },
   },
 
