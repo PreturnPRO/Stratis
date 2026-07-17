@@ -16,9 +16,16 @@ export interface CompletionResult {
   raw: unknown;
 }
 
+export interface CompleteOptions {
+  /** Override the provider's default (env) request timeout for this one call.
+   *  Live-card calls want a short budget (fail fast mid-meeting); the
+   *  whole-transcript decision extract wants a long one. */
+  timeoutMs?: number;
+}
+
 export interface AIProvider {
   name: string;
-  complete(messages: ChatMessage[]): Promise<CompletionResult>;
+  complete(messages: ChatMessage[], opts?: CompleteOptions): Promise<CompletionResult>;
 }
 
 /** fetch with an abort-based timeout so a hung provider can't block forever. */

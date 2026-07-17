@@ -319,6 +319,11 @@ export async function documentPatchCall(
   };
 }
 
+// Whole-transcript extraction is not latency-sensitive (runs at meeting end) but
+// is a heavy call — give it a generous budget so a slow/thinking model doesn't
+// abort mid-extract. Independent of the live-card AI_TIMEOUT_MS.
+const EXTRACT_TIMEOUT_MS = 90_000;
+
 /** Context the decision-extraction AI receives (alignment checkpoint). */
 export interface DecisionExtractContext {
   sessionId: string;
@@ -362,7 +367,10 @@ export async function extractDecisionsCall(
     { role: "user", content: decisionExtractPrompt(ctx) },
   ];
 
-  const result = await provider.complete(messages);
+  // Extraction reads the whole transcript and runs at wrap-up / session end —
+  // off the live path — so it gets a far longer budget than a live-card call,
+  // independent of the meeting-time AI_TIMEOUT_MS.
+  const result = await provider.complete(messages, { timeoutMs: EXTRACT_TIMEOUT_MS });
   const parsed: DecisionExtractParseResult = parseDecisionExtract(result.text);
 
   if (!parsed.ok) {
