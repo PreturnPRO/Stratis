@@ -27,6 +27,13 @@ interface DecisionRow {
   updated_at: string;
 }
 
+// Mirrors normalizeQuestion in realtime/suggestions.ts — same dedup problem,
+// same tolerance: whitespace, case, and trailing punctuation don't make two
+// decisions different.
+function normalizeDecisionText(text: string): string {
+  return text.trim().toLowerCase().replace(/\s+/g, " ").replace(/[?.!]+$/g, "");
+}
+
 function rowToRecord(r: DecisionRow): DecisionRecord {
   return {
     id: r.id,
@@ -104,6 +111,13 @@ export async function extractAndSaveDecisions(sessionId: string): Promise<Decisi
   const ctx = await buildExtractContext(sessionId);
   if (!ctx || !ctx.transcript.trim()) return [];
 
+  // Facilitator-confirmed rows survive a re-extract; the model is told about
+  // them so it doesn't re-list them (belt), and inserts are containment-checked
+  // against them below (suspenders — the model rewords nondeterministically).
+  const facilitatorRows = (await getDecisions(sessionId)).filter(
+    (r) => r.source === "facilitator",
+  );
+
   let extracted;
   try {
     const result = await extractDecisionsCall({
@@ -111,6 +125,7 @@ export async function extractAndSaveDecisions(sessionId: string): Promise<Decisi
       goal: ctx.goal,
       transcript: ctx.transcript,
       rollingSummary: ctx.rollingSummary,
+      confirmedDecisions: facilitatorRows.map((r) => r.text),
     });
     if (!result.ok) {
       console.warn(`[decisions] extract failed for ${sessionId}: ${result.error}`);
@@ -126,7 +141,19 @@ export async function extractAndSaveDecisions(sessionId: string): Promise<Decisi
   // Replace only AI rows; facilitator confirmations survive a re-extract.
   await db.query(`DELETE FROM decisions WHERE session_id = $1 AND source = 'ai'`, [sessionId]);
 
+  // Containment check against confirmed rows: the model rewords decisions
+  // nondeterministically ("เปิดตัวเบต้า…" vs "เปิดตัวเบต้า… (สิงหาคม 2026)"),
+  // so equality is too weak — either text containing the other counts as the
+  // same decision. A full paraphrase can still slip through; the facilitator
+  // sees it and can dismiss.
+  const confirmedTexts = facilitatorRows.map((r) => normalizeDecisionText(r.text));
+  const isConfirmedDuplicate = (text: string): boolean => {
+    const norm = normalizeDecisionText(text);
+    return confirmedTexts.some((c) => norm.includes(c) || c.includes(norm));
+  };
+
   for (const d of extracted) {
+    if (isConfirmedDuplicate(d.text)) continue;
     await db.query(
       `
       INSERT INTO decisions
@@ -212,12 +239,15 @@ export interface CompletenessMetric {
 }
 
 /** The traction metric: of the decisions the room actually committed to, how
- *  many left with a due date. Deliberately-open items are excluded — they are a
- *  valid outcome, not an incomplete decision. */
+ *  many left COMPLETE. Counted by status, not by due_date presence — the model
+ *  sometimes infers a soft date ("เดือนหน้า" → an ISO guess) while still
+ *  marking the decision incomplete, and the metric must agree with the
+ *  incomplete-count the checkpoint headline shows. Deliberately-open items are
+ *  excluded — they are a valid outcome, not an incomplete decision. */
 export function completenessFromRecords(records: DecisionRecord[]): CompletenessMetric {
   const committedRecords = records.filter((d) => d.status !== "open");
   const committed = committedRecords.length;
-  const withDueDate = committedRecords.filter((d) => !!d.dueDate).length;
+  const withDueDate = committedRecords.filter((d) => d.status === "complete").length;
   const open = records.filter((d) => d.status === "open").length;
   return {
     committed,

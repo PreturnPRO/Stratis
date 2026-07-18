@@ -330,16 +330,28 @@ export interface DecisionExtractContext {
   goal?: string | null;
   transcript: string;
   rollingSummary?: string | null;
+  // Decisions the facilitator already confirmed at the checkpoint — the model
+  // must not re-list them (a re-extract otherwise duplicates them, reworded,
+  // next to their confirmed copy).
+  confirmedDecisions?: string[];
 }
 
 function decisionExtractPrompt(ctx: DecisionExtractContext): string {
   // Anchor "today" so a spoken date like "30 กรกฎาคม" resolves to the right year
   // instead of the model guessing (it defaulted to a past year without this).
   const today = new Date().toISOString().slice(0, 10);
+  const confirmed = ctx.confirmedDecisions?.length
+    ? ctx.confirmedDecisions.map((d) => `- ${d}`).join("\n")
+    : null;
   return [
     `Today's date is ${today}. Resolve any spoken date to a full ISO date on or after today.`,
     `Meeting goal: ${ctx.goal?.trim() || "(not provided)"}`,
     `Rolling memory (running notes of the whole meeting): ${ctx.rollingSummary?.trim() || "(none)"}`,
+    ...(confirmed
+      ? [
+          `Decisions ALREADY CONFIRMED by the facilitator — do NOT include these in your output, in any wording:\n${confirmed}`,
+        ]
+      : []),
     `Full meeting transcript:\n${ctx.transcript.trim() || "(no transcript)"}`,
   ].join("\n\n");
 }
