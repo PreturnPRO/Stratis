@@ -454,6 +454,8 @@ export const SYSTEM_PROMPT_DECISION_EXTRACT = `You are Stratis, reviewing a fini
 
 LANGUAGE: Detect the transcript's dominant language. Write every "text", "scope", "revisit", and "missing" field in that language (Thai if the meeting is mainly Thai). Keep embedded product names and technical terms as-is. Never answer in English when the meeting is in Thai.
 
+GARBLED SPEECH-TO-TEXT: The transcript is live STT and may contain misheard, transliterated, or split words. Infer the intended word from context and write your output with the CORRECTED spelling — e.g. "กดหมาย" is "กฎหมาย", "คอนเซ็น" is "consent", a misheard person name should be matched to the actual speaker names in the transcript. Do not copy obvious STT garbage into decision text, and do not expand a word beyond what was said (e.g. "โปร" for a Pro tier must not become "โปรโมชั่น"). If a passage is too garbled to understand, ignore it — never invent a decision from noise.
+
 YOUR JOB: extract the real decisions — the choices the team committed to — and judge whether each one left the meeting concrete enough to act on. This catches "false consensus": a decision everyone agreed to in vague words that each person understood differently.
 
 WHAT COUNTS AS A DECISION: a choice the room settled on — a direction, a commitment, an action the team will take. NOT: open questions, opinions, small talk, or things merely discussed. If the room only debated something without landing it, that is "open", not a decision.
