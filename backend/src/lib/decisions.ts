@@ -23,6 +23,7 @@ interface DecisionRow {
   missing: string | null;
   confidence: number | null;
   source: "ai" | "facilitator";
+  dismissed: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -48,6 +49,7 @@ function rowToRecord(r: DecisionRow): DecisionRecord {
     missing: r.missing,
     confidence: r.confidence,
     source: r.source,
+    dismissed: r.dismissed,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -157,8 +159,8 @@ export async function extractAndSaveDecisions(sessionId: string): Promise<Decisi
     await db.query(
       `
       INSERT INTO decisions
-        (id, session_id, meeting_id, text, due_date, owner, scope, status, revisit, missing, confidence, source, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'ai', $12, $13)
+        (id, session_id, meeting_id, text, due_date, owner, scope, status, revisit, missing, confidence, source, dismissed, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'ai', FALSE, $12, $13)
       `,
       [
         newId("dec"),
@@ -188,6 +190,7 @@ export interface DecisionPatch {
   status?: DecisionStatus;
   revisit?: string | null;
   text?: string | null;
+  dismissed?: boolean;
 }
 
 /** Apply a facilitator edit to one decision and flip its source to
@@ -211,6 +214,7 @@ export async function updateDecision(
   const status = patch.status ?? row.status;
   const revisit = patch.revisit !== undefined ? patch.revisit : row.revisit;
   const text = patch.text != null && patch.text.trim() !== "" ? patch.text.trim() : row.text;
+  const dismissed = patch.dismissed !== undefined ? patch.dismissed : row.dismissed;
   // A committed decision with a due date is no longer missing anything.
   const missing = status === "incomplete" && !dueDate ? (row.missing ?? "no deadline") : null;
 
@@ -218,11 +222,11 @@ export async function updateDecision(
     `
     UPDATE decisions
     SET text = $1, due_date = $2, owner = $3, status = $4, revisit = $5,
-        missing = $6, source = 'facilitator', updated_at = $7
-    WHERE id = $8 AND session_id = $9
+        missing = $6, dismissed = $7, source = 'facilitator', updated_at = $8
+    WHERE id = $9 AND session_id = $10
     RETURNING *
     `,
-    [text, dueDate, owner, status, revisit, missing, now(), decisionId, sessionId],
+    [text, dueDate, owner, status, revisit, missing, dismissed, now(), decisionId, sessionId],
   );
   return updated.rows[0] ? rowToRecord(updated.rows[0]) : null;
 }
@@ -245,15 +249,18 @@ export interface CompletenessMetric {
  *  incomplete-count the checkpoint headline shows. Deliberately-open items are
  *  excluded — they are a valid outcome, not an incomplete decision. */
 export function completenessFromRecords(records: DecisionRecord[]): CompletenessMetric {
-  const committedRecords = records.filter((d) => d.status !== "open");
+  // Dismissed rows are rejected extractions, not meeting outcomes — they count
+  // toward nothing.
+  const live = records.filter((d) => !d.dismissed);
+  const committedRecords = live.filter((d) => d.status !== "open");
   const committed = committedRecords.length;
   const withDueDate = committedRecords.filter((d) => d.status === "complete").length;
-  const open = records.filter((d) => d.status === "open").length;
+  const open = live.filter((d) => d.status === "open").length;
   return {
     committed,
     withDueDate,
     open,
-    total: records.length,
+    total: live.length,
     completenessRate: committed === 0 ? null : Math.round((withDueDate / committed) * 100),
   };
 }

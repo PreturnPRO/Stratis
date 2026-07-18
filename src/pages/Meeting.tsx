@@ -189,6 +189,9 @@ export default function Meeting({ onNav }: MeetingProps) {
   const [liveText] = useState("");
   const [pendingText, setPendingText] = useState("");
   const inFlightChunksRef = useRef(0);
+  // Live "Strategic Meeting Notes" — the AI's rolling memory, pushed over the
+  // socket whenever an IMPORTANT chunk rewrites it.
+  const [liveNotes, setLiveNotes] = useState("");
 
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
   // Chat-style auto-follow: pinned to the newest line while the user is at the
@@ -256,9 +259,20 @@ export default function Meeting({ onNav }: MeetingProps) {
         setLastSpeechMs(Date.now());
       },
       onSttError: (message) => setError(message),
+      onNotesUpdate: (text) => setLiveNotes(text),
     });
 
   const checkpoint = useCheckpoint(sessionId, token);
+
+  // Owner-input suggestions at the checkpoint: everyone who has spoken.
+  const speakerNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const row of transcripts) {
+      const clean = row.speaker?.trim();
+      if (clean) names.add(clean);
+    }
+    return [...names];
+  }, [transcripts]);
 
   // Opening the checkpoint reads the meeting: extract fresh if we have nothing
   // yet, otherwise just reload what's stored (and let the facilitator re-read).
@@ -923,12 +937,16 @@ useEffect(() => {
                 Strategic Meeting Notes
               </div>
               <div style={{ flex: 1, overflowY: "auto" }} aria-live="polite" aria-label="Strategic meeting notes">
-                {ai.blocks.length === 0 ? (
-                  <p style={{ fontSize: FONT.size.label, color: COLORS.textMuted, margin: 0, fontStyle: "italic" }}>
-                    Notes, key arguments, and identified risks will populate here as conversation signal classification completes.
+                {liveNotes ? (
+                  <p style={{ fontSize: FONT.size.body, color: COLORS.textPrimary, margin: 0, lineHeight: 1.6 }}>
+                    {liveNotes}
                   </p>
-                ) : (
+                ) : ai.blocks.length > 0 ? (
                   <BlockRenderer nodes={ai.blocks} />
+                ) : (
+                  <p style={{ fontSize: FONT.size.label, color: COLORS.textMuted, margin: 0, fontStyle: "italic" }}>
+                    Notes build here as the AI hears important moments — decisions, risks, commitments.
+                  </p>
                 )}
               </div>
             </div>
@@ -963,12 +981,14 @@ useEffect(() => {
         <Modal
           title=""
           width={620}
+          closeOnBackdrop={false}
           onClose={() => setShowCheckpoint(false)}
         >
           <CheckpointPanel
             decisions={checkpoint.decisions}
             metric={checkpoint.metric}
             extracting={checkpoint.extracting}
+            speakers={speakerNames}
             present={false}
             onEdit={checkpoint.edit}
             onReExtract={checkpoint.extract}
@@ -995,6 +1015,7 @@ useEffect(() => {
               decisions={checkpoint.decisions}
               metric={checkpoint.metric}
               extracting={checkpoint.extracting}
+              speakers={speakerNames}
               present={true}
               onEdit={checkpoint.edit}
               onReExtract={checkpoint.extract}

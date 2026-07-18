@@ -5,8 +5,8 @@
 // them in place or mark one deliberately open. `present` renders the same list
 // large and read-only for a projector / screenshare (Feature 3) — the room reads
 // along while the facilitator speaks; edits happen in normal mode.
-import { useState } from "react";
-import { Check, CircleAlert, PauseCircle, Presentation, RefreshCw, X } from "lucide-react";
+import { useId, useState } from "react";
+import { Check, CircleAlert, PauseCircle, Pencil, Presentation, RefreshCw, X } from "lucide-react";
 import { COLORS, FONT, RADIUS, SPACE } from "../constants";
 import { Button } from "./ui";
 import type { DecisionRecord, DecisionStatus } from "../../shared/types";
@@ -16,7 +16,9 @@ interface CheckpointPanelProps {
   decisions: DecisionRecord[];
   metric: CompletenessMetric | null;
   extracting: boolean;
-  ownerTracking?: boolean;
+  // Unique speaker names from the transcript — owner-input suggestions, so the
+  // facilitator picks a name instead of retyping it. Free text still allowed.
+  speakers?: string[];
   present: boolean;
   onEdit: (decisionId: string, patch: DecisionEdit) => void;
   onReExtract: () => void;
@@ -41,18 +43,68 @@ function isoOrEmpty(due: string | null): string {
 
 function DecisionRow({
   decision,
-  ownerTracking,
+  speakers,
   present,
   onEdit,
 }: {
   decision: DecisionRecord;
-  ownerTracking: boolean;
+  speakers: string[];
   present: boolean;
   onEdit: (patch: DecisionEdit) => void;
 }) {
   const meta = STATUS_META[decision.status];
   const Icon = meta.icon;
   const [owner, setOwner] = useState(decision.owner ?? "");
+  const [editingText, setEditingText] = useState(false);
+  const [draftText, setDraftText] = useState(decision.text);
+  const datalistId = useId();
+
+  // Soft-dismissed: collapse to a single undoable line. The row is kept in the
+  // DB, so Undo restores it exactly; nothing is ever hard-deleted.
+  if (decision.dismissed) {
+    if (present) return null;
+    return (
+      <div
+        style={{
+          border: `1px dashed ${COLORS.border}`,
+          borderRadius: RADIUS.md,
+          padding: "8px 14px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+        }}
+      >
+        <span
+          style={{
+            fontSize: FONT.size.label,
+            color: COLORS.textDim,
+            textDecorationLine: "line-through",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {decision.text}
+        </span>
+        <button
+          type="button"
+          onClick={() => onEdit({ dismissed: false })}
+          style={{
+            background: "transparent",
+            border: "none",
+            color: COLORS.accent,
+            fontSize: FONT.size.label,
+            fontWeight: 600,
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+        >
+          Undo
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -84,19 +136,82 @@ function DecisionRow({
             · {decision.owner}
           </span>
         )}
+        {!present && (
+          <span style={{ marginLeft: "auto", display: "inline-flex", gap: 2 }}>
+            <button
+              type="button"
+              onClick={() => {
+                setDraftText(decision.text);
+                setEditingText(true);
+              }}
+              aria-label="Edit decision text"
+              title="Edit wording (STT sometimes mishears)"
+              style={{ background: "transparent", border: "none", color: COLORS.textDim, cursor: "pointer", padding: 4 }}
+            >
+              <Pencil size={13} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onEdit({ dismissed: true })}
+              aria-label="Dismiss decision"
+              title="Not a real decision — dismiss (undoable)"
+              style={{ background: "transparent", border: "none", color: COLORS.textDim, cursor: "pointer", padding: 4 }}
+            >
+              <X size={14} />
+            </button>
+          </span>
+        )}
       </div>
 
-      <p
-        style={{
-          margin: 0,
-          fontSize: present ? FONT.size.subheading : FONT.size.body,
-          color: COLORS.textPrimary,
-          lineHeight: 1.5,
-          fontWeight: present ? 600 : 500,
-        }}
-      >
-        {decision.text}
-      </p>
+      {editingText && !present ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <textarea
+            value={draftText}
+            onChange={(e) => setDraftText(e.target.value)}
+            rows={2}
+            aria-label="Decision text"
+            style={{
+              background: COLORS.surface,
+              border: `1px solid ${COLORS.borderLight}`,
+              borderRadius: RADIUS.sm,
+              color: COLORS.textPrimary,
+              padding: "8px 10px",
+              fontSize: FONT.size.body,
+              lineHeight: 1.5,
+              resize: "vertical",
+              fontFamily: "inherit",
+            }}
+          />
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                const clean = draftText.trim();
+                if (clean && clean !== decision.text) onEdit({ text: clean });
+                setEditingText(false);
+              }}
+            >
+              Save
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setEditingText(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <p
+          style={{
+            margin: 0,
+            fontSize: present ? FONT.size.subheading : FONT.size.body,
+            color: COLORS.textPrimary,
+            lineHeight: 1.5,
+            fontWeight: present ? 600 : 500,
+          }}
+        >
+          {decision.text}
+        </p>
+      )}
 
       {decision.scope && (
         <p style={{ margin: 0, fontSize: FONT.size.label, color: COLORS.textMuted }}>
@@ -144,25 +259,29 @@ function DecisionRow({
               fontSize: FONT.size.label,
             }}
           />
-          {ownerTracking && (
-            <input
-              type="text"
-              placeholder="Owner"
-              value={owner}
-              onChange={(e) => setOwner(e.target.value)}
-              onBlur={() => owner !== (decision.owner ?? "") && onEdit({ owner: owner || null })}
-              aria-label="Owner"
-              style={{
-                background: COLORS.surface,
-                border: `1px solid ${COLORS.border}`,
-                borderRadius: RADIUS.sm,
-                color: COLORS.textPrimary,
-                padding: "5px 8px",
-                fontSize: FONT.size.label,
-                width: 120,
-              }}
-            />
-          )}
+          <input
+            type="text"
+            placeholder="Owner"
+            list={datalistId}
+            value={owner}
+            onChange={(e) => setOwner(e.target.value)}
+            onBlur={() => owner !== (decision.owner ?? "") && onEdit({ owner: owner || null })}
+            aria-label="Owner"
+            style={{
+              background: COLORS.surface,
+              border: `1px solid ${COLORS.border}`,
+              borderRadius: RADIUS.sm,
+              color: COLORS.textPrimary,
+              padding: "5px 8px",
+              fontSize: FONT.size.label,
+              width: 120,
+            }}
+          />
+          <datalist id={datalistId}>
+            {speakers.map((s) => (
+              <option key={s} value={s} />
+            ))}
+          </datalist>
           <button
             type="button"
             onClick={() => onEdit({ status: "open" })}
@@ -188,7 +307,7 @@ export function CheckpointPanel({
   decisions,
   metric,
   extracting,
-  ownerTracking = false,
+  speakers = [],
   present,
   onEdit,
   onReExtract,
@@ -196,10 +315,11 @@ export function CheckpointPanel({
   onClose,
 }: CheckpointPanelProps) {
   const rate = metric?.completenessRate;
-  const incomplete = decisions.filter((d) => d.status === "incomplete").length;
+  const live = decisions.filter((d) => !d.dismissed);
+  const incomplete = live.filter((d) => d.status === "incomplete").length;
 
   const headline =
-    decisions.length === 0
+    live.length === 0
       ? extracting
         ? "Reading the meeting…"
         : "No decisions found yet"
@@ -264,7 +384,7 @@ export function CheckpointPanel({
             <DecisionRow
               key={d.id}
               decision={d}
-              ownerTracking={ownerTracking}
+              speakers={speakers}
               present={present}
               onEdit={(patch) => onEdit(d.id, patch)}
             />

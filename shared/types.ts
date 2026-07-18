@@ -229,6 +229,9 @@ export interface DecisionRecord {
   confidence: number | null;
   // "ai" when extracted, "facilitator" once the checkpoint edits/confirms it.
   source: "ai" | "facilitator";
+  // Soft-dismissed at the checkpoint: kept for Undo and dedupe, excluded from
+  // the metric and the summary.
+  dismissed: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -313,7 +316,9 @@ export type WsServerEvent =
   // finals broadcast to the session so every open tab stays in sync.
   | { type: "stt:interim"; sessionId: string; text: string }
   | { type: "transcript:final"; sessionId: string; transcript: WsTranscriptRow }
-  | { type: "stt:error"; sessionId: string; message: string };
+  | { type: "stt:error"; sessionId: string; message: string }
+  // Live meeting notes: the AI's rolling memory, re-broadcast on rewrite.
+  | { type: "notes:update"; sessionId: string; text: string };
 
 /** Control messages a client may send over /ws. Binary frames on the same
  * socket carry raw PCM16LE mono audio for the active STT stream. */

@@ -747,6 +747,7 @@ sessionRouter.patch("/:id/decisions/:decisionId", requireAuth, async (req, res) 
     if ("owner" in body) patch.owner = typeof body.owner === "string" ? body.owner : null;
     if ("revisit" in body) patch.revisit = typeof body.revisit === "string" ? body.revisit : null;
     if (typeof body.text === "string") patch.text = body.text;
+    if (typeof body.dismissed === "boolean") patch.dismissed = body.dismissed;
     if (body.status === "complete" || body.status === "incomplete" || body.status === "open") {
       patch.status = body.status;
     }

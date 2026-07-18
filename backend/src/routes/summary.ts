@@ -136,7 +136,8 @@ summaryRouter.get("/:sessionId", requireAuth, async (req, res, next) => {
 
     // Decisions join live (not snapshotted) so facilitator checkpoint edits
     // after the meeting show up — the decisions table is the verified record.
-    const decisions = await getDecisions(sessionId);
+    // Dismissed rows are rejected extractions; the summary never shows them.
+    const decisions = (await getDecisions(sessionId)).filter((d) => !d.dismissed);
 
     const summary: ParticipantSummaryOutput = {
       output_type: "participant_summary_output",

@@ -305,9 +305,16 @@ CREATE TABLE IF NOT EXISTS decisions (
     missing TEXT,
     confidence REAL,
     source TEXT NOT NULL DEFAULT 'ai' CHECK (source IN ('ai', 'facilitator')),
+    -- Soft-dismiss from the checkpoint: row kept (undoable, and the dedupe
+    -- must keep seeing its text so re-extract can't resurrect it), but
+    -- excluded from the metric and the summary.
+    dismissed BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL
 );
+
+-- Additive upgrade for databases that created the table before `dismissed`.
+ALTER TABLE decisions ADD COLUMN IF NOT EXISTS dismissed BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- ==========================================================
 -- PERFORMANCE TUNING INDEX SCALE

@@ -59,6 +59,9 @@ export interface SuggestionSocketHandlers {
   onSttInterim?: (text: string) => void
   onTranscriptFinal?: (row: WsTranscriptRow) => void
   onSttError?: (message: string) => void
+  // Live "Strategic Meeting Notes" — the AI's rolling memory, re-broadcast
+  // whenever an IMPORTANT chunk rewrites it.
+  onNotesUpdate?: (text: string) => void
 }
 
 export interface UseSuggestionSocketReturn {
@@ -226,6 +229,9 @@ export function useSuggestionSocket(
               break;
             case 'stt:error':
               handlersRef.current?.onSttError?.(payload.message);
+              break;
+            case 'notes:update':
+              handlersRef.current?.onNotesUpdate?.(payload.text);
               break;
             default:
               break;

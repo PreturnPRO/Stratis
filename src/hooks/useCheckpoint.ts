@@ -22,6 +22,7 @@ export interface DecisionEdit {
   status?: DecisionStatus;
   revisit?: string | null;
   text?: string;
+  dismissed?: boolean;
 }
 
 export interface UseCheckpointReturn {
@@ -118,6 +119,7 @@ export function useCheckpoint(
                 status: patch.status ?? d.status,
                 revisit: patch.revisit !== undefined ? patch.revisit : d.revisit,
                 text: patch.text && patch.text.trim() ? patch.text : d.text,
+                dismissed: patch.dismissed !== undefined ? patch.dismissed : d.dismissed,
               }
             : d,
         ),
