@@ -18,6 +18,14 @@ import { db } from "../db/database";
 import { newId, now } from "../lib/ids";
 import { clearProjectDocCache } from "./transcript";
 import { forgetSession } from "../realtime/liveness";
+import {
+  extractAndSaveDecisions,
+  getDecisions,
+  completenessFromRecords,
+  updateDecision,
+  type DecisionPatch,
+} from "../lib/decisions";
+import { generateAndSaveSummary } from "../lib/summaryStore";
 
 export const sessionRouter = Router();
 
@@ -150,8 +158,23 @@ export async function endSession(sessionId: string): Promise<any> {
   clearProjectDocCache(session.id);
   forgetSession(session.id);
 
-  // S1-T03-F trigger point — post-meeting summary generation hooks here.
-  console.log(`[session:end] session=${session.id} summary trigger stubbed`);
+  // Decision extraction + summary persistence, chained off the response path —
+  // both are heavy whole-transcript AI calls and End Meeting must return
+  // immediately. Decisions run first (the summary page joins them); a failed
+  // extraction still lets the summary persist. If the checkpoint already
+  // extracted at wrap-up, extraction refreshes with the final transcript;
+  // facilitator-confirmed rows are preserved.
+  void extractAndSaveDecisions(session.id)
+    .catch((err) =>
+      console.error(`[session:end] decision extraction failed for ${session.id}:`, err),
+    )
+    .then(() => generateAndSaveSummary(session.id))
+    .then((stored) => {
+      if (stored) console.log(`[session:end] summary stored for ${session.id}`);
+    })
+    .catch((err) =>
+      console.error(`[session:end] summary persist failed for ${session.id}:`, err),
+    );
 
   return getSession(session.id);
 }
@@ -659,5 +682,88 @@ sessionRouter.post("/:id/end", requireAuth, async (req, res) => {
     res
       .status(500)
       .json({ ok: false, error: "Internal server error ending session" });
+  }
+});
+
+/**
+ * GET /api/session/:id/decisions
+ * The extracted decisions for a session plus the completeness metric. Powers the
+ * closing checkpoint, the honest summary, and the traction dashboard.
+ */
+sessionRouter.get("/:id/decisions", requireAuth, async (req, res) => {
+  try {
+    const accessible = await requireAccessibleSession(req.params.id, req.auth!.sub, req.auth!.role);
+    if (!accessible.ok) {
+      return res.status(accessible.status).json({ ok: false, error: accessible.error });
+    }
+    const decisions = await getDecisions(req.params.id);
+    res.json({
+      ok: true,
+      data: { decisions, metric: completenessFromRecords(decisions) },
+    });
+  } catch (error) {
+    console.error("Session decisions fetch error:", error);
+    res.status(500).json({ ok: false, error: "Internal server error loading decisions" });
+  }
+});
+
+/**
+ * POST /api/session/:id/decisions/extract
+ * Run (or re-run) decision extraction on demand — the checkpoint calls this when
+ * the facilitator opens it at wrap-up, so the list reflects the meeting so far.
+ */
+sessionRouter.post("/:id/decisions/extract", requireAuth, async (req, res) => {
+  try {
+    const accessible = await requireAccessibleSession(req.params.id, req.auth!.sub, req.auth!.role);
+    if (!accessible.ok) {
+      return res.status(accessible.status).json({ ok: false, error: accessible.error });
+    }
+    const decisions = await extractAndSaveDecisions(req.params.id);
+    res.json({
+      ok: true,
+      data: { decisions, metric: completenessFromRecords(decisions) },
+    });
+  } catch (error) {
+    console.error("Session decisions extract error:", error);
+    res.status(500).json({ ok: false, error: "Internal server error extracting decisions" });
+  }
+});
+
+/**
+ * PATCH /api/session/:id/decisions/:decisionId
+ * Facilitator edit from the checkpoint — set a due date/owner, mark a decision
+ * deliberately open, or fix the wording. Flips the row to facilitator-authored.
+ */
+sessionRouter.patch("/:id/decisions/:decisionId", requireAuth, async (req, res) => {
+  try {
+    const accessible = await requireAccessibleSession(req.params.id, req.auth!.sub, req.auth!.role);
+    if (!accessible.ok) {
+      return res.status(accessible.status).json({ ok: false, error: accessible.error });
+    }
+
+    const body = req.body ?? {};
+    const patch: DecisionPatch = {};
+    if ("dueDate" in body) patch.dueDate = typeof body.dueDate === "string" ? body.dueDate : null;
+    if ("owner" in body) patch.owner = typeof body.owner === "string" ? body.owner : null;
+    if ("revisit" in body) patch.revisit = typeof body.revisit === "string" ? body.revisit : null;
+    if (typeof body.text === "string") patch.text = body.text;
+    if (typeof body.dismissed === "boolean") patch.dismissed = body.dismissed;
+    if (body.status === "complete" || body.status === "incomplete" || body.status === "open") {
+      patch.status = body.status;
+    }
+
+    const updated = await updateDecision(req.params.id, req.params.decisionId, patch);
+    if (!updated) {
+      return res.status(404).json({ ok: false, error: "Decision not found for this session" });
+    }
+
+    const decisions = await getDecisions(req.params.id);
+    res.json({
+      ok: true,
+      data: { decision: updated, metric: completenessFromRecords(decisions) },
+    });
+  } catch (error) {
+    console.error("Session decision update error:", error);
+    res.status(500).json({ ok: false, error: "Internal server error updating decision" });
   }
 });

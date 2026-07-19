@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Mic, Square, ChevronDown } from "lucide-react";
+import { Mic, Square, ChevronDown, ClipboardCheck } from "lucide-react";
 import { COLORS, FONT, SHADOW, LETTER_SPACING } from "../constants";
 import { RADIUS, SPACE } from "../tokens/colors";
 import { Button, Chip, Modal } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { SuggestionCardStack } from "../components/SuggestionCardStack";
+import { CheckpointPanel } from "../components/CheckpointPanel";
+import { useCheckpoint } from "../hooks/useCheckpoint";
 import {
   AiPresenceChip,
   AgendaPulse,
@@ -169,6 +171,8 @@ export default function Meeting({ onNav }: MeetingProps) {
   const [sendingChunk, setSendingChunk] = useState(false);
   const [ending, setEnding] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
+  const [showCheckpoint, setShowCheckpoint] = useState(false);
+  const [presentMode, setPresentMode] = useState(false);
 
   const [isRecording, setIsRecording] = useState(false);
 
@@ -185,6 +189,9 @@ export default function Meeting({ onNav }: MeetingProps) {
   const [liveText] = useState("");
   const [pendingText, setPendingText] = useState("");
   const inFlightChunksRef = useRef(0);
+  // Live "Strategic Meeting Notes" — the AI's rolling memory, pushed over the
+  // socket whenever an IMPORTANT chunk rewrites it.
+  const [liveNotes, setLiveNotes] = useState("");
 
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
   // Chat-style auto-follow: pinned to the newest line while the user is at the
@@ -252,7 +259,31 @@ export default function Meeting({ onNav }: MeetingProps) {
         setLastSpeechMs(Date.now());
       },
       onSttError: (message) => setError(message),
+      onNotesUpdate: (text) => setLiveNotes(text),
     });
+
+  const checkpoint = useCheckpoint(sessionId, token);
+
+  // Owner-input suggestions at the checkpoint: everyone who has spoken.
+  const speakerNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const row of transcripts) {
+      const clean = row.speaker?.trim();
+      if (clean) names.add(clean);
+    }
+    return [...names];
+  }, [transcripts]);
+
+  // Opening the checkpoint reads the meeting: extract fresh if we have nothing
+  // yet, otherwise just reload what's stored (and let the facilitator re-read).
+  const openCheckpoint = useCallback(() => {
+    setShowCheckpoint(true);
+    if (checkpoint.decisions.length === 0) {
+      void checkpoint.extract();
+    } else {
+      void checkpoint.load();
+    }
+  }, [checkpoint]);
 
   // --- Real-Time STT: mic → MediaRecorder → Chirp 2 (all browsers) ---
   // The old path used the browser Web Speech API, which only exists in
@@ -683,6 +714,16 @@ useEffect(() => {
                 </Button>
               )}
 
+              <Button
+                variant={inWrapUp ? "primary" : "ghost"}
+                size="sm"
+                onClick={openCheckpoint}
+                disabled={!sessionId || ending}
+                iconLeft={<ClipboardCheck size={14} />}
+              >
+                Checkpoint
+              </Button>
+
               <Button variant="ghost" size="sm" onClick={() => setShowEndConfirm(true)} disabled={ending}>
                 End Meeting
               </Button>
@@ -896,12 +937,16 @@ useEffect(() => {
                 Strategic Meeting Notes
               </div>
               <div style={{ flex: 1, overflowY: "auto" }} aria-live="polite" aria-label="Strategic meeting notes">
-                {ai.blocks.length === 0 ? (
-                  <p style={{ fontSize: FONT.size.label, color: COLORS.textMuted, margin: 0, fontStyle: "italic" }}>
-                    Notes, key arguments, and identified risks will populate here as conversation signal classification completes.
+                {liveNotes ? (
+                  <p style={{ fontSize: FONT.size.body, color: COLORS.textPrimary, margin: 0, lineHeight: 1.6 }}>
+                    {liveNotes}
                   </p>
-                ) : (
+                ) : ai.blocks.length > 0 ? (
                   <BlockRenderer nodes={ai.blocks} />
+                ) : (
+                  <p style={{ fontSize: FONT.size.label, color: COLORS.textMuted, margin: 0, fontStyle: "italic" }}>
+                    Notes build here as the AI hears important moments — decisions, risks, commitments.
+                  </p>
                 )}
               </div>
             </div>
@@ -929,6 +974,56 @@ useEffect(() => {
             This action will disconnect the continuous recording feed and run post-meeting summary parsing. You will proceed to review individual PM document patches before final commit.
           </p>
         </Modal>
+      )}
+
+      {/* Alignment Checkpoint — normal (modal) or present (fullscreen overlay) */}
+      {showCheckpoint && !presentMode && (
+        <Modal
+          title=""
+          width={620}
+          closeOnBackdrop={false}
+          onClose={() => setShowCheckpoint(false)}
+        >
+          <CheckpointPanel
+            decisions={checkpoint.decisions}
+            metric={checkpoint.metric}
+            extracting={checkpoint.extracting}
+            speakers={speakerNames}
+            present={false}
+            onEdit={checkpoint.edit}
+            onReExtract={checkpoint.extract}
+            onTogglePresent={() => setPresentMode(true)}
+            onClose={() => setShowCheckpoint(false)}
+          />
+        </Modal>
+      )}
+
+      {showCheckpoint && presentMode && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: COLORS.bg,
+            zIndex: 300,
+            padding: "48px 64px",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <div style={{ maxWidth: 900, width: "100%", margin: "0 auto", height: "100%" }}>
+            <CheckpointPanel
+              decisions={checkpoint.decisions}
+              metric={checkpoint.metric}
+              extracting={checkpoint.extracting}
+              speakers={speakerNames}
+              present={true}
+              onEdit={checkpoint.edit}
+              onReExtract={checkpoint.extract}
+              onTogglePresent={() => setPresentMode(false)}
+              onClose={() => setShowCheckpoint(false)}
+            />
+          </div>
+        </div>
       )}
     </div>
   );

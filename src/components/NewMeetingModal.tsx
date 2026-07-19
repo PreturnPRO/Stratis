@@ -89,6 +89,7 @@ export function NewMeetingModal({
 
   return (
     <Modal
+      closeOnBackdrop={false}
       title={lockedProject ? `New meeting — ${lockedProject.name}` : "New meeting"}
       width={420}
       onClose={() => !submitting && onClose()}

@@ -1,9 +1,9 @@
 import { env } from "../../../backend/src/config/env";
-import { fetchWithTimeout, type AIProvider, type ChatMessage, type CompletionResult } from "./types";
+import { fetchWithTimeout, type AIProvider, type ChatMessage, type CompletionResult, type CompleteOptions } from "./types";
 
 export const geminiProvider: AIProvider = {
   name: "gemini",
-  async complete(messages: ChatMessage[]): Promise<CompletionResult> {
+  async complete(messages: ChatMessage[], opts?: CompleteOptions): Promise<CompletionResult> {
     const { apiKey, model, baseUrl } = env.ai.gemini;
     if (!apiKey) {
         throw new Error("GEMINI_API_KEY is not set in the environment variables.");
@@ -27,7 +27,7 @@ export const geminiProvider: AIProvider = {
           reasoning_effort: "low",
         }),
       },
-      env.ai.timeoutMs
+      opts?.timeoutMs ?? env.ai.timeoutMs
     );
 
     if (!res.ok) {

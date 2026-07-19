@@ -180,6 +180,62 @@ export interface DocumentPatchOutput {
   rejected_suggestions?: RejectedSuggestion[];
 }
 
+// ── Decision extraction gateway (alignment checkpoint) ───────────────────────
+// At wrap-up and session end the AI reads the whole transcript + rolling memory
+// and returns the concrete decisions the room made — each tagged with whether it
+// left the meeting specific enough to act on. This feeds the closing checkpoint,
+// the honest summary, and the completeness metric. DTOs snake_case (AI JSON + DB).
+
+// complete   — has what it needs (a due date; an owner too when owner-tracking on).
+// incomplete — a real decision missing a due date (or owner when tracked): a gap.
+// open       — deliberately parked/undecided; carries a revisit note, not a gap.
+export type DecisionStatus = "complete" | "incomplete" | "open";
+
+export interface DecisionDTO {
+  // The decision restated concretely enough that two people could disagree with it.
+  text: string;
+  // ISO date (YYYY-MM-DD) or a short phrase the room actually said ("end of month").
+  due_date?: string | null;
+  owner?: string | null;
+  // What is IN vs OUT — where false consensus hides ("phased rollout" = which phases).
+  scope?: string | null;
+  status: DecisionStatus;
+  // For status "open": what/when reopens it, so a parked item can't vanish.
+  revisit?: string | null;
+  // Why the model marked it incomplete — shown to the facilitator on the card.
+  missing?: string | null;
+  confidence?: number;
+}
+
+/** The exact JSON shape the decision-extraction AI is required to emit. */
+export interface DecisionExtractOutput {
+  output_type: "decision_extract_output";
+  session_id: string;
+  decisions: DecisionDTO[];
+}
+
+// Persisted decision row (view type, camelCase). One row per decision per session.
+export interface DecisionRecord {
+  id: string;
+  sessionId: string;
+  meetingId: string;
+  text: string;
+  dueDate: string | null;
+  owner: string | null;
+  scope: string | null;
+  status: DecisionStatus;
+  revisit: string | null;
+  missing: string | null;
+  confidence: number | null;
+  // "ai" when extracted, "facilitator" once the checkpoint edits/confirms it.
+  source: "ai" | "facilitator";
+  // Soft-dismissed at the checkpoint: kept for Undo and dedupe, excluded from
+  // the metric and the summary.
+  dismissed: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // PM document persisted state + version history (view types, camelCase).
 
 export interface PmSection {
@@ -260,7 +316,9 @@ export type WsServerEvent =
   // finals broadcast to the session so every open tab stays in sync.
   | { type: "stt:interim"; sessionId: string; text: string }
   | { type: "transcript:final"; sessionId: string; transcript: WsTranscriptRow }
-  | { type: "stt:error"; sessionId: string; message: string };
+  | { type: "stt:error"; sessionId: string; message: string }
+  // Live meeting notes: the AI's rolling memory, re-broadcast on rewrite.
+  | { type: "notes:update"; sessionId: string; text: string };
 
 /** Control messages a client may send over /ws. Binary frames on the same
  * socket carry raw PCM16LE mono audio for the active STT stream. */
