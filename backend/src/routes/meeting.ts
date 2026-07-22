@@ -354,21 +354,30 @@ meetingRouter.post("/", requireAuth, async (req, res) => {
       return res.status(400).json({ ok: false, error: "Scheduled date cannot be in the past" }); 
     }
 
-    // 1. CRITICAL ALIGNMENT: Check if the project exists in our new relational table
-    const projectCheck = await db.query(
-      "SELECT id FROM projects WHERE id = $1 AND org_id = $2 LIMIT 1",
-      [projectId, req.auth!.orgId]
+    // 1. Register the project if it was created on-the-fly from the Dashboard.
+    //    projects.id is a GLOBAL primary key, so a plain INSERT of a slug-like id
+    //    ("stratis") collides across orgs (error 23505). ON CONFLICT makes this
+    //    idempotent and race-safe (concurrent creates no longer both insert).
+    const ts = now();
+    await db.query(
+      `INSERT INTO projects (id, org_id, name, slug, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (id) DO NOTHING`,
+      [projectId, req.auth!.orgId, titleFromProjectId(projectId), projectId, ts, ts]
     );
 
-    // 2. Automatically register the project if it was created on-the-fly from the Dashboard
-    if (projectCheck.rows.length === 0) {
-      const projectName = titleFromProjectId(projectId);
-      const ts = now();
-      await db.query(
-        `INSERT INTO projects (id, org_id, name, slug, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [projectId, req.auth!.orgId, projectName, projectId, ts, ts]
-      );
+    // 2. Since the id namespace is global, verify the existing/just-created row
+    //    belongs to THIS org — otherwise a meeting would attach to another
+    //    tenant's project. Reject instead of leaking or crashing with a 500.
+    const owner = await db.query<{ org_id: string }>(
+      "SELECT org_id FROM projects WHERE id = $1 LIMIT 1",
+      [projectId]
+    );
+    if (owner.rows[0]?.org_id !== req.auth!.orgId) {
+      return res.status(409).json({
+        ok: false,
+        error: "Project id is already in use by another organization",
+      });
     }
 
     const id = newId("mtg"); 

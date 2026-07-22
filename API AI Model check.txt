@@ -1,0 +1,355 @@
+API AI Model check
+You are acting as a Senior AI Systems Architect and Software Architect.
+Your objective is NOT to review code style, suggest refactoring, or find bugs.
+Your objective is to reverse engineer this project's architecture and produce a detailed technical report that will help determine the best AI model architecture for this application.
+
+SECURITY CONSTRAINTS (MANDATORY)
+
+DO NOT inspect, open, parse, summarize, or output the contents of any sensitive files.
+
+Completely ignore the following:
+Environment & Credentials
+- .env
+- .env.*
+- STT-service.key.json
+- *.key.json
+- *.service-account.json
+- *.credentials.json
+- *.pem
+- *.key
+- *.crt
+- *.cer
+- *.p12
+
+Secrets
+- Any Google Cloud Service Account JSON
+- Any Firebase Service Account JSON
+- Any AWS Credentials
+- Any Azure Credentials
+- Any OAuth Secrets
+- Any API Keys
+- Any JWT Secrets
+- Any SSH Keys
+- Any Private Certificates
+- Any Database Passwords
+
+Directories
+- node_modules/
+- .git/
+- .next/
+- dist/
+- build/
+- coverage/
+- logs/
+
+If any sensitive file is encountered:
+DO NOT OPEN IT.
+Simply state:
+"Sensitive file intentionally skipped."
+
+Never output, infer, or summarize any credential values.
+You may mention that a service exists (Google Cloud, Supabase, OpenAI, Deepgram, Anthropic, etc.), but never reveal any secrets.
+
+ANALYSIS SCOPE
+
+Focus only on files relevant to application architecture.
+
+Prioritize:
+- app/
+- src/
+- lib/
+- server/
+- app/api/
+- routes/
+- ai/
+- llm/
+- prompts/
+- rag/
+- vector/
+- memory/
+- context/
+- services/
+- hooks/ (AI-related)
+- types/
+- schemas/
+- supabase/
+- drizzle/
+- prisma/
+- migrations/
+- database/
+- README.md
+- package.json
+- tsconfig.json
+- next.config.*
+- middleware.*
+
+Ignore UI styling unless it directly affects AI behavior.
+
+PROJECT CONTEXT
+
+The application is named:
+Stratis
+
+Purpose:
+An AI Meeting Facilitator.
+
+Users create meetings with:
+- Meeting Goal
+- Agenda
+- Project
+- Context
+
+During meetings:
+- Live speech is transcribed.
+- AI continuously analyzes the meeting.
+- AI detects missing context.
+- AI detects assumptions.
+- AI detects contradictions.
+- AI detects risks.
+- AI detects action items.
+- AI detects decisions.
+- AI suggests follow-up questions through popup reminders.
+
+After the meeting:
+
+AI generates:
+- Meeting Summary
+- Decision Log
+- Action Items
+- Updated Project Memory
+- Document Updates
+
+PART 1 — HIGH LEVEL ARCHITECTURE
+
+Describe:
+- Frontend architecture
+- Backend architecture
+- Database
+- Authentication
+- AI Providers
+- STT Providers
+- Deployment
+- Storage
+
+Draw an ASCII architecture diagram.
+
+PART 2 — COMPLETE AI PIPELINE
+
+Locate every AI-related file.
+
+For each file provide:
+- File path
+- Purpose
+- Dependencies
+- Called by
+- Calls
+
+Then reconstruct the complete runtime flow:
+Meeting Creation
+↓
+Meeting Starts
+↓
+Transcript arrives
+↓
+Context building
+↓
+Prompt construction
+↓
+LLM request
+↓
+Returned JSON
+↓
+Popup reminder
+↓
+Database updates
+↓
+Meeting summary
+↓
+Project updates
+
+Draw the pipeline as ASCII.
+
+PART 3 — AI TASK BREAKDOWN
+
+Identify every distinct AI task.
+
+Examples:
+
+- Live transcript understanding
+- Missing context detection
+- Question generation
+- Decision extraction
+- Action item extraction
+- Risk detection
+- Contradiction detection
+- Summary generation
+- Document generation
+- Project memory update
+- Embeddings
+- Search
+- Classification
+
+For every task provide:
+
+- Latency requirement
+- Reasoning complexity
+- Output format
+- Context size
+- Call frequency
+
+PART 4 — PROMPTS
+
+Locate every prompt.
+
+For each prompt provide:
+
+- File path
+- Purpose
+- Estimated token size
+- Variables inserted
+- Whether prompt changes during runtime
+- Whether reusable
+
+PART 5 — CONTEXT MANAGEMENT
+
+Determine everything injected into the LLM.
+
+Examples:
+
+- Meeting Goal
+- Agenda
+- Project
+- Previous Meetings
+- Transcript
+- Decisions
+- Risks
+- Open Questions
+- Action Items
+- Project Tree
+- Evidence
+- Memory
+
+Estimate:
+
+- Average prompt size
+- Worst-case prompt size
+- Whether the full transcript is repeatedly sent
+- Whether incremental context is used
+
+PART 6 — DATABASE
+
+Explain ONLY AI-relevant tables.
+
+Include:
+
+- Meetings
+- Projects
+- Transcript
+- Decisions
+- Open Questions
+- Evidence
+- Action Items
+- Cards
+- Document Patches
+- Tree Nodes
+- Memory
+
+Explain how these connect.
+
+PART 7 — LATENCY ANALYSIS
+
+Identify every AI request.
+
+Classify:
+
+- Blocking
+- Background
+- Streaming
+
+Estimate where latency impacts UX.
+
+Suggest improvements.
+
+
+PART 8 — TOKEN ESTIMATION
+
+Estimate:
+Transcript tokens/minute
+Average meeting tokens
+Prompt tokens
+Output tokens
+
+Estimated total tokens for:
+30 minutes
+60 minutes
+90 minutes
+
+PART 9 — ARCHITECTURE REVIEW
+
+Score (1-10):
+
+- Prompt design
+- Context management
+- AI architecture
+- Streaming architecture
+- JSON reliability
+- Meeting memory
+- Scalability
+- Cost efficiency
+
+Explain every score.
+
+PART 10 — MODEL RECOMMENDATION
+
+
+Compare ONLY for THIS codebase:
+
+- GPT-5 Mini
+- GPT-5
+- Gemini 2.5 Flash
+- Gemini 2.5 Pro
+- Claude Sonnet 4
+- DeepSeek V3/V4
+- Qwen 3
+
+Do NOT rank by public benchmarks.
+
+Rank according to THIS project's architecture.
+
+For every model provide:
+
+- Strengths
+- Weaknesses
+- Expected latency
+- Expected cost
+- Suitability for:
+    • Live transcript understanding
+    • Popup question generation
+    • Decision extraction
+    • Meeting summary
+    • Document generation
+    • Memory updates
+
+Finally answer:
+"If you were the CTO of Stratis, what AI architecture would you deploy?"
+
+Discuss:
+- Single model vs multiple models
+- Model routing
+- Incremental context
+- Caching
+- Structured meeting state
+- Streaming strategy
+- Cost optimization
+- Expected production scalability
+
+OUTPUT FORMAT
+
+Produce ONE markdown document named:
+architecture_report.md
+Use clear headings.
+Use markdown tables where appropriate.
+Use ASCII diagrams for architecture.
+Be comprehensive.
+Do not include source code unless it is required to explain architecture.
+Do not reveal or summarize any secrets or sensitive file contents.

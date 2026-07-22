@@ -1,15 +1,30 @@
 -- ==========================================================
--- STRATIS DATABASE UPGRADE — FINAL ER DIAGRAM (SUPABASE)
+-- STRATIS DATABASE ADDITIVE SCHEMA
+-- ==========================================================
+-- Purpose:
+--   Apply database upgrades without dropping existing data.
+--
+-- Use this file when an existing database should be brought up to the current
+-- application shape. It intentionally contains no DROP TABLE statements.
+--
+-- Notes:
+--   - CREATE TABLE IF NOT EXISTS safely creates missing tables.
+--   - ALTER TABLE ... ADD COLUMN IF NOT EXISTS safely adds missing columns.
+--   - Existing CHECK/UNIQUE/FK constraints are not rewritten here because doing
+--     so safely requires named migrations and data validation per deployment.
+
+BEGIN;
+
+-- ==========================================================
+-- BASE TABLES: CREATE IF MISSING
 -- ==========================================================
 
--- 1. ORGANIZATIONS
 CREATE TABLE IF NOT EXISTS organizations (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL
 );
 
--- 2. PROJECTS
 CREATE TABLE IF NOT EXISTS projects (
     id TEXT PRIMARY KEY,
     org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -20,7 +35,6 @@ CREATE TABLE IF NOT EXISTS projects (
     UNIQUE(org_id, slug)
 );
 
--- 3. USERS
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -31,7 +45,6 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMPTZ NOT NULL
 );
 
--- 4. MEETINGS
 CREATE TABLE IF NOT EXISTS meetings (
     id TEXT PRIMARY KEY,
     org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -45,7 +58,6 @@ CREATE TABLE IF NOT EXISTS meetings (
     created_at TIMESTAMPTZ NOT NULL
 );
 
--- 5. SESSIONS
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
     meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
@@ -57,7 +69,6 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at TIMESTAMPTZ NOT NULL
 );
 
--- 6. TRANSCRIPTS
 CREATE TABLE IF NOT EXISTS transcripts (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -69,20 +80,41 @@ CREATE TABLE IF NOT EXISTS transcripts (
     metadata_json JSONB
 );
 
--- 7. DOCUMENTS
+-- ==========================================================
+-- ADDITIVE COLUMNS FOR EXISTING S1 TABLES
+-- ==========================================================
+
+ALTER TABLE meetings ADD COLUMN IF NOT EXISTS project_id TEXT;
+ALTER TABLE meetings ADD COLUMN IF NOT EXISTS goal TEXT;
+ALTER TABLE meetings ADD COLUMN IF NOT EXISTS brief TEXT;
+ALTER TABLE meetings ADD COLUMN IF NOT EXISTS duration_minutes INTEGER;
+ALTER TABLE meetings ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ;
+ALTER TABLE meetings ADD COLUMN IF NOT EXISTS created_by TEXT;
+
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS rolling_summary TEXT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ended_at TIMESTAMPTZ;
+
+ALTER TABLE transcripts ADD COLUMN IF NOT EXISTS chunk_signal TEXT;
+ALTER TABLE transcripts ADD COLUMN IF NOT EXISTS source TEXT;
+ALTER TABLE transcripts ADD COLUMN IF NOT EXISTS metadata_json JSONB;
+
+-- ==========================================================
+-- PM DOCUMENTS AND VERSION HISTORY
+-- ==========================================================
+
 CREATE TABLE IF NOT EXISTS documents (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     title TEXT,
     state_json JSONB NOT NULL,
-    version INTEGER NOT NULL DEFAULT 1, -- Named current_version in ER, mapping 'version' for active S1 runtime
+    version INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL,
     UNIQUE(project_id, org_id)
 );
 
--- 8. DOCUMENT VERSIONS
 CREATE TABLE IF NOT EXISTS document_versions (
     id TEXT PRIMARY KEY,
     document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
@@ -95,7 +127,6 @@ CREATE TABLE IF NOT EXISTS document_versions (
     UNIQUE(document_id, version)
 );
 
--- 9. DOCUMENT PATCHES (Post-Meeting Patches Metadata)
 CREATE TABLE IF NOT EXISTS document_patches (
     id TEXT PRIMARY KEY,
     document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
@@ -110,7 +141,6 @@ CREATE TABLE IF NOT EXISTS document_patches (
     reviewed_at TIMESTAMPTZ
 );
 
--- 10. DOCUMENT PATCH ITEMS (Targeted Section Operations)
 CREATE TABLE IF NOT EXISTS document_patch_items (
     id TEXT PRIMARY KEY,
     document_patch_id TEXT NOT NULL REFERENCES document_patches(id) ON DELETE CASCADE,
@@ -122,7 +152,6 @@ CREATE TABLE IF NOT EXISTS document_patch_items (
     confidence REAL
 );
 
--- 11. DOCUMENT PATCH EVIDENCE (Traceability links)
 CREATE TABLE IF NOT EXISTS document_patch_evidence (
     id TEXT PRIMARY KEY,
     document_patch_item_id TEXT NOT NULL REFERENCES document_patch_items(id) ON DELETE CASCADE,
@@ -133,7 +162,10 @@ CREATE TABLE IF NOT EXISTS document_patch_evidence (
     quote TEXT
 );
 
--- 12. NODES (Tree Layer)
+-- ==========================================================
+-- TREE / MEMORY LAYER
+-- ==========================================================
+
 CREATE TABLE IF NOT EXISTS nodes (
     id TEXT PRIMARY KEY,
     org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -158,7 +190,6 @@ CREATE TABLE IF NOT EXISTS nodes (
     updated_at TIMESTAMPTZ NOT NULL
 );
 
--- 13. NODE RELATIONSHIPS
 CREATE TABLE IF NOT EXISTS node_relationships (
     id TEXT PRIMARY KEY,
     parent_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
@@ -168,7 +199,6 @@ CREATE TABLE IF NOT EXISTS node_relationships (
     UNIQUE(parent_id, child_id, kind)
 );
 
--- 14. NODE EVIDENCE
 CREATE TABLE IF NOT EXISTS node_evidence (
     id TEXT PRIMARY KEY,
     node_id TEXT NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
@@ -179,7 +209,10 @@ CREATE TABLE IF NOT EXISTS node_evidence (
     quote TEXT
 );
 
--- 15. NOTIFICATIONS
+-- ==========================================================
+-- LIVE AI CARDS, SUMMARIES, ACTION ITEMS, CONSENT
+-- ==========================================================
+
 CREATE TABLE IF NOT EXISTS notifications (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -191,7 +224,6 @@ CREATE TABLE IF NOT EXISTS notifications (
     created_at TIMESTAMPTZ NOT NULL
 );
 
--- 16. CONSENT LOGS
 CREATE TABLE IF NOT EXISTS consent_logs (
     id TEXT PRIMARY KEY,
     session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
@@ -201,7 +233,6 @@ CREATE TABLE IF NOT EXISTS consent_logs (
     metadata_json JSONB
 );
 
--- 17. LIVE CARDS (Database Suggestions Store)
 CREATE TABLE IF NOT EXISTS live_cards (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -218,7 +249,6 @@ CREATE TABLE IF NOT EXISTS live_cards (
     answered_at TIMESTAMPTZ
 );
 
--- 18. LIVE CARD EVIDENCE
 CREATE TABLE IF NOT EXISTS live_card_evidence (
     id TEXT PRIMARY KEY,
     live_card_id TEXT NOT NULL REFERENCES live_cards(id) ON DELETE CASCADE,
@@ -229,7 +259,6 @@ CREATE TABLE IF NOT EXISTS live_card_evidence (
     quote TEXT
 );
 
--- 19. PARTICIPANT SUMMARIES
 CREATE TABLE IF NOT EXISTS participant_summaries (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -241,7 +270,6 @@ CREATE TABLE IF NOT EXISTS participant_summaries (
     sent_at TIMESTAMPTZ
 );
 
--- 20. SUMMARY BLOCKS
 CREATE TABLE IF NOT EXISTS summary_blocks (
     id TEXT PRIMARY KEY,
     summary_id TEXT NOT NULL REFERENCES participant_summaries(id) ON DELETE CASCADE,
@@ -252,7 +280,6 @@ CREATE TABLE IF NOT EXISTS summary_blocks (
     sort_order INTEGER NOT NULL
 );
 
--- 21. ACTION ITEMS
 CREATE TABLE IF NOT EXISTS action_items (
     id TEXT PRIMARY KEY,
     summary_id TEXT NOT NULL REFERENCES participant_summaries(id) ON DELETE CASCADE,
@@ -263,34 +290,27 @@ CREATE TABLE IF NOT EXISTS action_items (
 );
 
 -- ==========================================================
--- PERFORMANCE TUNING INDEX SCALE
+-- INDEXES
 -- ==========================================================
+
 CREATE INDEX IF NOT EXISTS idx_users_org_id ON users(org_id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-
 CREATE INDEX IF NOT EXISTS idx_projects_org_id ON projects(org_id);
-
 CREATE INDEX IF NOT EXISTS idx_meetings_org_id ON meetings(org_id);
 CREATE INDEX IF NOT EXISTS idx_meetings_project_id ON meetings(project_id);
-
 CREATE INDEX IF NOT EXISTS idx_sessions_meeting_id ON sessions(meeting_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
-
 CREATE INDEX IF NOT EXISTS idx_transcripts_session_id ON transcripts(session_id);
 CREATE INDEX IF NOT EXISTS idx_transcripts_timestamp ON transcripts(timestamp);
-
 CREATE INDEX IF NOT EXISTS idx_documents_project_id ON documents(project_id);
-
 CREATE INDEX IF NOT EXISTS idx_document_patches_document_id ON document_patches(document_id);
 CREATE INDEX IF NOT EXISTS idx_document_patches_session_id ON document_patches(session_id);
-
 CREATE INDEX IF NOT EXISTS idx_nodes_project_id ON nodes(project_id);
-
 CREATE INDEX IF NOT EXISTS idx_notifications_user_id ON notifications(user_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read);
 CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at);
-
 CREATE INDEX IF NOT EXISTS idx_live_cards_session_id ON live_cards(session_id);
 CREATE INDEX IF NOT EXISTS idx_live_cards_answered ON live_cards(answered);
-
 CREATE INDEX IF NOT EXISTS idx_consent_logs_session_id ON consent_logs(session_id);
+
+COMMIT;
