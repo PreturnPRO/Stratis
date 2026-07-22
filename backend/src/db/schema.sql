@@ -262,6 +262,37 @@ CREATE TABLE IF NOT EXISTS action_items (
     status TEXT NOT NULL DEFAULT 'pending'
 );
 
+-- 22. DECISIONS (alignment checkpoint)
+-- One row per decision the AI extracts from a session's transcript. The closing
+-- checkpoint, the honest summary, and the completeness metric all read this.
+-- status: complete (has a due date), incomplete (a real decision missing one),
+-- open (deliberately parked — carries a revisit note). source flips ai ->
+-- facilitator once the checkpoint edits/confirms a row. due_date is TEXT, not a
+-- timestamp: the room often gives a phrase ("end of month") we keep verbatim.
+CREATE TABLE IF NOT EXISTS decisions (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    meeting_id TEXT NOT NULL REFERENCES meetings(id) ON DELETE CASCADE,
+    text TEXT NOT NULL,
+    due_date TEXT,
+    owner TEXT,
+    scope TEXT,
+    status TEXT NOT NULL CHECK (status IN ('complete', 'incomplete', 'open')),
+    revisit TEXT,
+    missing TEXT,
+    confidence REAL,
+    source TEXT NOT NULL DEFAULT 'ai' CHECK (source IN ('ai', 'facilitator')),
+    -- Soft-dismiss from the checkpoint: row kept (undoable, and the dedupe
+    -- must keep seeing its text so re-extract can't resurrect it), but
+    -- excluded from the metric and the summary.
+    dismissed BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
+);
+
+-- Additive upgrade for databases that created the table before `dismissed`.
+ALTER TABLE decisions ADD COLUMN IF NOT EXISTS dismissed BOOLEAN NOT NULL DEFAULT FALSE;
+
 -- ==========================================================
 -- PERFORMANCE TUNING INDEX SCALE
 -- ==========================================================
@@ -294,3 +325,11 @@ CREATE INDEX IF NOT EXISTS idx_live_cards_session_id ON live_cards(session_id);
 CREATE INDEX IF NOT EXISTS idx_live_cards_answered ON live_cards(answered);
 
 CREATE INDEX IF NOT EXISTS idx_consent_logs_session_id ON consent_logs(session_id);
+
+CREATE INDEX IF NOT EXISTS idx_decisions_session_id ON decisions(session_id);
+CREATE INDEX IF NOT EXISTS idx_decisions_meeting_id ON decisions(meeting_id);
+
+-- One summary per session — the session-end hook and the summary GET's lazy
+-- backfill can race; the unique index makes the second writer a no-op.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_participant_summaries_session
+  ON participant_summaries(session_id);

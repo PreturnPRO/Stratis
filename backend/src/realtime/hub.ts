@@ -312,6 +312,12 @@ export function pushSuggestion(card: SuggestionCard): void {
   broadcast(card.sessionId, { type: "suggestion:new", card });
 }
 
+/** Live "Strategic Meeting Notes": broadcast the fresh rolling memory to the
+ *  session's clients whenever the AI rewrites it (IMPORTANT chunks only). */
+export function pushNotes(sessionId: string, text: string): void {
+  broadcast(sessionId, { type: "notes:update", sessionId, text });
+}
+
 export function pushAnswered(
   sessionId: string,
   cardId: string,

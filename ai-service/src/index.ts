@@ -21,17 +21,21 @@ import {
   SYSTEM_PROMPT_JSON,
   SYSTEM_PROMPT_LIVE_CARD,
   SYSTEM_PROMPT_DOC_PATCH,
+  SYSTEM_PROMPT_DECISION_EXTRACT,
   parseStructured,
   parseLiveCard,
   parseDocumentPatch,
+  parseDecisionExtract,
   type ParseResult,
   type LiveCardParseResult,
   type DocPatchParseResult,
+  type DecisionExtractParseResult,
 } from "./schema";
 import type {
   AIStructuredResponse,
   LiveCardOutput,
   DocumentPatchOutput,
+  DecisionExtractOutput,
 } from "../../shared/types";
 
 export type { ChatMessage, CompletionResult } from "./providers/types";
@@ -39,14 +43,17 @@ export {
   SYSTEM_PROMPT_JSON,
   SYSTEM_PROMPT_LIVE_CARD,
   SYSTEM_PROMPT_DOC_PATCH,
+  SYSTEM_PROMPT_DECISION_EXTRACT,
   parseStructured,
   parseLiveCard,
   parseDocumentPatch,
+  parseDecisionExtract,
 } from "./schema";
 export type {
   ParseResult,
   LiveCardParseResult,
   DocPatchParseResult,
+  DecisionExtractParseResult,
 } from "./schema";
 
 /** Pick the active provider. Providers with no key fall back to mock so the call
@@ -167,7 +174,9 @@ export interface LiveContext {
   goal?: string | null;
   brief?: string | null;
   rollingSummary?: string | null;
-  openQuestions?: string[];
+  // Every question already surfaced to the facilitator this session — open AND
+  // answered — so the model never re-raises a gap it has already flagged.
+  surfacedQuestions?: string[];
   recentTranscript: string;
   // Rendered PM document from a prior meeting on this project, when this
   // meeting continues an existing project rather than starting fresh.
@@ -175,8 +184,8 @@ export interface LiveContext {
 }
 
 function liveContextPrompt(ctx: LiveContext): string {
-  const openQs = ctx.openQuestions?.length
-    ? ctx.openQuestions.map((q) => `- ${q}`).join("\n")
+  const surfacedQs = ctx.surfacedQuestions?.length
+    ? ctx.surfacedQuestions.map((q) => `- ${q}`).join("\n")
     : "(none)";
 
   const sections: string[] = [];
@@ -191,7 +200,7 @@ function liveContextPrompt(ctx: LiveContext): string {
     `Meeting goal: ${ctx.goal?.trim() || "(not provided)"}`,
     `Agenda / brief: ${ctx.brief?.trim() || "(not provided)"}`,
     `Rolling memory so far: ${ctx.rollingSummary?.trim() || "(empty)"}`,
-    `Unresolved questions:\n${openQs}`,
+    `Questions already surfaced this meeting (open or answered) — never repeat or rephrase any of these:\n${surfacedQs}`,
     `Recent transcript (most recent last):\n${ctx.recentTranscript.trim() || "(silence)"}`,
   );
 
@@ -306,6 +315,90 @@ export async function documentPatchCall(
       project_id: ctx.projectId,
       base_document_version: ctx.baseVersion,
     },
+    raw: result.raw,
+  };
+}
+
+// Whole-transcript extraction is not latency-sensitive (runs at meeting end) but
+// is a heavy call — give it a generous budget so a slow/thinking model doesn't
+// abort mid-extract. Independent of the live-card AI_TIMEOUT_MS.
+const EXTRACT_TIMEOUT_MS = 90_000;
+
+/** Context the decision-extraction AI receives (alignment checkpoint). */
+export interface DecisionExtractContext {
+  sessionId: string;
+  goal?: string | null;
+  transcript: string;
+  rollingSummary?: string | null;
+  // Decisions the facilitator already confirmed at the checkpoint — the model
+  // must not re-list them (a re-extract otherwise duplicates them, reworded,
+  // next to their confirmed copy).
+  confirmedDecisions?: string[];
+}
+
+function decisionExtractPrompt(ctx: DecisionExtractContext): string {
+  // Anchor "today" so a spoken date like "30 กรกฎาคม" resolves to the right year
+  // instead of the model guessing (it defaulted to a past year without this).
+  const today = new Date().toISOString().slice(0, 10);
+  const confirmed = ctx.confirmedDecisions?.length
+    ? ctx.confirmedDecisions.map((d) => `- ${d}`).join("\n")
+    : null;
+  return [
+    `Today's date is ${today}. Resolve any spoken date to a full ISO date on or after today.`,
+    `Meeting goal: ${ctx.goal?.trim() || "(not provided)"}`,
+    `Rolling memory (running notes of the whole meeting): ${ctx.rollingSummary?.trim() || "(none)"}`,
+    ...(confirmed
+      ? [
+          `Decisions ALREADY CONFIRMED by the facilitator — do NOT include these in your output, in any wording:\n${confirmed}`,
+        ]
+      : []),
+    `Full meeting transcript:\n${ctx.transcript.trim() || "(no transcript)"}`,
+  ].join("\n\n");
+}
+
+/**
+ * Wrap-up gateway: extract the concrete decisions the room made, each tagged
+ * complete / incomplete / open. Returns a validated `decision_extract_output`
+ * (backend injects session_id). Decisions may be empty if nothing was settled.
+ */
+export async function extractDecisionsCall(
+  ctx: DecisionExtractContext,
+): Promise<
+  | { ok: true; provider: string; data: DecisionExtractOutput; raw: unknown }
+  | {
+      ok: false;
+      provider: string;
+      error: string;
+      rawText: string;
+      raw: unknown;
+    }
+> {
+  const provider = selectProvider();
+  const messages: ChatMessage[] = [
+    { role: "system", content: SYSTEM_PROMPT_DECISION_EXTRACT },
+    { role: "user", content: decisionExtractPrompt(ctx) },
+  ];
+
+  // Extraction reads the whole transcript and runs at wrap-up / session end —
+  // off the live path — so it gets a far longer budget than a live-card call,
+  // independent of the meeting-time AI_TIMEOUT_MS.
+  const result = await provider.complete(messages, { timeoutMs: EXTRACT_TIMEOUT_MS });
+  const parsed: DecisionExtractParseResult = parseDecisionExtract(result.text);
+
+  if (!parsed.ok) {
+    console.warn(`[ai] decision extract validation failed: ${parsed.error}`);
+    return {
+      ok: false,
+      provider: provider.name,
+      error: parsed.error,
+      rawText: result.text,
+      raw: result.raw,
+    };
+  }
+  return {
+    ok: true,
+    provider: provider.name,
+    data: { ...parsed.data, session_id: ctx.sessionId },
     raw: result.raw,
   };
 }

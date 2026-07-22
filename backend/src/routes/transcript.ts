@@ -6,7 +6,7 @@ import { liveCardCall, type LiveContext } from "@ai/index";
 import { transcribeAudio } from "../lib/stt";
 import * as suggestions from "../realtime/suggestions";
 import { detectAnswered } from "../realtime/autodetect";
-import { pushSuggestion, pushAnswered, registerStreamIngest } from "../realtime/hub";
+import { pushSuggestion, pushAnswered, pushNotes, registerStreamIngest } from "../realtime/hub";
 import { getDocumentRow, rowToDocument, renderDocument } from "../lib/pmDocument";
 import { withRetry } from "../lib/withRetry";
 
@@ -153,7 +153,7 @@ async function buildLiveContext(sessionId: string, latestText: string): Promise<
     goal: meta?.goal ?? null,
     brief: meta?.brief ?? null,
     rollingSummary: meta?.rolling_summary ?? null,
-    openQuestions: suggestions.openCards(sessionId).map((c) => c.question),
+    surfacedQuestions: suggestions.allCards(sessionId).map((c) => c.question),
     recentTranscript,
     projectDocument,
   };
@@ -209,10 +209,13 @@ async function routeTextToAi(
 
   // IMPORTANT chunks update rolling memory (schema spec §6.4); others skipped.
   if (out.chunk_signal === "IMPORTANT" && out.rolling_memory_update?.trim()) {
+    const notes = out.rolling_memory_update.trim();
     await db.query(
-      `UPDATE sessions SET rolling_summary = $1 WHERE id = $2`, 
-      [out.rolling_memory_update.trim(), sessionId]
+      `UPDATE sessions SET rolling_summary = $1 WHERE id = $2`,
+      [notes, sessionId]
     );
+    // Live notes panel: the rolling memory IS the AI's running notes.
+    pushNotes(sessionId, notes);
   }
 
   const cards =

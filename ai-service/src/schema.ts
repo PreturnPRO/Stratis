@@ -23,6 +23,9 @@ import type {
   PatchOperation,
   PmSectionKey,
   ReviewPriority,
+  DecisionDTO,
+  DecisionStatus,
+  DecisionExtractOutput,
 } from "../../shared/types";
 
 const BLOCK_TYPES: readonly AIBlockType[] = [
@@ -154,14 +157,14 @@ const CHUNK_SIGNALS: readonly ChunkSignal[] = ["IMPORTANT", "LOW_SIGNAL", "IGNOR
 /** System prompt forcing JSON-only `live_card_output` for the live meeting AI. */
 export const SYSTEM_PROMPT_LIVE_CARD = `You are Stratis, an AI co-facilitator listening live to a team meeting. Output STRUCTURED DATA ONLY — one JSON object, no markdown, no prose.
 
-LANGUAGE: The meeting may be in Thai, English, or mixed. Reason in the transcript's language and write "suggested_question" in the meeting's dominant language (Thai if the transcript is mainly Thai).
+LANGUAGE: The meeting may be in Thai, English, or mixed. Detect the transcript's dominant language. ALL card text fields — "title", "brief_description", "suggested_question", "reason_now" — MUST be written in that language: a mainly-Thai transcript gets fully Thai cards, like the example below. Keep embedded English product names and technical terms as-is. "rolling_memory_update" follows the meeting's language too. Never answer in English when the meeting is in Thai.
 
 GARBLED SPEECH-TO-TEXT: The transcript is live STT and may contain garbled or nonsensical fragments. Infer the intended meaning from surrounding context before reasoning. If a chunk is too garbled to understand, classify it "IGNORE" and return no cards — never invent a card from noise.
 
 CONTEXT YOU RECEIVE:
 - Meeting goal + agenda/brief. If the goal is "(not provided)", infer the working goal from the transcript and judge relevance against that.
 - Rolling memory: a running terse summary of the meeting so far — treat it as the history; the transcript window is only the latest slice.
-- Unresolved questions already surfaced (do not repeat them).
+- Questions already surfaced to the facilitator this meeting (open or answered). NEVER surface a card targeting the same gap as any of these, even reworded or translated — return "cards": [] instead.
 - Prior project PM document, when present (background only; don't re-decide settled items).
 - Recent transcript window (latest lines; may be short or mid-sentence — combine with rolling memory before deciding).
 
@@ -190,11 +193,11 @@ Return EXACTLY one JSON object with this shape and nothing else:
   "cards": [
     {
       "card_type": "QUESTION_SUGGESTION" | "MISSING_DECISION" | "UNRESOLVED_ASSUMPTION" | "DRIFT_ALERT",
-      "title": "short, high-impact card title (under 50 chars)",
-      "brief_description": "the specific gap, risk, or alignment issue you noticed",
+      "title": "short, high-impact card title (under 50 chars), in the meeting's language",
+      "brief_description": "the specific gap, risk, or alignment issue you noticed, in the meeting's language",
       "suggested_question": "the exact prompt the facilitator should speak, in the meeting's language",
       "urgency": "LOW" | "MEDIUM" | "HIGH",
-      "reason_now": "why resolving this now matters",
+      "reason_now": "why resolving this now matters, in the meeting's language",
       "confidence": 0.0
     }
   ]
@@ -436,5 +439,129 @@ export function parseDocumentPatch(raw: string): DocPatchParseResult {
       patches,
       rejected_suggestions: rejected,
     },
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DECISION EXTRACT OUTPUT (alignment checkpoint) — reads the whole meeting and
+// returns the concrete decisions, each tagged complete / incomplete / open.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DECISION_STATUSES: readonly DecisionStatus[] = ["complete", "incomplete", "open"];
+
+/** System prompt forcing JSON-only `decision_extract_output` at meeting wrap-up. */
+export const SYSTEM_PROMPT_DECISION_EXTRACT = `You are Stratis, reviewing a finished (or nearly finished) team meeting to pin down exactly what the room DECIDED. You output STRUCTURED DATA ONLY — one JSON object, no markdown, no prose.
+
+LANGUAGE: Detect the transcript's dominant language. Write every "text", "scope", "revisit", and "missing" field in that language (Thai if the meeting is mainly Thai). Keep embedded product names and technical terms as-is. Never answer in English when the meeting is in Thai.
+
+GARBLED SPEECH-TO-TEXT: The transcript is live STT and may contain misheard, transliterated, or split words. Infer the intended word from context and write your output with the CORRECTED spelling — e.g. "กดหมาย" is "กฎหมาย", "คอนเซ็น" is "consent", a misheard person name should be matched to the actual speaker names in the transcript. Do not copy obvious STT garbage into decision text, and do not expand a word beyond what was said (e.g. "โปร" for a Pro tier must not become "โปรโมชั่น"). If a passage is too garbled to understand, ignore it — never invent a decision from noise.
+
+YOUR JOB: extract the real decisions — the choices the team committed to — and judge whether each one left the meeting concrete enough to act on. This catches "false consensus": a decision everyone agreed to in vague words that each person understood differently.
+
+WHAT COUNTS AS A DECISION: a choice the room settled on — a direction, a commitment, an action the team will take. NOT: open questions, opinions, small talk, or things merely discussed. If the room only debated something without landing it, that is "open", not a decision.
+
+FOR EACH DECISION:
+1. "text": restate it CONCRETELY — specific enough that two people could disagree with the wording. Bad: "improve onboarding". Good: "redesign the consent screen to cut the legal text, this sprint". Never launder vagueness into a clean sentence — if the room was vague, the text should still be specific about WHAT was agreed and the vagueness shows up as a missing field.
+2. "due_date": the deadline the room actually gave — an ISO date (YYYY-MM-DD) if a real date was said, or the exact phrase used ("end of month", "before launch"). null if none was given.
+3. "owner": who will do it, if the room named someone (or it is unambiguous from context). null if nobody was named. Do NOT invent an owner.
+4. "scope": what is IN vs OUT, when the decision has a boundary that matters ("phased rollout" → which phases). null if not applicable.
+5. "status":
+   - "incomplete": a real, committed decision that is MISSING A DUE DATE (owner-tracking is handled by the app, so judge completeness on the due date). This is the common case for false consensus.
+   - "open": the team leaned toward something but did NOT actually commit — still being decided, or explicitly parked. Give "revisit" = what/when reopens it.
+   - "complete": the decision has a due date and is concrete.
+6. "missing": for "incomplete", one short phrase naming what is absent ("no deadline"). For others, null.
+7. "confidence": 0..1, how sure you are this was a real decision.
+
+Return EXACTLY one JSON object with this shape and nothing else:
+{
+  "output_type": "decision_extract_output",
+  "decisions": [
+    {
+      "text": "the decision, restated concretely, in the meeting's language",
+      "due_date": "YYYY-MM-DD or the phrase used, or null",
+      "owner": "who, or null",
+      "scope": "what is in/out, or null",
+      "status": "complete" | "incomplete" | "open",
+      "revisit": "for open items: what reopens it, else null",
+      "missing": "for incomplete: what is absent, else null",
+      "confidence": 0.0
+    }
+  ]
+}
+
+Rules: JSON only, no \`\`\` fences, no text around it. "decisions" may be empty if the meeting settled nothing. Never fabricate a decision, a date, or an owner that the transcript does not support.`;
+
+export type DecisionExtractParseResult =
+  | { ok: true; data: Omit<DecisionExtractOutput, "session_id"> }
+  | { ok: false; error: string };
+
+function optStr(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
+function validateDecision(value: unknown, index: number): DecisionDTO | string {
+  if (typeof value !== "object" || value === null) {
+    return `decisions[${index}] is not an object`;
+  }
+  const d = value as Record<string, unknown>;
+
+  if (typeof d.text !== "string" || d.text.trim() === "") {
+    return `decisions[${index}].text must be a non-empty string`;
+  }
+  if (!DECISION_STATUSES.includes(d.status as DecisionStatus)) {
+    return `decisions[${index}].status "${String(d.status)}" is invalid`;
+  }
+  if (
+    d.confidence !== undefined &&
+    d.confidence !== null &&
+    (typeof d.confidence !== "number" || d.confidence < 0 || d.confidence > 1)
+  ) {
+    return `decisions[${index}].confidence must be a number in 0..1`;
+  }
+
+  const decision: DecisionDTO = {
+    text: d.text.trim(),
+    status: d.status as DecisionStatus,
+    due_date: optStr(d.due_date),
+    owner: optStr(d.owner),
+    scope: optStr(d.scope),
+    revisit: optStr(d.revisit),
+    missing: optStr(d.missing),
+  };
+  if (typeof d.confidence === "number") decision.confidence = d.confidence;
+  return decision;
+}
+
+/** Parse + validate raw model text into a `decision_extract_output` (minus
+ *  session_id, which the backend injects). Decisions may be empty. */
+export function parseDecisionExtract(raw: string): DecisionExtractParseResult {
+  const cleaned = stripFences(raw);
+  if (cleaned === "") return { ok: false, error: "model returned empty output" };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (err) {
+    return { ok: false, error: `not valid JSON: ${(err as Error).message}` };
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return { ok: false, error: "top-level value must be a JSON object" };
+  }
+
+  const root = parsed as Record<string, unknown>;
+  if (!Array.isArray(root.decisions)) {
+    return { ok: false, error: '"decisions" must be an array' };
+  }
+
+  const decisions: DecisionDTO[] = [];
+  for (let i = 0; i < root.decisions.length; i++) {
+    const result = validateDecision(root.decisions[i], i);
+    if (typeof result === "string") return { ok: false, error: result };
+    decisions.push(result);
+  }
+
+  return {
+    ok: true,
+    data: { output_type: "decision_extract_output", decisions },
   };
 }
