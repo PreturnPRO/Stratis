@@ -331,6 +331,18 @@ input:focus-visible, textarea:focus-visible {
   50%      { transform: translateY(7px); opacity: 1; }
 }
 
+/* ── Landing marquee strip (seamless loop — content duplicated in markup) ── */
+.landing-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marqueeScroll 22s linear infinite;
+}
+
+@keyframes marqueeScroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;

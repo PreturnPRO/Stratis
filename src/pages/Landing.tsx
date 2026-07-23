@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Zap, ChevronDown } from 'lucide-react'
-import { COLORS, FONT, LETTER_SPACING, SHADOW, SPACE } from '../tokens/colors'
+import { Zap, ChevronDown, Sun, Moon } from 'lucide-react'
+import { FONT, LETTER_SPACING, RADIUS, SPACE } from '../tokens/colors'
 import { Button } from '../components/ui'
+import { useTheme } from '../hooks/useTheme'
+import AmbientBackground from '../components/AmbientBackground'
+import RollingText from '../components/RollingText'
+
+type Colors = ReturnType<typeof useTheme>['colors']
+type Shadow = ReturnType<typeof useTheme>['shadow']
 
 interface Props {
   onNavigate: (page: 'login' | 'register') => void
@@ -14,9 +20,28 @@ const TRANSCRIPT = [
   { who: 'Alex T.', color: '#1fae8a', text: '8 of 12 churned customers cited pricing. That’s signal.' },
 ]
 
-const CARDS = [
-  { tag: 'QUESTION', color: COLORS.accent, q: 'Who owns the pricing decision before next meeting?', r: 'Discussed, but no owner was named.' },
-  { tag: 'ASSUMPTION', color: COLORS.teal, q: 'Has anyone validated SMB accepts metered billing?', r: 'A core assumption no one has tested.' },
+// colorKey indexes into the themed `colors` object at render time, rather than
+// baking in a static hex, so the demo card accents follow the active theme.
+const CARDS: { tag: string; colorKey: 'accent' | 'teal'; q: string; r: string }[] = [
+  { tag: 'QUESTION', colorKey: 'accent', q: 'Who owns the pricing decision before next meeting?', r: 'Discussed, but no owner was named.' },
+  { tag: 'ASSUMPTION', colorKey: 'teal', q: 'Has anyone validated SMB accepts metered billing?', r: 'A core assumption no one has tested.' },
+]
+
+// Marquee phrases — 4 are directly legible in the handoff screenshot; the 5th
+// ("Flags u...") is completed as "Flags drift" per the existing DRIFT_ALERT
+// vocabulary in SuggestionCardStack.tsx.
+const MARQUEE_ITEMS = [
+  'Listens live',
+  'Suggests privately',
+  'Updates the PM doc',
+  'Remembers every decision',
+  'Flags drift',
+]
+
+const HOW_IT_WORKS = [
+  { n: '01', title: 'Listen', body: 'Stratis joins your meeting and captures the live transcript — every speaker, every claim, in real time.' },
+  { n: '02', title: 'Suggest', body: 'Facilitator-only cards surface the question nobody thought to ask, flag untested assumptions, and mark them answered when the room gets there.' },
+  { n: '03', title: 'Record', body: 'Afterward, Stratis writes the participant summary and proposes changes to the living PM document — decisions, assumptions, risks.' },
 ]
 
 // Step timeline (loops): 0 reset · 1 line0 · 2 line1 · 3 card0 · 4 line2 · 5 card1 · 6 card0 answered · 7 hold
@@ -43,7 +68,12 @@ function usePrefersReducedMotion(): boolean {
   return reduced
 }
 
+function scrollToId(id: string) {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 export default function Landing({ onNavigate }: Props) {
+  const { theme, toggleTheme, colors, shadow } = useTheme()
   const reducedMotion = usePrefersReducedMotion()
   const [step, setStep] = useState(0)
 
@@ -60,15 +90,88 @@ export default function Landing({ onNavigate }: Props) {
   const card0Answered = effectiveStep >= 6
 
   return (
-    <div style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', background: COLORS.bg }}>
-      {/* ── HERO ───────────────────────────────────────────────────────────── */}
+    <div style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', background: colors.bg }}>
+      {/* ── NAV ────────────────────────────────────────────────────────────── */}
+      <nav
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 10,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '16px 32px',
+          borderBottom: `1px solid ${colors.border}`,
+          background: colors.bg,
+        }}
+      >
+        <div
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 7,
+            color: colors.accent,
+            fontSize: FONT.size.label,
+            letterSpacing: LETTER_SPACING.eyebrow,
+            fontWeight: FONT.weight.bold,
+          }}
+        >
+          <Zap size={15} strokeWidth={2.2} />
+          STRATIS
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+          <button
+            onClick={() => scrollToId('how-it-works')}
+            style={navLinkStyle(colors)}
+          >
+            How it works
+          </button>
+          <button
+            onClick={() => scrollToId('live-demo')}
+            style={navLinkStyle(colors)}
+          >
+            See it live
+          </button>
+          <button
+            onClick={() => onNavigate('login')}
+            style={navLinkStyle(colors)}
+          >
+            Sign in
+          </button>
+          <button
+            onClick={toggleTheme}
+            aria-label="Toggle theme"
+            title="Toggle theme"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 30,
+              height: 30,
+              borderRadius: RADIUS.sm,
+              background: 'transparent',
+              border: 'none',
+              color: colors.textMuted,
+              cursor: 'pointer',
+            }}
+          >
+            {theme === 'dark' ? <Sun size={15} strokeWidth={2} /> : <Moon size={15} strokeWidth={2} />}
+          </button>
+          <div data-magnet style={{ display: 'inline-block' }}>
+            <Button variant="primary" size="sm" onClick={() => onNavigate('register')}>
+              <RollingText accentColor={colors.onAccent}>Get started</RollingText>
+            </Button>
+          </div>
+        </div>
+      </nav>
+
+      {/* ── HERO (1c Kinetic mono) ───────────────────────────────────────────── */}
       <section
         className="landing-hero"
-        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+        style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: colors.bg }}
       >
-        <div className="landing-grid" />
-        <div className="landing-glow" />
-        <div className="landing-fade" />
+        <AmbientBackground theme={theme} />
 
         <div
           style={{
@@ -80,25 +183,34 @@ export default function Landing({ onNavigate }: Props) {
             marginTop: '-6vh', // sit slightly high so the demo can peek at the bottom
           }}
         >
+          {/* column hairlines — decorative, loosely evoke a 3-col grid */}
+          <div aria-hidden style={{ position: 'absolute', left: '33%', top: -40, bottom: -40, width: 1, background: colors.border }} />
+          <div aria-hidden style={{ position: 'absolute', left: '66%', top: -40, bottom: -40, width: 1, background: colors.border }} />
+
+          {/* HUD readout row */}
           <div
             style={{
-              display: 'inline-flex',
+              display: 'flex',
               alignItems: 'center',
-              gap: 7,
-              color: COLORS.accent,
-              fontSize: FONT.size.label,
-              letterSpacing: 2.5,
-              fontWeight: 600,
+              justifyContent: 'center',
+              gap: 18,
+              color: colors.textDim,
+              fontFamily: FONT.mono,
+              fontSize: FONT.size.caption,
+              letterSpacing: LETTER_SPACING.wide,
               marginBottom: SPACE[6],
             }}
           >
-            <Zap size={15} strokeWidth={2.2} />
-            STRATIS
+            <span>SYS.01 — LISTENING</span>
+            <span style={{ width: 1, height: 10, background: colors.border }} />
+            <span>LATENCY 0.4s</span>
+            <span style={{ width: 1, height: 10, background: colors.border }} />
+            <span>CARDS: FACILITATOR-ONLY</span>
           </div>
 
           <h1
             style={{
-              color: COLORS.textPrimary,
+              color: colors.text,
               fontSize: 'clamp(34px, 5.2vw, 56px)',
               fontWeight: 700,
               lineHeight: 1.08,
@@ -106,30 +218,36 @@ export default function Landing({ onNavigate }: Props) {
               margin: '0 0 20px',
             }}
           >
-            The AI co-facilitator for teams that{' '}
-            <span style={{ color: COLORS.accent }}>build things that matter</span>
+            The meeting runs itself.
+            <br />
+            <span style={{ color: colors.textDim }}>The record writes </span>
+            <span style={{ color: colors.accent }}>itself.</span>
           </h1>
 
           <p
             style={{
-              color: COLORS.textMuted,
+              color: colors.textMuted,
               fontSize: 'clamp(15px, 1.8vw, 18px)',
               lineHeight: 1.7,
               margin: '0 auto 34px',
               maxWidth: 560,
             }}
           >
-            Stratis listens to your meeting and builds the reasoning record your team
-            never has time to write.
+            Live transcript in. Facilitator-only suggestion cards out. Every decision,
+            assumption, and risk lands in the living PM document.
           </p>
 
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-            <Button variant="primary" size="md" style={{ padding: '11px 26px', fontSize: FONT.size.body }} onClick={() => onNavigate('register')}>
-              Get started
-            </Button>
-            <Button variant="ghost" size="md" style={{ padding: '11px 26px', fontSize: FONT.size.body }} onClick={() => onNavigate('login')}>
-              Sign in
-            </Button>
+            <div data-magnet style={{ display: 'inline-block' }}>
+              <Button variant="primary" size="md" style={{ padding: '11px 26px', fontSize: FONT.size.body }} onClick={() => onNavigate('register')}>
+                <RollingText accentColor={colors.onAccent}>Get started →</RollingText>
+              </Button>
+            </div>
+            <div data-magnet style={{ display: 'inline-block' }}>
+              <Button variant="ghost" size="md" style={{ padding: '11px 26px', fontSize: FONT.size.body }} onClick={() => onNavigate('login')}>
+                <RollingText accentColor={colors.text}>Sign in</RollingText>
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -146,7 +264,7 @@ export default function Landing({ onNavigate }: Props) {
             flexDirection: 'column',
             alignItems: 'center',
             gap: 4,
-            color: COLORS.textMuted,
+            color: colors.textMuted,
             fontSize: FONT.size.caption,
             letterSpacing: LETTER_SPACING.wide,
           }}
@@ -156,39 +274,146 @@ export default function Landing({ onNavigate }: Props) {
         </div>
       </section>
 
+      {/* ── MARQUEE (overlaps the hero's bottom edge) ───────────────────────── */}
+      <div
+        style={{
+          position: 'relative',
+          zIndex: 4,
+          marginTop: -28,
+          overflow: 'hidden',
+          borderTop: `1px solid ${colors.border}`,
+          borderBottom: `1px solid ${colors.border}`,
+          background: colors.surface,
+          padding: '14px 0',
+        }}
+      >
+        <div className="landing-marquee-track">
+          {[0, 1].map((dup) => (
+            <div key={dup} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+              {MARQUEE_ITEMS.map((phrase, i) => (
+                <span
+                  key={i}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 24,
+                    color: colors.textMuted,
+                    fontSize: FONT.size.body,
+                    fontWeight: 500,
+                    whiteSpace: 'nowrap',
+                    padding: '0 24px',
+                  }}
+                >
+                  {phrase}
+                  <span style={{ color: colors.accent }} aria-hidden="true">✦</span>
+                </span>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* ── DEMO (peeks ~10% above the fold, full on scroll) ───────────────── */}
       <section
+        id="live-demo"
         style={{
           position: 'relative',
           zIndex: 3,
-          marginTop: '-120px',
-          padding: '0 24px 110px',
+          padding: '90px 24px 110px',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
         }}
       >
         <MeetingDemo
+          colors={colors}
+          shadow={shadow}
           linesVisible={linesVisible}
           card0Visible={card0Visible}
           card1Visible={card1Visible}
           card0Answered={card0Answered}
         />
-        <p style={{ color: COLORS.textMuted, fontSize: FONT.size.body, marginTop: SPACE[6], textAlign: 'center', maxWidth: 520, lineHeight: 1.6 }}>
+        <p style={{ color: colors.textMuted, fontSize: FONT.size.body, marginTop: SPACE[6], textAlign: 'center', maxWidth: 520, lineHeight: 1.6 }}>
           As the conversation unfolds, Stratis surfaces the question nobody thought to
           ask — privately, to the facilitator — and marks it answered when the room
           gets there.
         </p>
       </section>
+
+      {/* ── HOW STRATIS WORKS ────────────────────────────────────────────────── */}
+      <section id="how-it-works" style={{ padding: '40px 32px 110px', maxWidth: 1040, margin: '0 auto' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginBottom: 40 }}>
+          <h2 style={{ color: colors.text, fontSize: FONT.size.title, fontWeight: 700, margin: 0 }}>
+            How Stratis works
+          </h2>
+          <span style={{ color: colors.textDim, fontFamily: FONT.mono, fontSize: FONT.size.caption, letterSpacing: LETTER_SPACING.wide }}>
+            01 — 03
+          </span>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)' }}>
+          {HOW_IT_WORKS.map((col, i) => (
+            <div
+              key={col.n}
+              style={{
+                padding: '0 28px',
+                borderRight: i < HOW_IT_WORKS.length - 1 ? `1px solid ${colors.border}` : 'none',
+              }}
+            >
+              <div style={{ color: colors.accent, fontFamily: FONT.mono, fontSize: FONT.size.body, fontWeight: 700, marginBottom: SPACE[3] }}>
+                {col.n}
+              </div>
+              <div style={{ color: colors.text, fontSize: FONT.size.subheading, fontWeight: 700, marginBottom: SPACE[2] }}>
+                {col.title}
+              </div>
+              <p style={{ color: colors.textMuted, fontSize: FONT.size.body, lineHeight: 1.6, margin: 0 }}>
+                {col.body}
+              </p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── FOOTER CTA ───────────────────────────────────────────────────────── */}
+      <section
+        style={{
+          padding: '70px 32px',
+          textAlign: 'center',
+          borderTop: `1px solid ${colors.border}`,
+        }}
+      >
+        <h2 style={{ color: colors.text, fontSize: FONT.size.heading, fontWeight: 700, margin: '0 0 22px' }}>
+          Ready to see it in your next meeting?
+        </h2>
+        <div data-magnet style={{ display: 'inline-block' }}>
+          <Button variant="primary" size="md" style={{ padding: '11px 26px', fontSize: FONT.size.body }} onClick={() => onNavigate('register')}>
+            <RollingText accentColor={colors.onAccent}>Get started</RollingText>
+          </Button>
+        </div>
+      </section>
     </div>
   )
+}
+
+function navLinkStyle(colors: Colors) {
+  return {
+    background: 'transparent',
+    border: 'none',
+    padding: 0,
+    font: 'inherit',
+    color: colors.textMuted,
+    fontSize: FONT.size.body,
+    cursor: 'pointer',
+  } as const
 }
 
 // ── The framed live-meeting mock ─────────────────────────────────────────────
 
 function MeetingDemo({
-  linesVisible, card0Visible, card1Visible, card0Answered,
+  colors, shadow, linesVisible, card0Visible, card1Visible, card0Answered,
 }: {
+  colors: Colors
+  shadow: Shadow
   linesVisible: number
   card0Visible: boolean
   card1Visible: boolean
@@ -199,10 +424,10 @@ function MeetingDemo({
       style={{
         width: '100%',
         maxWidth: 760,
-        background: COLORS.surface,
-        border: `1px solid ${COLORS.borderLight}`,
+        background: colors.surface,
+        border: `1px solid ${colors.borderLight}`,
         borderRadius: 14,
-        boxShadow: SHADOW.hero,
+        boxShadow: shadow.hero,
         overflow: 'hidden',
       }}
     >
@@ -213,27 +438,27 @@ function MeetingDemo({
           alignItems: 'center',
           gap: 8,
           padding: '11px 16px',
-          borderBottom: `1px solid ${COLORS.border}`,
-          background: COLORS.surfaceMuted,
+          borderBottom: `1px solid ${colors.border}`,
+          background: colors.surfaceMuted,
         }}
       >
         <span aria-hidden="true" style={{ display: 'inline-flex', gap: 8 }}>
-          <span style={{ width: 11, height: 11, borderRadius: '50%', background: COLORS.red }} />
-          <span style={{ width: 11, height: 11, borderRadius: '50%', background: COLORS.accent }} />
-          <span style={{ width: 11, height: 11, borderRadius: '50%', background: COLORS.green }} />
+          <span style={{ width: 11, height: 11, borderRadius: '50%', background: colors.red }} />
+          <span style={{ width: 11, height: 11, borderRadius: '50%', background: colors.accent }} />
+          <span style={{ width: 11, height: 11, borderRadius: '50%', background: colors.green }} />
         </span>
-        <span style={{ marginLeft: 2, color: COLORS.textMuted, fontSize: FONT.size.label, fontWeight: 500 }}>
+        <span style={{ marginLeft: 2, color: colors.textMuted, fontSize: FONT.size.label, fontWeight: 500 }}>
           Stratis — Live meeting
         </span>
-        <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, color: COLORS.red, fontSize: FONT.size.caption, fontWeight: 600 }}>
-          <span style={{ width: 7, height: 7, borderRadius: '50%', background: COLORS.red }} />
+        <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, color: colors.red, fontSize: FONT.size.caption, fontWeight: 600 }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: colors.red }} />
           REC
         </span>
       </div>
 
       {/* body: transcript + floating suggestion stack */}
       <div style={{ position: 'relative', height: 320, padding: 20 }}>
-        <div style={{ color: COLORS.textMuted, fontSize: FONT.size.caption, fontWeight: 600, letterSpacing: LETTER_SPACING.label, marginBottom: SPACE[4] }}>
+        <div style={{ color: colors.textMuted, fontSize: FONT.size.caption, fontWeight: 600, letterSpacing: LETTER_SPACING.label, marginBottom: SPACE[4] }}>
           TRANSCRIPT
         </div>
 
@@ -253,7 +478,7 @@ function MeetingDemo({
                 <div style={{ color: line.color, fontSize: FONT.size.label, fontWeight: 600, marginBottom: 3 }}>
                   {line.who}
                 </div>
-                <div style={{ color: COLORS.textMuted, fontSize: FONT.size.body, lineHeight: 1.55 }}>
+                <div style={{ color: colors.textMuted, fontSize: FONT.size.body, lineHeight: 1.55 }}>
                   {line.text}
                 </div>
               </div>
@@ -273,8 +498,8 @@ function MeetingDemo({
             gap: 8,
           }}
         >
-          {card1Visible && <DemoCard card={CARDS[1]} answered={false} />}
-          {card0Visible && <DemoCard card={CARDS[0]} answered={card0Answered} />}
+          {card1Visible && <DemoCard colors={colors} shadow={shadow} card={CARDS[1]} answered={false} />}
+          {card0Visible && <DemoCard colors={colors} shadow={shadow} card={CARDS[0]} answered={card0Answered} />}
         </div>
       </div>
     </div>
@@ -282,33 +507,36 @@ function MeetingDemo({
 }
 
 function DemoCard({
-  card, answered,
+  colors, shadow, card, answered,
 }: {
-  card: { tag: string; color: string; q: string; r: string }
+  colors: Colors
+  shadow: Shadow
+  card: { tag: string; colorKey: 'accent' | 'teal'; q: string; r: string }
   answered: boolean
 }) {
+  const tagColor = colors[card.colorKey]
   return (
     <div
       style={{
-        background: COLORS.surfaceElevated,
-        border: `1px solid ${COLORS.border}`,
+        background: colors.surfaceElevated,
+        border: `1px solid ${colors.border}`,
         borderRadius: 10,
         padding: '10px 12px',
-        boxShadow: SHADOW.float,
+        boxShadow: shadow.float,
         animation: 'cardIn 0.32s ease',
         opacity: answered ? 0.7 : 1,
         transition: 'opacity 0.4s ease',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: SPACE[1.5] }}>
-        <span style={{ width: 5, height: 5, borderRadius: '50%', background: card.color }} />
-        <span style={{ color: card.color, fontSize: FONT.size.micro, fontWeight: 700, letterSpacing: LETTER_SPACING.wide }}>
+        <span style={{ width: 5, height: 5, borderRadius: '50%', background: tagColor }} />
+        <span style={{ color: tagColor, fontSize: FONT.size.micro, fontWeight: 700, letterSpacing: LETTER_SPACING.wide }}>
           {card.tag}
         </span>
       </div>
 
       <div style={{ position: 'relative', display: 'inline-block' }}>
-        <span style={{ color: answered ? COLORS.textMuted : COLORS.textPrimary, fontSize: FONT.size.body, fontWeight: 600, lineHeight: 1.4 }}>
+        <span style={{ color: answered ? colors.textMuted : colors.text, fontSize: FONT.size.body, fontWeight: 600, lineHeight: 1.4 }}>
           {card.q}
         </span>
         {/* animated strike line — transform, not width, to avoid layout thrash */}
@@ -319,7 +547,7 @@ function DemoCard({
             top: '50%',
             width: '100%',
             height: 1,
-            background: COLORS.textMuted,
+            background: colors.textMuted,
             transform: `scaleX(${answered ? 1 : 0})`,
             transformOrigin: 'left',
             transition: 'transform 0.4s ease',
@@ -328,7 +556,7 @@ function DemoCard({
       </div>
 
       {!answered && (
-        <div style={{ color: COLORS.textMuted, fontSize: FONT.size.label, lineHeight: 1.4, marginTop: 4 }}>
+        <div style={{ color: colors.textMuted, fontSize: FONT.size.label, lineHeight: 1.4, marginTop: 4 }}>
           {card.r}
         </div>
       )}
