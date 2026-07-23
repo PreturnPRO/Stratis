@@ -712,11 +712,11 @@ useEffect(() => {
               <Chip icon={isRecording ? <RecDot /> : <StatusDot color={colors.textDim} />} mono>
                 {isRecording ? "LIVE" : "STANDBY"}
               </Chip>
-              <span style={{ fontSize: FONT.size.caption, color: colors.textMuted }}>
+              <span style={{ fontSize: FONT.size.caption, color: colors.textMuted, fontFamily: FONT.mono }}>
                 Session {sessionShort}
               </span>
               {connected && (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: FONT.size.micro, color: colors.cyan }}>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: FONT.size.micro, color: colors.cyan, fontFamily: FONT.mono }}>
                   <span style={{ width: 4, height: 4, borderRadius: "50%", background: colors.cyan }} />
                   WEBSOCKET SYNCED
                 </span>
