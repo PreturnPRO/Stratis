@@ -892,7 +892,7 @@ useEffect(() => {
                   })}
 
                   {(pendingText || liveText) && (
-                    <div style={{ paddingBottom: SPACE[2.5], opacity: 0.7 }}>
+                    <div style={{ borderLeft: "2px solid transparent", paddingLeft: SPACE[2.5], paddingBottom: SPACE[2.5], opacity: 0.7 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                         <span style={{ fontWeight: 600, fontSize: FONT.size.body, color: colors.textMuted }}>
                           {user?.name || "Facilitator"}
