@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext'
 import { API_BASE } from '../lib/api'
 import { useTheme } from '../hooks/useTheme'
 import AmbientBackground from '../components/AmbientBackground'
+import { Zap } from 'lucide-react'
 
 type Colors = ReturnType<typeof useTheme>['colors']
 type Shadow = ReturnType<typeof useTheme>['shadow']
@@ -82,7 +83,11 @@ export default function Login({ onNavigate }: Props) {
     <div style={containerStyle(colors)}>
       <AmbientBackground theme={theme} />
       <div style={cardStyle(colors, shadow)}>
-        <div style={wordmarkStyle(colors)}>STRATIS</div>
+        <div style={wordmarkStyle(colors)}>
+          <Zap size={14} strokeWidth={2} />
+          STRATIS
+        </div>
+        <div style={headingStyle(colors)}>Sign in to Stratis</div>
         <div style={subtitleStyle(colors)}>Access the Control Room</div>
 
         {error && <div style={errorStyle(colors)}>{error}</div>}
@@ -159,22 +164,32 @@ const containerStyle = (colors: Colors): CSSProperties => ({
 })
 
 const cardStyle = (colors: Colors, shadow: Shadow): CSSProperties => ({
-  background: colors.surface,
+  background: colors.surfaceElevated,
   border: `1px solid ${colors.border}`,
   borderRadius: 14,
   boxShadow: shadow.shadModal,
   padding: '40px 36px',
-  width: 360,
+  width: 380,
   display: 'flex',
   flexDirection: 'column',
   position: 'relative',
 })
 
 const wordmarkStyle = (colors: Colors): CSSProperties => ({
+  display: 'flex',
+  alignItems: 'center',
+  gap: 7,
   fontSize: FONT.size.caption,
   color: colors.accent,
   letterSpacing: LETTER_SPACING.eyebrow,
   fontWeight: FONT.weight.bold,
+  marginBottom: 4,
+})
+
+const headingStyle = (colors: Colors): CSSProperties => ({
+  fontSize: FONT.size.title,
+  color: colors.text,
+  fontWeight: FONT.weight.semibold,
   marginBottom: 4,
 })
 
