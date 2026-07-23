@@ -11,6 +11,7 @@ import { apiRouter } from "./routes";
 import { requireAuth } from "./auth/middleware";
 import { errorHandler, notFound } from "./middleware/errorHandler";
 import { attachHub } from "./realtime/hub";
+import { startSessionSweeper } from "./realtime/sessionSweeper";
 import { selectProvider } from "@ai/index";
 // Importing the db module ensures the SQLite file + WAL pragmas initialise on boot.
 import "./db/database";
@@ -41,6 +42,8 @@ app.use(errorHandler);
 // same port and upgrade /ws connections.
 const server = createServer(app);
 attachHub(server);
+// Auto-end sessions abandoned without pressing End (meeting-reliability spec §3).
+startSessionSweeper();
 
 
 server.listen(env.port, "0.0.0.0", () => {

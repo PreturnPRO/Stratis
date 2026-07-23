@@ -228,12 +228,16 @@ export function Modal({
   children,
   footer,
   width = 440,
+  closeOnBackdrop = true,
 }: {
   title: React.ReactNode;
   onClose: () => void;
   children: React.ReactNode;
   footer?: React.ReactNode;
   width?: number;
+  // Form modals pass false: a mouse slip onto the backdrop must not wipe the
+  // user's inputs — those close on Cancel/Escape only.
+  closeOnBackdrop?: boolean;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -259,7 +263,7 @@ export function Modal({
 
   return (
     <div
-      onClick={onClose}
+      onClick={closeOnBackdrop ? onClose : undefined}
       style={{
         position: "fixed",
         inset: 0,

@@ -34,13 +34,23 @@ export interface CreateMeetingInput {
  * projectId) and Projects.tsx (passes an existing project's real id directly,
  * so the new meeting continues that project instead of forking a new one). */
 export function useCreateMeeting(onNav?: (id: string, params?: Record<string, string>) => void) {
-  const { token } = useAuth();
+  const { token, logout } = useAuth();
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const authHeaders = useMemo((): Record<string, string> => {
     return token ? { Authorization: `Bearer ${token}` } : {};
   }, [token]);
+
+  // A 401 mid-flow means the stored token is dead (expired, or the account no
+  // longer exists after a backend redeploy). Drop the session so the login
+  // page renders instead of a dashboard that 500s on every insert.
+  const guardAuth = (res: Response) => {
+    if (res.status === 401) {
+      logout();
+      throw new Error("Session expired — please log in again");
+    }
+  };
 
   const startSessionForMeeting = async (meetingId: string, durationMin: number): Promise<string> => {
     const createRes = await fetch(`${API_BASE}/api/session`, {
@@ -55,6 +65,7 @@ export function useCreateMeeting(onNav?: (id: string, params?: Record<string, st
       }),
     });
 
+    guardAuth(createRes);
     const createData = await createRes.json();
 
     if (!createData.ok) {
@@ -108,6 +119,7 @@ export function useCreateMeeting(onNav?: (id: string, params?: Record<string, st
         }),
       });
 
+      guardAuth(res);
       const data = await res.json();
 
       if (!data.ok) {

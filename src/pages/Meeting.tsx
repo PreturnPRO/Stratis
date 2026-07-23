@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Mic, Square, ChevronDown } from "lucide-react";
+import { Mic, Square, ChevronDown, ClipboardCheck } from "lucide-react";
 import { COLORS, FONT, SHADOW, LETTER_SPACING } from "../constants";
 import { RADIUS, SPACE } from "../tokens/colors";
 import { Button, Chip, Modal } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { SuggestionCardStack } from "../components/SuggestionCardStack";
+import { NotesRibbon } from "../components/NotesRibbon";
+import { CheckpointPanel } from "../components/CheckpointPanel";
+import { useCheckpoint } from "../hooks/useCheckpoint";
 import {
   AiPresenceChip,
   AgendaPulse,
@@ -16,24 +19,60 @@ import { useAiBlocks } from "../hooks/useAiBlocks";
 import { useSuggestionSocket } from "../hooks/useSuggestionSocket";
 import { useAuth } from "../context/AuthContext";
 import { useSessionRecovery } from "../hooks/useSessionRecovery";
+import { useMediaRecorder } from "../hooks/useMediaRecorder";
+import { usePcmStream } from "../hooks/usePcmStream";
+import { mergeTranscripts } from "../lib/mergeTranscripts";
 import { API_BASE } from "../lib/api";
 
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 
-// Adaptive AI chunking: recognized words render instantly in the transcript
-// (ghost row) WITHOUT calling the question AI. A chunk is sent to the AI only
-// when the speaker pauses on a finalized sentence with enough substance, or
-// when the hard time cap is reached — whichever comes first. Both flushes send
-// FINALIZED text only; interim words stay in the ghost row until the engine
-// finalizes them (sending interim duplicates it once the final arrives). Thai
-// has no word spaces, so "substance" is measured in characters, not words.
-const CHUNK_MAX_MS = 7000;
-const CHUNK_MIN_CHARS = 40;
+// Mic capture cadence: record short standalone WebM/Opus clips and POST each to
+// the backend, which runs Google Speech v2 chirp_2 (th-TH,en-US). Short clips
+// (not timesliced fragments) keep every upload independently decodable.
+const CHUNK_MAX_MS = 6000;
+
+// S-EXP — streaming STT: raw PCM over the /ws hub into Google v2
+// StreamingRecognize, with live interim text in the ghost row and no clip
+// boundaries to split words. Set VITE_STT_STREAMING=0 to fall back to the
+// 6s clip-batch REST path above.
+const USE_STREAMING_STT = (import.meta.env.VITE_STT_STREAMING ?? "1") !== "0";
+
+// After an stt:flush, how long to let Google finalize the pending utterance and
+// the backend ingest it before running decision extraction (checkpoint opens
+// mid-recording without stopping the mic).
+const FLUSH_SETTLE_MS = 1500;
+
+// Blob → base64 data URL. The backend strips the `data:...;base64,` prefix.
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(String(reader.result));
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
 
 // Chat-style auto-follow: within this many px of the bottom counts as "at the
 // bottom", so auto-scroll stays armed despite sub-pixel rounding and the
 // growing live ghost row.
 const NEAR_BOTTOM_PX = 80;
+
+// Each CHUNK_MAX_MS audio clip becomes its own transcript row in the DB, so a
+// continuous sentence arrives as a run of short rows. Consecutive rows from
+// the same speaker within this gap render as one flowing block instead of a
+// separate 1-2 word box each.
+const GROUP_GAP_MS = 30_000;
+
+// Thai has no spaces between words — joining Thai chunk texts with " " would
+// scatter spaces mid-sentence. Mirrors the Thai-aware cleanup applied per
+// chunk in backend/src/routes/transcript.ts.
+function joinChunkText(a: string, b: string): string {
+  if (!a) return b;
+  if (!b) return a;
+  const thaiEnd = /[฀-๿]$/;
+  const thaiStart = /^[฀-๿]/;
+  return thaiEnd.test(a) && thaiStart.test(b) ? a + b : `${a} ${b}`;
+}
 
 interface MeetingProps {
   onNav?: (id: string, params?: Record<string, string>) => void;
@@ -138,11 +177,10 @@ export default function Meeting({ onNav }: MeetingProps) {
   const [sendingChunk, setSendingChunk] = useState(false);
   const [ending, setEnding] = useState(false);
   const [showEndConfirm, setShowEndConfirm] = useState(false);
+  const [showCheckpoint, setShowCheckpoint] = useState(false);
+  const [presentMode, setPresentMode] = useState(false);
 
-  // Web Speech API Native Recording States
   const [isRecording, setIsRecording] = useState(false);
-  const isRecordingRef = useRef(false);
-  const recognitionRef = useRef<any>(null);
 
   const [durationMin, setDurationMin] = useState<number | null>(null);
   const [startMs, setStartMs] = useState<number | null>(null);
@@ -154,8 +192,12 @@ export default function Meeting({ onNav }: MeetingProps) {
   // Ghost-row state: words shown instantly, before any backend/AI round-trip.
   // liveText = recognized but not yet flushed; pendingText = flushed chunk
   // still in flight to the backend.
-  const [liveText, setLiveText] = useState("");
+  const [liveText] = useState("");
   const [pendingText, setPendingText] = useState("");
+  const inFlightChunksRef = useRef(0);
+  // Live "Strategic Meeting Notes" — the AI's rolling memory, pushed over the
+  // socket whenever an IMPORTANT chunk rewrites it.
+  const [liveNotes, setLiveNotes] = useState("");
 
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
   // Chat-style auto-follow: pinned to the newest line while the user is at the
@@ -167,22 +209,117 @@ export default function Meeting({ onNav }: MeetingProps) {
     return token ? { Authorization: `Bearer ${token}` } : {};
   }, [token]);
 
-  const { cards, connected, markAnswered, markActive } = useSuggestionSocket(sessionId);
+  // Merge consecutive rows from the same speaker into one continuous display
+  // block — the DB keeps one row per audio clip, but reading a sentence split
+  // across a stack of 1-2 word boxes is unusable.
+  const transcriptGroups = useMemo(() => {
+    const groups: Array<{ id: string; speaker: string; timestamp: string; text: string }> = [];
+    let prevMs = NaN;
+    for (const row of transcripts) {
+      const rowMs = new Date(row.timestamp).getTime();
+      const last = groups[groups.length - 1];
+      if (
+        last &&
+        last.speaker === row.speaker &&
+        Number.isFinite(rowMs) &&
+        Number.isFinite(prevMs) &&
+        rowMs - prevMs <= GROUP_GAP_MS
+      ) {
+        last.text = joinChunkText(last.text, row.text);
+      } else {
+        groups.push({
+          id: row.id,
+          speaker: row.speaker,
+          timestamp: row.timestamp,
+          text: row.text,
+        });
+      }
+      prevMs = rowMs;
+    }
+    return groups;
+  }, [transcripts]);
 
   const appendTranscript = useCallback((row: TranscriptRow) => {
     setTranscripts((prev) => {
       if (prev.some((p) => p.id === row.id)) return prev;
-      return [...prev, row];
+      // Keep rows in timestamp order even if two in-flight uploads resolve
+      // out of order (ISO timestamps sort lexicographically).
+      const next = [...prev, row];
+      next.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+      return next;
     });
   }, []);
 
-  // --- Real-Time STT Chunk Ingestion Pipeline ---
-  const sendTextChunk = useCallback(async (text: string) => {
-    if (!token || !sessionId || !text.trim()) return;
+  // Placed after appendTranscript so the streaming handlers can reference it.
+  // Interim text drives the same ghost row the clip path uses; finals are
+  // saved server-side and arrive here as ordinary transcript rows.
+  const { cards, connected, markAnswered, markActive, sendControl, sendAudioFrame } =
+    useSuggestionSocket(sessionId, {
+      onSttInterim: (text) => {
+        setPendingText(text);
+        setLastSpeechMs(Date.now());
+      },
+      onTranscriptFinal: (row) => {
+        appendTranscript(row);
+        setPendingText("");
+        setLastSpeechMs(Date.now());
+      },
+      onSttError: (message) => setError(message),
+      onNotesUpdate: (text) => setLiveNotes(text),
+    });
+
+  const checkpoint = useCheckpoint(sessionId, token);
+
+  // Owner-input suggestions at the checkpoint: everyone who has spoken.
+  const speakerNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const row of transcripts) {
+      const clean = row.speaker?.trim();
+      if (clean) names.add(clean);
+    }
+    return [...names];
+  }, [transcripts]);
+
+  // Mid-recording, streaming STT holds the in-progress utterance until Google
+  // finalizes it — so extraction used to miss the latest words unless the
+  // facilitator stopped the mic first. Flush (half-close) the stream, give the
+  // pending finals a beat to land in the DB, then extract. Mic stays live; the
+  // stream reopens on the next audio frame.
+  const extractAfterFlush = useCallback(() => {
+    const flushed = isRecording && sendControl({ type: "stt:flush" });
+    window.setTimeout(() => {
+      void checkpoint.extract();
+    }, flushed ? FLUSH_SETTLE_MS : 0);
+  }, [isRecording, sendControl, checkpoint]);
+
+  // Opening the checkpoint reads the meeting: extract fresh if we have nothing
+  // yet, otherwise just reload what's stored (and let the facilitator re-read).
+  const openCheckpoint = useCallback(() => {
+    setShowCheckpoint(true);
+    if (checkpoint.decisions.length === 0) {
+      extractAfterFlush();
+    } else {
+      void checkpoint.load();
+    }
+  }, [checkpoint, extractAfterFlush]);
+
+  // --- Real-Time STT: mic → MediaRecorder → Chirp 2 (all browsers) ---
+  // The old path used the browser Web Speech API, which only exists in
+  // Chrome/Edge/Safari (Firefox has none) and transcribes on Google's consumer
+  // endpoint — never our Chirp 2 project. MediaRecorder + getUserMedia work in
+  // every modern browser; each short clip POSTs to /api/transcript/audio-chunk,
+  // which runs Speech v2 chirp_2 (th-TH,en-US) and returns Thai transcript rows.
+  const sendAudioChunk = useCallback(async (blob: Blob) => {
+    if (!token || !sessionId || blob.size === 0) return;
+    // Uploads can overlap (a new clip starts while the previous one is still
+    // in flight) — count them so the first response back doesn't clear the
+    // "Transcribing…" indicator out from under the later one.
+    inFlightChunksRef.current += 1;
     setSendingChunk(true);
-    setPendingText(text.trim());
+    setPendingText("Transcribing…");
     try {
-      const response = await fetch(`${API_BASE}/api/transcript/chunk`, {
+      const audioBase64 = await blobToBase64(blob);
+      const response = await fetch(`${API_BASE}/api/transcript/audio-chunk`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -191,199 +328,105 @@ export default function Meeting({ onNav }: MeetingProps) {
         body: JSON.stringify({
           sessionId,
           session_id: sessionId,
-          text: text.trim(),
+          audioBase64,
+          mimeType: blob.type || "audio/webm",
           speaker: user?.name || "Facilitator",
-          timestamp: new Date().toISOString(),
         }),
       });
 
       const payload = await response.json();
       if (response.ok && payload.ok && payload.data?.transcript) {
         appendTranscript(payload.data.transcript);
+        setLastSpeechMs(Date.now());
         if (payload.data.ai?.blocks) {
           ai.append(payload.data.ai.blocks, payload.data.ai.provider);
         }
-      } else {
-        console.warn("[speech:chunk] Pipeline rejected request:", payload.error);
+      } else if (!payload.ok) {
+        console.warn("[speech:audio] Pipeline rejected chunk:", payload.error);
       }
     } catch (err) {
-      console.error("[speech:chunk] Connection fault:", err);
+      console.error("[speech:audio] Connection fault:", err);
     } finally {
-      setSendingChunk(false);
-      setPendingText("");
+      inFlightChunksRef.current -= 1;
+      if (inFlightChunksRef.current === 0) {
+        setSendingChunk(false);
+        setPendingText("");
+      }
     }
   }, [token, sessionId, authHeaders, user?.name, appendTranscript, ai]);
-
-  const sendTextChunkRef = useRef(sendTextChunk);
-  useEffect(() => {
-    sendTextChunkRef.current = sendTextChunk;
-  }, [sendTextChunk]);
-
-  // Dual-buffer silence-resistant accumulation strategy
-  const bufferRef = useRef<string>("");
-  const interimRef = useRef<string>("");
-  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Interim text must NEVER be sent by mid-session flushes: the engine
-  // re-delivers those same words (often revised) in a later final result,
-  // which would land in the buffer and get flushed again — the transcript
-  // then shows the sentence twice ("old sentence + new section").
-  // includeInterim is reserved for teardown (onend), when the engine is
-  // about to discard that audio and can no longer re-deliver it.
-  const flushBuffer = useCallback((includeInterim = false) => {
-    if (flushTimerRef.current) {
-      clearTimeout(flushTimerRef.current);
-      flushTimerRef.current = null;
-    }
-
-    let text = bufferRef.current.trim();
-    if (includeInterim && interimRef.current.trim()) {
-      text = (text + " " + interimRef.current.trim()).trim();
-      interimRef.current = "";
-    }
-
-    bufferRef.current = "";
-    // Un-flushed interim stays visible in the ghost row.
-    setLiveText(interimRef.current.trim());
-
-    if (text) {
-      sendTextChunkRef.current(text);
-    }
-  }, []);
+  
+  const {
+    error: recError,
+    start: startRec,
+    stop: stopRec,
+  } = useMediaRecorder({ onChunk: sendAudioChunk, chunkIntervalMs: CHUNK_MAX_MS });
 
   useEffect(() => {
-    const SpeechRecognitionEngine =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (recError) setError(recError);
+  }, [recError]);
 
-    if (!SpeechRecognitionEngine) {
-      console.warn("[speech] Native SpeechRecognition not available in this host environment.");
-      return;
+  // --- Streaming STT path (S-EXP) ---
+  // Mic → AudioWorklet PCM frames → binary WS frames → backend
+  // StreamingRecognize. Interim/final results come back over the same socket
+  // (see the useSuggestionSocket handlers above).
+  const streamingActiveRef = useRef(false);
+  const streamSampleRateRef = useRef<number | null>(null);
+
+  const pcm = usePcmStream({
+    onFrame: (frame) => {
+      if (streamingActiveRef.current) sendAudioFrame(frame);
+    },
+  });
+
+  useEffect(() => {
+    if (pcm.error) setError(pcm.error);
+  }, [pcm.error]);
+
+  // If the socket drops mid-meeting, the backend loses its stream state — re-arm
+  // it on reconnect so audio keeps transcribing.
+  useEffect(() => {
+    if (connected && streamingActiveRef.current && streamSampleRateRef.current) {
+      sendControl({
+        type: "stt:start",
+        sampleRate: streamSampleRateRef.current,
+        speaker: user?.name || "Facilitator",
+      });
     }
-
-    const rec = new SpeechRecognitionEngine();
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.lang = "th-TH"; // Web Speech API supports one language per recognition instance; Thai only
-
-    rec.onstart = () => {
-      console.log("[speech] Recognition pipeline active.");
-    };
-
-    rec.onresult = (event: any) => {
-      let finalTranscript = "";
-      let interimTranscript = "";
-
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        // Correctly index SpeechRecognitionAlternative using item(0) (bracket-free!)
-        const alternative = event.results[i].item(0);
-        const transcript = alternative ? alternative.transcript : "";
-
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript;
-        } else {
-          interimTranscript += transcript;
-        }
-      }
-
-      // Any recognized speech (final or interim) marks the AI as "hearing you"
-      // for the presence chip.
-      if (finalTranscript || interimTranscript) {
-        setLastSpeechMs(Date.now());
-      }
-
-      if (finalTranscript) {
-        bufferRef.current = (bufferRef.current + " " + finalTranscript).trim();
-        interimRef.current = "";
-      } else {
-        interimRef.current = interimTranscript;
-      }
-
-      // Ghost row: mirror every recognized word to the transcript instantly —
-      // no backend or AI round-trip involved.
-      setLiveText((bufferRef.current + " " + interimRef.current).trim());
-
-      // Adaptive flush: a finalized sentence with no trailing interim means
-      // the speaker paused — hand the chunk to the question AI now, on a
-      // natural thought boundary, instead of waiting for the cap.
-      if (
-        finalTranscript &&
-        !interimTranscript &&
-        bufferRef.current.length >= CHUNK_MIN_CHARS
-      ) {
-        flushBuffer();
-        return;
-      }
-
-      // Hard cap: even mid-monologue, flush at least every CHUNK_MAX_MS.
-      if (bufferRef.current.trim() || interimRef.current.trim()) {
-        if (!flushTimerRef.current) {
-          flushTimerRef.current = setTimeout(() => {
-            flushBuffer();
-          }, CHUNK_MAX_MS);
-        }
-      }
-    };
-
-    rec.onerror = (event: any) => {
-      console.error("[speech] Capture engine error:", event.error);
-      if (event.error === "not-allowed") {
-        setIsRecording(false);
-        isRecordingRef.current = false;
-      }
-    };
-
-    rec.onend = () => {
-      console.log("[speech] Mic stream went silent or disconnected.");
-      // Teardown flush: include interim — the engine is discarding this audio
-      // and will never re-deliver it (a restart starts a fresh session).
-      flushBuffer(true);
-
-      if (isRecordingRef.current) {
-        console.log("[speech] Re-initiating active capture stream...");
-        try {
-          rec.start();
-        } catch (e) {
-          console.warn("[speech] Auto-restart sequence missed:", e);
-        }
-      }
-    };
-
-    recognitionRef.current = rec;
-
-    return () => {
-      if (rec) {
-        rec.onend = null;
-        rec.onerror = null;
-        rec.onresult = null;
-        try {
-          rec.stop();
-        } catch (e) {}
-      }
-      if (flushTimerRef.current) {
-        clearTimeout(flushTimerRef.current);
-      }
-    };
-  }, [flushBuffer]);
+  }, [connected, sendControl, user?.name]);
 
   const startListening = () => {
-    if (!recognitionRef.current) return;
     setIsRecording(true);
-    isRecordingRef.current = true;
-    try {
-      recognitionRef.current.start();
-    } catch (e) {
-      console.warn("[speech] Already listening - start aborted:", e);
+    if (USE_STREAMING_STT && connected) {
+      streamingActiveRef.current = true;
+      void pcm
+        .start((sampleRate) => {
+          streamSampleRateRef.current = sampleRate;
+          sendControl({
+            type: "stt:start",
+            sampleRate,
+            speaker: user?.name || "Facilitator",
+          });
+        })
+        .catch((err) => {
+          // Worklet/mic failure on this browser — fall back to the clip path.
+          console.warn("[speech:stream] PCM capture failed, using clip upload:", err);
+          streamingActiveRef.current = false;
+          void startRec();
+        });
+    } else {
+      void startRec();
     }
   };
 
   const stopListening = () => {
-    if (!recognitionRef.current) return;
     setIsRecording(false);
-    isRecordingRef.current = false;
-    // No direct flush here: stop() may still finalize in-flight audio (a last
-    // onresult), and onend — which always fires after stop() — does the single
-    // teardown flush. Flushing here too sent the same words twice.
-    recognitionRef.current.stop();
+    if (streamingActiveRef.current) {
+      streamingActiveRef.current = false;
+      pcm.stop();
+      sendControl({ type: "stt:stop" });
+      setPendingText("");
+    }
+    stopRec();
   };
 
   // --- Past Transcript Syncing ---
@@ -414,6 +457,36 @@ export default function Meeting({ onNav }: MeetingProps) {
       void loadTranscript();
     }
   }, [sessionId, loadTranscript]);
+
+  // Reconnect backfill: rows finalized during a socket drop are broadcast while
+  // we're disconnected and never reach this client. On every reconnect (not the
+  // first connect — the mount load above covers that) refetch and merge so the
+  // panel matches the database with no silent gap. Silent: no spinner, dedup by id.
+  const backfillTranscript = useCallback(async () => {
+    if (!token || !sessionId) return;
+    try {
+      const response = await fetch(`${API_BASE}/api/transcript/session/${sessionId}`, {
+        headers: authHeaders,
+      });
+      const payload = await response.json();
+      if (response.ok && payload.ok) {
+        const rows: TranscriptRow[] = payload.data?.transcripts || [];
+        setTranscripts((prev) => mergeTranscripts(prev, rows));
+      }
+    } catch (err) {
+      console.error("[meeting] Transcript backfill on reconnect failed:", err);
+    }
+  }, [sessionId, token, authHeaders]);
+
+  const hadConnectionRef = useRef(false);
+  useEffect(() => {
+    if (!connected) return;
+    if (!hadConnectionRef.current) {
+      hadConnectionRef.current = true; // first connect — mount load already ran
+      return;
+    }
+    void backfillTranscript();
+  }, [connected, backfillTranscript]);
 
   // Sync starting server timestamps
   useEffect(() => {
@@ -659,6 +732,16 @@ useEffect(() => {
                 </Button>
               )}
 
+              <Button
+                variant={inWrapUp ? "primary" : "ghost"}
+                size="sm"
+                onClick={openCheckpoint}
+                disabled={!sessionId || ending}
+                iconLeft={<ClipboardCheck size={14} />}
+              >
+                Checkpoint
+              </Button>
+
               <Button variant="ghost" size="sm" onClick={() => setShowEndConfirm(true)} disabled={ending}>
                 End Meeting
               </Button>
@@ -673,6 +756,11 @@ useEffect(() => {
             wrapUpSec={WRAP_UP_SEC}
           />
         )}
+
+        <NotesRibbon
+          text={liveNotes}
+          fallback={ai.blocks.length > 0 ? <BlockRenderer nodes={ai.blocks} /> : undefined}
+        />
 
         {error && (
           <div
@@ -738,7 +826,7 @@ useEffect(() => {
                 </div>
               ) : (
                 <>
-                  {transcripts.map((row) => (
+                  {transcriptGroups.map((row) => (
                     <div
                       key={row.id}
                       style={{
@@ -855,32 +943,6 @@ useEffect(() => {
               </div>
             </div>
 
-            {/* AI Session Notes Panel */}
-            <div
-              style={{
-                height: 240,
-                background: COLORS.surfaceMuted,
-                border: `1px solid ${COLORS.border}`,
-                borderRadius: RADIUS.md,
-                padding: "16px",
-                display: "flex",
-                flexDirection: "column",
-                overflow: "hidden",
-              }}
-            >
-              <div style={{ fontSize: FONT.size.micro, fontWeight: 700, color: COLORS.textMuted, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 12 }}>
-                Strategic Meeting Notes
-              </div>
-              <div style={{ flex: 1, overflowY: "auto" }} aria-live="polite" aria-label="Strategic meeting notes">
-                {ai.blocks.length === 0 ? (
-                  <p style={{ fontSize: FONT.size.label, color: COLORS.textMuted, margin: 0, fontStyle: "italic" }}>
-                    Notes, key arguments, and identified risks will populate here as conversation signal classification completes.
-                  </p>
-                ) : (
-                  <BlockRenderer nodes={ai.blocks} />
-                )}
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -905,6 +967,56 @@ useEffect(() => {
             This action will disconnect the continuous recording feed and run post-meeting summary parsing. You will proceed to review individual PM document patches before final commit.
           </p>
         </Modal>
+      )}
+
+      {/* Alignment Checkpoint — normal (modal) or present (fullscreen overlay) */}
+      {showCheckpoint && !presentMode && (
+        <Modal
+          title=""
+          width={620}
+          closeOnBackdrop={false}
+          onClose={() => setShowCheckpoint(false)}
+        >
+          <CheckpointPanel
+            decisions={checkpoint.decisions}
+            metric={checkpoint.metric}
+            extracting={checkpoint.extracting}
+            speakers={speakerNames}
+            present={false}
+            onEdit={checkpoint.edit}
+            onReExtract={extractAfterFlush}
+            onTogglePresent={() => setPresentMode(true)}
+            onClose={() => setShowCheckpoint(false)}
+          />
+        </Modal>
+      )}
+
+      {showCheckpoint && presentMode && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: COLORS.bg,
+            zIndex: 300,
+            padding: "48px 64px",
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
+          <div style={{ maxWidth: 900, width: "100%", margin: "0 auto", height: "100%" }}>
+            <CheckpointPanel
+              decisions={checkpoint.decisions}
+              metric={checkpoint.metric}
+              extracting={checkpoint.extracting}
+              speakers={speakerNames}
+              present={true}
+              onEdit={checkpoint.edit}
+              onReExtract={extractAfterFlush}
+              onTogglePresent={() => setPresentMode(false)}
+              onClose={() => setShowCheckpoint(false)}
+            />
+          </div>
+        </div>
       )}
     </div>
   );

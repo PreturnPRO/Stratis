@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { COLORS, FONT, LETTER_SPACING, RADIUS, SPACE } from '../tokens/colors';
 import { NodeBadge as _NodeBadge } from '../components/NodeTypes';
 import { ParticipantSummaryOutput, SummaryBlock, ActionItem } from '../mocks/summaryMock';
+import type { DecisionRecord } from '../../shared/types';
 import { useAuth } from '../context/AuthContext';
 
 import { API_BASE } from '../lib/api';
@@ -282,6 +283,11 @@ const SummaryView: React.FC<SummaryViewProps> = ({
   const role: UserRole = user?.role === 'facilitator' ? 'facilitator' : 'participant';
 
   const [summary, setSummary] = useState<ParticipantSummaryOutput | null>(null);
+  // Verified decision record from the checkpoint — rendered instead of the AI's
+  // DECISIONS prose so an unconfirmed decision can't hide inside a polished
+  // paraphrase.
+  const [decisions, setDecisions] = useState<DecisionRecord[]>([]);
+  const [completenessRate, setCompletenessRate] = useState<number | null>(null);
   // Which AI provider produced the summary — 'mock' means the backend has no
   // API key configured and served canned output; surface that loudly.
   const [provider, setProvider] = useState<string | null>(null);
@@ -324,6 +330,8 @@ const SummaryView: React.FC<SummaryViewProps> = ({
           error?: string;
           data?: {
             summary: ParticipantSummaryOutput;
+            decisions?: DecisionRecord[];
+            metric?: { completenessRate: number | null };
             provider?: string;
             transcriptCount?: number;
           };
@@ -337,6 +345,8 @@ const SummaryView: React.FC<SummaryViewProps> = ({
         }
 
         setSummary(data.data.summary);
+        setDecisions(data.data.decisions ?? []);
+        setCompletenessRate(data.data.metric?.completenessRate ?? null);
         setProvider(data.data.provider ?? null);
       } catch {
         if (!cancelled) {
@@ -424,11 +434,19 @@ const SummaryView: React.FC<SummaryViewProps> = ({
     );
   }
 
+  // When the verified decision record exists, it replaces the AI's DECISIONS
+  // prose block — the structured list is the ratified record; the paraphrase is
+  // exactly what the honest summary exists to avoid.
   const visibleBlocks = summary.summary_blocks.filter(
-    b => b.block_type !== 'ACTION_ITEMS' && (isFacilitator || b.visible_to_participants)
+    b =>
+      b.block_type !== 'ACTION_ITEMS' &&
+      (decisions.length === 0 || b.block_type !== 'DECISIONS') &&
+      (isFacilitator || b.visible_to_participants)
   );
 
-  const decisionCount = summary.summary_blocks.find(b => b.block_type === 'DECISIONS')
+  const decisionCount = decisions.length > 0
+    ? decisions.length
+    : summary.summary_blocks.find(b => b.block_type === 'DECISIONS')
     ? parseContentLines(summary.summary_blocks.find(b => b.block_type === 'DECISIONS')!.content).length
     : 0;
   const openCount = summary.summary_blocks.find(b => b.block_type === 'OPEN_ITEMS')
@@ -532,6 +550,63 @@ const SummaryView: React.FC<SummaryViewProps> = ({
         </div>
 
         <div style={{ height: 1, background: COLORS.border, marginBottom: 20 }} />
+
+        {/* Verified decisions from the checkpoint — UNCONFIRMED ones stay visible
+            so the gap the room left is on the record, not smoothed over. */}
+        {decisions.length > 0 && (
+          <div style={{ marginBottom: 28 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+              <h2 style={{ margin: 0, fontSize: FONT.size.subheading, fontWeight: 600, color: COLORS.textPrimary }}>
+                Decisions
+              </h2>
+              {completenessRate != null && (
+                <span style={{ fontSize: FONT.size.label, color: completenessRate === 100 ? COLORS.green : COLORS.orange }}>
+                  {completenessRate}% left with a date
+                </span>
+              )}
+            </div>
+            {decisions.map(d => (
+              <div
+                key={d.id}
+                style={{
+                  background: COLORS.surfaceMuted,
+                  border: `1px solid ${d.status === 'incomplete' ? `${COLORS.orange}55` : COLORS.border}`,
+                  borderRadius: RADIUS.md,
+                  padding: '12px 16px',
+                  marginBottom: 8,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  {d.status === 'incomplete' && (
+                    <span style={{ fontSize: FONT.size.micro, fontWeight: 700, color: COLORS.orange, letterSpacing: 0.6 }}>
+                      UNCONFIRMED
+                    </span>
+                  )}
+                  {d.status === 'open' && (
+                    <span style={{ fontSize: FONT.size.micro, fontWeight: 700, color: COLORS.cyan, letterSpacing: 0.6 }}>
+                      OPEN
+                    </span>
+                  )}
+                  {d.owner && (
+                    <span style={{ fontSize: FONT.size.micro, color: COLORS.textDim }}>{d.owner}</span>
+                  )}
+                </div>
+                <p style={{ margin: 0, fontSize: FONT.size.body, color: COLORS.textPrimary, lineHeight: 1.5 }}>
+                  {d.text}
+                </p>
+                <span style={{ fontSize: FONT.size.label, color: d.status === 'incomplete' ? COLORS.orange : COLORS.textMuted }}>
+                  {d.dueDate
+                    ? `Due: ${d.dueDate}`
+                    : d.status === 'open'
+                    ? d.revisit
+                      ? `Revisit: ${d.revisit}`
+                      : ''
+                    : d.missing ?? 'No deadline'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Summary blocks */}
         {visibleBlocks.map((block, i) => (

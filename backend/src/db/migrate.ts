@@ -9,6 +9,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const reset = process.argv.includes("--reset");
 
 const TABLES = [
+  "decisions",
   "consent_logs",
   "notifications",
   "node_relationships",

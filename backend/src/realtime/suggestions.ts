@@ -63,8 +63,10 @@ export function createFromLiveCards(sessionId: string, cards: LiveCardDTO[]): Su
   const created: SuggestionCard[] = [];
 
   let openCount = openCards(sessionId).length;
+  // Dedup against EVERY card this session — including answered ones. A struck
+  // card means the room already covered it; re-suggesting it reads as broken.
   const seenQuestions = new Set(
-    openCards(sessionId).map((c) => normalizeQuestion(c.question))
+    allCards(sessionId).map((c) => normalizeQuestion(c.question))
   );
 
   for (const c of cards) {
