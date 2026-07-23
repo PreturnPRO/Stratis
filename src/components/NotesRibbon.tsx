@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown } from 'lucide-react'
-import { COLORS, FONT, LETTER_SPACING } from '../tokens/colors'
+import { FONT, LETTER_SPACING, tint } from '../tokens/colors'
+import { useTheme } from '../hooks/useTheme'
 
 interface Props {
   /** Rolling AI notes text — the collapsed preview and default expanded body. */
@@ -13,10 +14,13 @@ interface Props {
 // work surface — two clamped lines when collapsed, nothing at all when empty,
 // so the suggestion stack keeps every pixel of the gutter.
 export function NotesRibbon({ text, fallback }: Props) {
+  const { colors } = useTheme()
   const [open, setOpen] = useState(false)
 
   const hasText = text.trim().length > 0
   if (!hasText && !fallback) return null
+
+  const styles = makeStyles(colors)
 
   return (
     <div style={styles.ribbon}>
@@ -27,7 +31,7 @@ export function NotesRibbon({ text, fallback }: Props) {
         aria-expanded={open}
         aria-label={open ? 'Collapse meeting notes' : 'Expand meeting notes'}
       >
-        <span style={styles.label}>AI notes</span>
+        <span style={styles.label}>Strategic notes · live</span>
         {!open && (
           <span style={styles.preview} aria-live="polite">
             {hasText ? text : 'Meeting notes available'}
@@ -52,58 +56,62 @@ export function NotesRibbon({ text, fallback }: Props) {
   )
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  ribbon: {
-    background: COLORS.surfaceMuted,
-    borderBottom: `1px solid ${COLORS.border}`,
-  },
-  bar: {
-    width: '100%',
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: 10,
-    padding: '8px 24px',
-    background: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
-    textAlign: 'left',
-  },
-  label: {
-    flexShrink: 0,
-    paddingTop: 2,
-    fontSize: FONT.size.micro,
-    fontWeight: 700,
-    letterSpacing: LETTER_SPACING.wide,
-    textTransform: 'uppercase',
-    color: COLORS.accent,
-  },
-  preview: {
-    flex: 1,
-    minWidth: 0,
-    fontSize: FONT.size.label,
-    color: COLORS.textMuted,
-    lineHeight: 1.55,
-    display: '-webkit-box',
-    WebkitLineClamp: 2,
-    WebkitBoxOrient: 'vertical',
-    overflow: 'hidden',
-  },
-  chevron: {
-    flexShrink: 0,
-    marginTop: 2,
-    marginLeft: 'auto',
-    color: COLORS.textDim,
-    transition: 'transform 0.15s ease',
-  },
-  body: {
-    maxHeight: 200,
-    overflowY: 'auto',
-    padding: '0 24px 12px',
-  },
-  bodyText: {
-    margin: 0,
-    fontSize: FONT.size.body,
-    color: COLORS.textPrimary,
-    lineHeight: 1.6,
-  },
+function makeStyles(colors: Record<string, string>): Record<string, React.CSSProperties> {
+  return {
+    ribbon: {
+      background: tint(colors.accent, colors.surfaceMuted, 8),
+      borderLeft: `3px solid ${colors.accent}`,
+      borderBottom: `1px solid ${colors.border}`,
+    },
+    bar: {
+      width: '100%',
+      display: 'flex',
+      alignItems: 'flex-start',
+      gap: 10,
+      padding: '8px 24px',
+      background: 'transparent',
+      border: 'none',
+      cursor: 'pointer',
+      textAlign: 'left',
+    },
+    label: {
+      flexShrink: 0,
+      paddingTop: 2,
+      fontFamily: FONT.mono,
+      fontSize: FONT.size.micro,
+      fontWeight: 700,
+      letterSpacing: LETTER_SPACING.wide,
+      textTransform: 'uppercase',
+      color: colors.accent,
+    },
+    preview: {
+      flex: 1,
+      minWidth: 0,
+      fontSize: FONT.size.label,
+      color: colors.textMuted,
+      lineHeight: 1.55,
+      display: '-webkit-box',
+      WebkitLineClamp: 2,
+      WebkitBoxOrient: 'vertical',
+      overflow: 'hidden',
+    },
+    chevron: {
+      flexShrink: 0,
+      marginTop: 2,
+      marginLeft: 'auto',
+      color: colors.textDim,
+      transition: 'transform 0.15s ease',
+    },
+    body: {
+      maxHeight: 200,
+      overflowY: 'auto',
+      padding: '0 24px 12px',
+    },
+    bodyText: {
+      margin: 0,
+      fontSize: FONT.size.body,
+      color: colors.textPrimary,
+      lineHeight: 1.6,
+    },
+  }
 }

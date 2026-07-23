@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { COLORS, FONT, LETTER_SPACING, RADIUS, SPACE } from "../tokens/colors";
+import { FONT, LETTER_SPACING, RADIUS, SPACE } from "../tokens/colors";
+import { useTheme } from "../hooks/useTheme";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Live-meeting ambient signifiers:
@@ -62,6 +63,7 @@ export function AiPresenceChip({
   cardCount: number;
   provider?: string | null;
 }) {
+  const { colors } = useTheme();
   const [bloom, setBloom] = useState(false);
   const prevCount = useRef(cardCount);
 
@@ -78,8 +80,8 @@ export function AiPresenceChip({
   const label = bloom ? "Suggestion ready" : MODE_LABEL[mode];
   const off = mode === "off" && !bloom;
   const bright = bloom || mode === "speech";
-  const barColor = off ? COLORS.textDim : bright ? COLORS.accentHover : COLORS.accent;
-  const textColor = off ? COLORS.textMuted : bright ? COLORS.accentHover : COLORS.accent;
+  const barColor = off ? colors.textDim : bright ? colors.accentHover : colors.accent;
+  const textColor = off ? colors.textMuted : bright ? colors.accentHover : colors.accent;
 
   return (
     <span
@@ -92,8 +94,8 @@ export function AiPresenceChip({
         gap: SPACE[1.5],
         padding: "3px 9px",
         borderRadius: RADIUS.pill,
-        background: COLORS.surface,
-        border: `1px solid ${COLORS.border}`,
+        background: colors.surface,
+        border: `1px solid ${colors.border}`,
         color: textColor,
         fontSize: FONT.size.caption,
         fontWeight: 500,
@@ -142,7 +144,12 @@ interface AgendaPhase {
   frac: number;
 }
 
-function agendaPhase(durationMin: number, elapsedSec: number, wrapUpSec: number): AgendaPhase {
+function agendaPhase(
+  durationMin: number,
+  elapsedSec: number,
+  wrapUpSec: number,
+  colors: { red: string; orange: string; accent: string },
+): AgendaPhase {
   const totalSec = durationMin * 60;
   const remaining = totalSec - elapsedSec;
   const overtime = remaining <= 0;
@@ -150,7 +157,7 @@ function agendaPhase(durationMin: number, elapsedSec: number, wrapUpSec: number)
   return {
     overtime,
     inWrapUp,
-    color: overtime ? COLORS.red : inWrapUp ? COLORS.orange : COLORS.accent,
+    color: overtime ? colors.red : inWrapUp ? colors.orange : colors.accent,
     frac: totalSec > 0 ? Math.min(elapsedSec / totalSec, 1) : 0,
   };
 }
@@ -167,7 +174,8 @@ export function AgendaPulse({
   elapsedSec: number;
   wrapUpSec?: number;
 }) {
-  const { overtime, inWrapUp, color, frac } = agendaPhase(durationMin, elapsedSec, wrapUpSec);
+  const { colors } = useTheme();
+  const { overtime, inWrapUp, color, frac } = agendaPhase(durationMin, elapsedSec, wrapUpSec, colors);
   const remaining = durationMin * 60 - elapsedSec;
 
   const centerNum = overtime
@@ -175,7 +183,7 @@ export function AgendaPulse({
     : `${Math.max(1, Math.ceil(remaining / 60))}m`;
   const centerSub = overtime ? "over" : "left";
   const status = overtime ? "Overtime" : inWrapUp ? "Wrap-up window" : "On track";
-  const statusColor = overtime || inWrapUp ? color : COLORS.text;
+  const statusColor = overtime || inWrapUp ? color : colors.text;
   const subline = overtime
     ? `planned ${durationMin} min`
     : `${Math.floor(elapsedSec / 60)} of ${durationMin} min`;
@@ -192,12 +200,12 @@ export function AgendaPulse({
         padding: 12,
         marginBottom: 8,
         borderRadius: RADIUS.lg,
-        background: COLORS.surface,
-        border: `1px solid ${COLORS.border}`,
+        background: colors.surface,
+        border: `1px solid ${colors.border}`,
       }}
     >
       <svg width={62} height={62} viewBox="0 0 64 64" aria-hidden style={{ flexShrink: 0 }}>
-        <circle cx={32} cy={32} r={RING_RADIUS} fill="none" stroke={COLORS.border} strokeWidth={5} />
+        <circle cx={32} cy={32} r={RING_RADIUS} fill="none" stroke={colors.border} strokeWidth={5} />
         <circle
           cx={32}
           cy={32}
@@ -215,7 +223,7 @@ export function AgendaPulse({
           x={32}
           y={31}
           textAnchor="middle"
-          fill={overtime ? COLORS.red : COLORS.text}
+          fill={overtime ? colors.red : colors.text}
           fontSize={13}
           fontWeight={600}
           fontFamily={FONT.sans}
@@ -226,7 +234,7 @@ export function AgendaPulse({
           x={32}
           y={43}
           textAnchor="middle"
-          fill={COLORS.textMuted}
+          fill={colors.textMuted}
           fontSize={9.5}
           fontFamily={FONT.sans}
         >
@@ -241,7 +249,7 @@ export function AgendaPulse({
             fontWeight: 700,
             letterSpacing: LETTER_SPACING.wide,
             textTransform: "uppercase",
-            color: COLORS.textMuted,
+            color: colors.textMuted,
             marginBottom: 3,
           }}
         >
@@ -258,7 +266,7 @@ export function AgendaPulse({
         >
           {status}
         </div>
-        <div style={{ fontSize: FONT.size.caption, color: COLORS.textMuted }}>{subline}</div>
+        <div style={{ fontSize: FONT.size.caption, color: colors.textMuted }}>{subline}</div>
       </div>
     </div>
   );
@@ -273,7 +281,8 @@ export function TimeRiver({
   elapsedSec: number;
   wrapUpSec?: number;
 }) {
-  const { color, frac } = agendaPhase(durationMin, elapsedSec, wrapUpSec);
+  const { colors } = useTheme();
+  const { color, frac } = agendaPhase(durationMin, elapsedSec, wrapUpSec, colors);
   const totalSec = durationMin * 60;
   const tickPct = totalSec > wrapUpSec ? ((totalSec - wrapUpSec) / totalSec) * 100 : null;
 
@@ -283,7 +292,7 @@ export function TimeRiver({
       style={{
         position: "relative",
         height: 3,
-        background: COLORS.surfaceHover,
+        background: colors.surfaceHover,
         flexShrink: 0,
       }}
     >
@@ -308,7 +317,7 @@ export function TimeRiver({
             top: -2,
             bottom: -2,
             width: 1,
-            background: COLORS.textDim,
+            background: colors.textDim,
           }}
         />
       )}
