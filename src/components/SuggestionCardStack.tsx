@@ -41,9 +41,17 @@ interface Props {
 
 // Only this many active cards show expanded at once — the rest queue up
 // behind a "+N more open" row so the stack can't grow into an obtrusive wall.
-const VISIBLE_ACTIVE_CAP = 2
+const VISIBLE_ACTIVE_CAP = 4
 
 const URGENCY_RANK: Record<LiveCardUrgency, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 }
+
+// Hero slots are expensive attention in a live meeting: HIGH/MEDIUM earn a
+// full card; LOW stays a compact row unless nothing higher is on screen.
+// Cards without an urgency predate the field — treated as hero-eligible so
+// they never silently vanish into the LOW lane.
+function isLowTier(card: SuggestionCard): boolean {
+  return card.urgency === 'LOW'
+}
 
 function isStale(createdAt: string): boolean {
   return Date.now() - new Date(createdAt).getTime() > STALE_MS
@@ -82,7 +90,7 @@ export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkAct
   const active = cards.filter(c => c.status === 'active')
   const answered = cards.filter(c => c.status === 'answered')
 
-  const orderedActive = [...active].sort((a, b) => {
+  const byPinUrgencyAge = (a: SuggestionCard, b: SuggestionCard) => {
     const aPinned = pinnedIds.has(a.id) ? 0 : 1
     const bPinned = pinnedIds.has(b.id) ? 0 : 1
     if (aPinned !== bPinned) return aPinned - bPinned
@@ -94,10 +102,22 @@ export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkAct
     // Same urgency — oldest first, so aging cards surface into the visible
     // slots instead of being perpetually buried behind newer arrivals.
     return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-  })
+  }
 
-  const visibleActive = orderedActive.slice(0, VISIBLE_ACTIVE_CAP)
-  const queuedActive = orderedActive.slice(VISIBLE_ACTIVE_CAP)
+  // Pinning a LOW card is a facilitator override — it joins the hero pool.
+  const heroPool = active.filter(c => !isLowTier(c) || pinnedIds.has(c.id))
+  const lowPool = active.filter(c => isLowTier(c) && !pinnedIds.has(c.id))
+
+  const orderedHero = [...heroPool].sort(byPinUrgencyAge)
+  const orderedLow = [...lowPool].sort(byPinUrgencyAge)
+
+  // Nothing higher-urgency on screen → LOW may expand. An empty gutter
+  // hiding the only open suggestion is worse than one calm card.
+  const heroCards = orderedHero.length > 0 ? orderedHero : orderedLow
+  const lowRows = orderedHero.length > 0 ? orderedLow : []
+
+  const visibleActive = heroCards.slice(0, VISIBLE_ACTIVE_CAP)
+  const queuedActive = heroCards.slice(VISIBLE_ACTIVE_CAP)
 
   const oldestQueuedAgeLabel = queuedActive.length > 0
     ? formatAge(queuedActive[0].createdAt)
@@ -167,6 +187,22 @@ export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkAct
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {lowRows.length > 0 && (
+        <div style={styles.toggleGroup}>
+          <div style={styles.lowHeader}>Low priority · {lowRows.length}</div>
+          <div style={styles.answeredList}>
+            {lowRows.map(card => (
+              <QueuedRow
+                key={card.id}
+                card={card}
+                onOpen={() => promote(card.id)}
+                onMarkAnswered={() => onMarkAnswered(card.id)}
+              />
+            ))}
+          </div>
         </div>
       )}
 
@@ -282,8 +318,9 @@ function QueuedRow({
   return (
     <div style={styles.queuedRow}>
       <button style={styles.queuedRowMain} onClick={onOpen} title="Bring to front">
-        <span style={{ ...styles.dot, background: accent, flexShrink: 0, opacity: stale ? 0.6 : 1 }} />
+        <span style={{ ...styles.dot, background: accent, flexShrink: 0, opacity: stale ? 0.6 : 1, marginTop: 5 }} />
         <span style={styles.queuedRowText}>{card.question}</span>
+        <span style={styles.queuedRowAge}>{formatAge(card.createdAt)}</span>
       </button>
       <button
         style={styles.queuedRowAnswer}
@@ -355,7 +392,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   card: {
     borderRadius: 12,
-    padding: '12px 14px',
+    padding: '14px 16px',
     display: 'flex',
     flexDirection: 'column',
     gap: SPACE[1.5],
@@ -394,12 +431,14 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '2px 7px',
     borderRadius: 999,
   },
+  // Subheading-size on purpose: the question is the hero of the whole meeting
+  // screen and must outweigh the body-size transcript beside it.
   question: {
     margin: 0,
-    fontSize: FONT.size.body,
+    fontSize: FONT.size.subheading,
     fontWeight: 600,
     color: COLORS.textPrimary,
-    lineHeight: 1.4,
+    lineHeight: 1.45,
   },
   reason: {
     margin: 0,
@@ -484,7 +523,7 @@ const styles: Record<string, React.CSSProperties> = {
     flex: 1,
     minWidth: 0,
     display: 'flex',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 7,
     padding: '7px 6px 7px 14px',
     background: 'transparent',
@@ -493,11 +532,29 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'left',
   },
   queuedRowText: {
+    flex: 1,
+    minWidth: 0,
     fontSize: FONT.size.label,
     color: COLORS.textMuted,
-    whiteSpace: 'nowrap',
+    lineHeight: 1.45,
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical',
     overflow: 'hidden',
-    textOverflow: 'ellipsis',
+  },
+  queuedRowAge: {
+    flexShrink: 0,
+    fontSize: FONT.size.caption,
+    color: COLORS.textDim,
+    paddingTop: 1,
+  },
+  lowHeader: {
+    padding: '7px 14px 5px',
+    fontSize: FONT.size.micro,
+    fontWeight: 700,
+    letterSpacing: LETTER_SPACING.wide,
+    textTransform: 'uppercase',
+    color: COLORS.textDim,
   },
   queuedRowAnswer: {
     flexShrink: 0,

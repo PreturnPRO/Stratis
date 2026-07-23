@@ -12,6 +12,7 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
     "db:reset": "tsx src/db/migrate.ts --reset && tsx src/db/seed.ts",
+    "test": "node --experimental-strip-types --test src/lib/sttStreamPolicy.test.ts src/lib/withRetry.test.ts src/realtime/liveness.test.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit"
   },
