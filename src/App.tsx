@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import Sidebar from "./components/Sidebar";
 import CurtainTransition, { type CurtainState } from "./components/CurtainTransition";
 import CustomCursor from "./components/CustomCursor";
+import Preloader from "./components/Preloader";
 import { useTheme } from "./hooks/useTheme";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
@@ -193,6 +194,7 @@ function AppShell() {
           fontFamily: "'Helvetica Neue', Arial, sans-serif",
         }}
       >
+        <Preloader onDone={() => {}} theme={theme} />
         {authPage === "landing" && <Landing onNavigate={setAuthPage} />}
         {authPage === "login" && (
           <Login
