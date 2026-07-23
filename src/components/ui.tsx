@@ -132,7 +132,7 @@ export function Button({
         alignItems: "center",
         justifyContent: "center",
         gap: 7,
-        borderRadius: RADIUS.md,
+        borderRadius: RADIUS.pill,
         fontWeight: 600,
         lineHeight: 1,
         width: fullWidth ? "100%" : undefined,
@@ -291,8 +291,8 @@ export function Modal({
           border: `1px solid ${COLORS.borderLight}`,
           borderRadius: RADIUS.lg,
           padding: 24,
-          boxShadow: SHADOW.lg,
-          animation: "modalIn 0.2s ease",
+          boxShadow: SHADOW.shadModal,
+          animation: "modalIn 0.28s cubic-bezier(.22,1,.36,1)",
           outline: "none",
         }}
       >
