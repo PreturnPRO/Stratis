@@ -49,6 +49,49 @@ export const COLORS = {
   orangeBg:      "#2a1208",
   cyan:          "#2ab3d4",
   cyanBg:        "#0a2a33",
+  onAccent:      "#10160b", // text on accent-filled buttons (matches btnAccent's existing #10160b)
+  curtain:       "#0c0c0e",
+  curtainText:   "#f2f2f3",
+  spkA:          "#e0608a",
+  spkB:          "#4da3e8",
+  spkC:          "#35c98e",
+} as const;
+
+export const LIGHT_COLORS = {
+  bg:              "#f6f4ee",
+  surface:         "#fdfcf9",
+  surfaceHover:    "#efede5",
+  surfaceMuted:    "#eceade",
+  surfaceElevated: "#ffffff",
+  border:          "#dcd8ca",
+  borderLight:     "#c6c1af",
+  text:            "#1b1b16",
+  textPrimary:     "#1b1b16",
+  textMuted:       "#54544c",
+  textDim:         "#8f8d80",
+  accent:          "#54713a",
+  accentHover:     "#46602f",
+  accentDim:       "#94aa7b",
+  amber:           "#54713a",
+  amberSubtle:     "#e4ead6",
+  onAccent:        "#f7f8f2",
+  teal:            "#0e7d5c",
+  tealLight:       "#0e7d5c",
+  tealBg:          "#e4ead6",
+  green:           "#0e7d5c",
+  red:             "#bb3338",
+  redBg:           "#e4ead6",
+  danger:          "#bb3338",
+  dangerBg:        "#e4ead6",
+  orange:          "#b34c07",
+  orangeBg:        "#e4ead6",
+  cyan:            "#0f7d9c",
+  cyanBg:          "#e4ead6",
+  curtain:         "#181813",
+  curtainText:     "#f4f2ea",
+  spkA:            "#a83459",
+  spkB:            "#2465ad",
+  spkC:            "#177a52",
 } as const;
 
 export type ColorToken = keyof typeof COLORS;
@@ -87,6 +130,21 @@ export const SHADOW = {
   hero: "0 30px 80px rgba(0,0,0,0.55)",
   // accent glow — pass any hex color
   glow: (c: string) => `0 0 0 1px ${c}33, 0 6px 20px ${c}22`,
+  shadCard:  "0 1px 2px rgba(0,0,0,.35), 0 10px 30px rgba(0,0,0,.30)",
+  shadFloat2: "0 2px 6px rgba(0,0,0,.30), 0 14px 34px rgba(0,0,0,.40)",
+  shadModal: "0 24px 70px rgba(0,0,0,.60), 0 4px 12px rgba(0,0,0,.40)",
+} as const;
+
+export const LIGHT_SHADOW = {
+  shadCard:  "0 1px 2px rgba(80,74,52,.05), 0 8px 22px rgba(80,74,52,.08)",
+  shadFloat2: "0 2px 6px rgba(80,74,52,.07), 0 14px 30px rgba(80,74,52,.11)",
+  shadModal: "0 24px 60px rgba(70,64,42,.20), 0 4px 12px rgba(70,64,42,.09)",
+  glowAccent: "0 0 0 1px rgba(84,113,58,.22), 0 6px 18px rgba(84,113,58,.14)",
+} as const;
+
+export const AMBIENT = {
+  dark:  { grid: "rgba(255,255,255,.028)", glow: "rgba(143,174,109,.10)", glow2: "rgba(42,179,212,.06)" },
+  light: { grid: "rgba(60,56,36,.045)",    glow: "rgba(84,113,58,.10)",   glow2: "rgba(23,127,156,.06)" },
 } as const;
 
 // ── Gradients ────────────────────────────────────────────────────────────────
@@ -103,6 +161,12 @@ export const GLASS = {
   blur: "blur(12px)",
   bg: "rgba(20,20,23,0.72)",
 } as const;
+
+// ── Color mix helper ─────────────────────────────────────────────────────────
+// Chip/badge tints in both themes: color-mix(in srgb, <semantic> 14–16%, var(--bg))
+export function tint(semanticHex: string, bgHex: string, pct = 15): string {
+  return `color-mix(in srgb, ${semanticHex} ${pct}%, ${bgHex})`;
+}
 
 // ── Typography ──────────────────────────────────────────────────────────────────
 // Semantic-role scale, not a value ladder. The old scale (xs:11, sm:12, md:13,
