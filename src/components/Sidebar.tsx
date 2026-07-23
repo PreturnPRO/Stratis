@@ -5,6 +5,8 @@ import {
   FileText,
   LogOut,
   Zap,
+  Sun,
+  Moon,
   type LucideIcon,
 } from "lucide-react";
 import { COLORS, NAV_ITEMS, FONT, RADIUS, SPACE } from "../constants";
@@ -47,10 +49,14 @@ export default function Sidebar({
   active,
   onNav,
   onLogout,
+  theme,
+  onToggleTheme,
 }: {
   active: string;
   onNav: (id: string) => void;
   onLogout?: () => void;
+  theme: "dark" | "light";
+  onToggleTheme: () => void;
 }) {
   const { user } = useAuth();
 
@@ -130,6 +136,20 @@ export default function Sidebar({
 
       {/* Avatar + logout */}
       <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+        <button
+          title="Toggle theme"
+          aria-label="Toggle theme"
+          onClick={onToggleTheme}
+          style={{
+            width: 44, height: 44, borderRadius: 8,
+            background: "transparent", border: "none",
+            color: COLORS.textDim, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          {theme === "dark" ? <Sun size={16} strokeWidth={1.75} /> : <Moon size={16} strokeWidth={1.75} />}
+        </button>
+
         <div
           title={displayName}
           style={{

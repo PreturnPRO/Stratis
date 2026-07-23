@@ -3,7 +3,9 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { COLORS, FONT, RADIUS, SPACE } from "./constants";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Sidebar from "./components/Sidebar";
-import MeetingTransition from "./components/MeetingTransition";
+import CurtainTransition, { type CurtainState } from "./components/CurtainTransition";
+import CustomCursor from "./components/CustomCursor";
+import { useTheme } from "./hooks/useTheme";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -72,23 +74,17 @@ function AppShell() {
   const initialEntry = hashToEntry();
   const [active, setActive] = useState<AppPage>(initialEntry.page);
   const [navParams, setNavParams] = useState<Record<string, string>>(initialEntry.params);
-  const [showTransition, setShowTransition] = useState(false);
+  const { theme, toggleTheme, colors } = useTheme();
+  const [curtainState, setCurtainState] = useState<CurtainState>("idle");
+  const [pendingNav, setPendingNav] = useState<{ id: string; params?: Record<string, string> } | null>(null);
 
   type HistoryEntry = { page: AppPage; params: Record<string, string> };
   const [history, setHistory] = useState<HistoryEntry[]>([initialEntry]);
   const [historyIndex, setHistoryIndex] = useState(0);
 
-  const handleNav = (id: string, params?: Record<string, string>) => {
+  const commitNav = (id: string, params?: Record<string, string>) => {
     const page = id as AppPage;
     const resolvedParams = params ?? {};
-
-    const current = history[historyIndex];
-    const isSamePage = current?.page === page;
-    const isSameParams =
-      JSON.stringify(current?.params) === JSON.stringify(resolvedParams);
-    if (isSamePage && isSameParams) return;
-
-    if (page === "meeting" && active !== "meeting") setShowTransition(true);
 
     const visibleHistory = history.slice(0, historyIndex + 1);
     const existingIndex = visibleHistory.findIndex(
@@ -111,6 +107,40 @@ function AppShell() {
     setActive(page);
     setNavParams(resolvedParams);
   };
+
+  const handleNav = (id: string, params?: Record<string, string>) => {
+    if (curtainState !== "idle") return;
+
+    const page = id as AppPage;
+    const resolvedParams = params ?? {};
+
+    const current = history[historyIndex];
+    const isSamePage = current?.page === page;
+    const isSameParams =
+      JSON.stringify(current?.params) === JSON.stringify(resolvedParams);
+    if (isSamePage && isSameParams) return;
+
+    setPendingNav({ id, params });
+    setCurtainState("in");
+  };
+
+  useEffect(() => {
+    if (curtainState === "in") {
+      const t = setTimeout(() => {
+        if (pendingNav) commitNav(pendingNav.id, pendingNav.params);
+        setCurtainState("hold");
+      }, 480);
+      return () => clearTimeout(t);
+    }
+    if (curtainState === "hold") {
+      const t = setTimeout(() => setCurtainState("out"), 240);
+      return () => clearTimeout(t);
+    }
+    if (curtainState === "out") {
+      const t = setTimeout(() => setCurtainState("idle"), 600);
+      return () => clearTimeout(t);
+    }
+  }, [curtainState, pendingNav]);
 
   useEffect(() => {
     const hash = entryToHash(active, navParams);
@@ -183,17 +213,21 @@ function AppShell() {
       style={{
         display: "flex",
         height: "100vh",
-        background: COLORS.bg,
+        background: colors.bg,
         fontFamily: "'Helvetica Neue', Arial, sans-serif",
         overflow: "hidden",
-        color: COLORS.text,
+        color: colors.text,
       }}
     >
-      {showTransition && (
-        <MeetingTransition onDone={() => setShowTransition(false)} />
-      )}
+      <CurtainTransition
+        state={curtainState}
+        routeLabel={(PAGE_LABELS[pendingNav?.id ?? active] ?? active).toUpperCase()}
+        onMidpoint={() => {}}
+        theme={theme}
+      />
+      <CustomCursor calmZone={active === "meeting"} theme={theme} />
 
-      <Sidebar active={active} onNav={handleSidebarNav} onLogout={logout} />
+      <Sidebar active={active} onNav={handleSidebarNav} onLogout={logout} theme={theme} onToggleTheme={toggleTheme} />
 
       <div
         style={{
