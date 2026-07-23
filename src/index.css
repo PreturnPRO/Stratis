@@ -296,6 +296,21 @@ input:focus-visible, textarea:focus-visible {
   100% { transform: translate(-56%, -50%) scale(1.04); }
 }
 
+@keyframes ambGridDrift {
+  from { background-position: 0 0, 0 0; }
+  to   { background-position: 52px 52px, 52px 52px; }
+}
+
+@keyframes ambA {
+  0%   { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(-8%, 8%) scale(1.18); }
+}
+
+@keyframes ambB {
+  0%   { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(8%, -8%) scale(1.18); }
+}
+
 /* Vignette so the grid fades toward the edges and the headline stays legible */
 .landing-fade {
   position: absolute;
