@@ -149,6 +149,10 @@ function AppShell() {
 
   useEffect(() => {
     const onPopState = () => {
+      if (curtainState !== "idle") {
+        window.history.pushState(null, "", entryToHash(active, navParams));
+        return;
+      }
       const entry = hashToEntry();
       handleNav(entry.page, entry.params);
     };
