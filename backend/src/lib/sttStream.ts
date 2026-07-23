@@ -12,6 +12,7 @@
 
 import { getGoogleStreamingContext } from "./stt";
 import { env } from "../config/env";
+import { streamAction, isOpenWedged, openBackoffMs } from "./sttStreamPolicy";
 
 export interface SttStreamOptions {
   sessionId: string;
@@ -23,6 +24,9 @@ export interface SttStreamOptions {
 
 export interface SttStreamHandle {
   write(chunk: Buffer): void;
+  /** Half-close the underlying stream so pending finals land (checkpoint reads
+   * a complete transcript mid-recording); the next write reopens it. */
+  flush(): void;
   stop(): void;
 }
 
@@ -31,6 +35,16 @@ const ROTATE_AFTER_MS = 240_000;
 // More consecutive failures than this without a successful result in between
 // means something is actually broken — surface instead of retry-looping.
 const MAX_CONSECUTIVE_FAILURES = 3;
+// Watchdog: frames are flowing but Google has produced zero results for this
+// long → assume the stream died silently and rotate it. Rotating a healthy
+// stream in a silent room is harmless (nothing buffered, reopen is cheap), so
+// this can be aggressive. This automates the manual fix facilitators found:
+// toggling the mic, which rebuilt the stream handle.
+const STALL_AFTER_MS = 30_000;
+// A single-flight open attempt that hangs past this is abandoned so it can't
+// wedge the handle forever (the pre-watchdog failure mode: one hung
+// getGoogleStreamingContext() dropped every subsequent frame silently).
+const OPEN_TIMEOUT_MS = 10_000;
 
 // Minimal shape of the duplex stream returned by _streamingRecognize().
 interface BidiStream {
@@ -57,7 +71,13 @@ const RESTARTABLE_GRPC_CODES = new Set([4, 11, 13, 14]);
 function createGoogleStream(opts: SttStreamOptions): SttStreamHandle {
   let stream: BidiStream | null = null;
   let streamStartedAt = 0;
+  /** Last interim/final from Google on the current stream; null = none yet. */
+  let lastDataAt: number | null = null;
   let consecutiveFailures = 0;
+  /** Earliest time a reopen may be attempted (failure backoff). */
+  let nextOpenAllowedAt = 0;
+  /** Generation counter: bumping it discards any in-flight open attempt. */
+  let openGen = 0;
   let stopped = false;
 
   // Half-close: end our write side so Google flushes any pending final result
@@ -94,6 +114,7 @@ function createGoogleStream(opts: SttStreamOptions): SttStreamHandle {
 
     const s = ctx.client._streamingRecognize() as unknown as BidiStream;
     streamStartedAt = Date.now();
+    lastDataAt = null;
 
     s.write({
       recognizer: ctx.recognizer,
@@ -113,6 +134,8 @@ function createGoogleStream(opts: SttStreamOptions): SttStreamHandle {
 
     s.on("data", (resp) => {
       consecutiveFailures = 0;
+      nextOpenAllowedAt = 0;
+      lastDataAt = Date.now();
       for (const result of resp.results ?? []) {
         const text = result.alternatives?.[0]?.transcript;
         if (!text) continue;
@@ -126,21 +149,25 @@ function createGoogleStream(opts: SttStreamOptions): SttStreamHandle {
       stream = null;
       consecutiveFailures += 1;
 
-      const restartable =
+      const quiet =
         RESTARTABLE_GRPC_CODES.has(err.code ?? -1) &&
         consecutiveFailures <= MAX_CONSECUTIVE_FAILURES;
 
-      console[restartable ? "warn" : "error"](
+      // Never give up permanently: every failure schedules a backed-off lazy
+      // reopen on a later write. Only the noise level differs — expected codes
+      // restart quietly; anything else (e.g. 8 RESOURCE_EXHAUSTED quota) also
+      // alerts the client so the facilitator sees WHY transcription is paused.
+      nextOpenAllowedAt = Date.now() + openBackoffMs(consecutiveFailures);
+
+      console[quiet ? "warn" : "error"](
         `[stt:stream] gRPC error (code ${err.code}, session ${opts.sessionId}, ` +
-          `${restartable ? "restarting" : "giving up"}):`,
+          `retrying in ${openBackoffMs(consecutiveFailures)}ms):`,
         err.message,
       );
 
-      if (!restartable) {
+      if (!quiet) {
         opts.onError(`Streaming STT failed: ${err.message}`);
       }
-      // Restartable errors need no action here — the next write() lazily
-      // reopens the stream.
     });
 
     return s;
@@ -148,43 +175,88 @@ function createGoogleStream(opts: SttStreamOptions): SttStreamHandle {
 
   // Serialize opens so overlapping write() calls can't race two streams.
   let opening: Promise<void> | null = null;
+  let openingStartedAt: number | null = null;
 
   const ensureStream = (): void => {
     if (stream || opening || stopped) return;
+    if (Date.now() < nextOpenAllowedAt) return; // failure backoff window
+    const gen = ++openGen;
+    openingStartedAt = Date.now();
     opening = openStream()
       .then((s) => {
-        if (stopped) {
+        // A bumped generation means this attempt was abandoned (hung past
+        // OPEN_TIMEOUT_MS) or the handle stopped — discard the late stream.
+        if (stopped || gen !== openGen) {
           s?.destroy();
           return;
         }
         if (s) stream = s;
       })
       .catch((err) => {
+        if (gen !== openGen) return;
+        consecutiveFailures += 1;
+        nextOpenAllowedAt = Date.now() + openBackoffMs(consecutiveFailures);
         console.error("[stt:stream] Failed to open streaming session:", err);
         opts.onError("Could not start streaming STT session");
       })
       .finally(() => {
+        if (gen !== openGen) return; // a newer attempt owns these fields now
         opening = null;
+        openingStartedAt = null;
       });
   };
 
+  const write = (chunk: Buffer): void => {
+    if (stopped) return;
+    const nowMs = Date.now();
+
+    // Rotation: proactive age limit, or the stall watchdog (frames flowing but
+    // zero results — the silent-death mode that used to require a mic toggle).
+    if (
+      stream &&
+      streamAction({
+        now: nowMs,
+        streamStartedAt,
+        lastDataAt,
+        rotateAfterMs: ROTATE_AFTER_MS,
+        stallAfterMs: STALL_AFTER_MS,
+      }) === "rotate"
+    ) {
+      console.log(
+        `[stt:stream] Rotating stream for session ${opts.sessionId} ` +
+          `(${nowMs - streamStartedAt > ROTATE_AFTER_MS ? "age limit" : "stall watchdog"})`,
+      );
+      closeStream();
+    }
+
+    // A hung open attempt would otherwise block reopening forever — abandon it
+    // (bump the generation so its late resolution is discarded) and retry.
+    if (isOpenWedged({ now: nowMs, openingStartedAt, timeoutMs: OPEN_TIMEOUT_MS })) {
+      console.warn(
+        `[stt:stream] Open attempt hung >${OPEN_TIMEOUT_MS}ms for session ` +
+          `${opts.sessionId} — abandoning and retrying`,
+      );
+      openGen += 1;
+      opening = null;
+      openingStartedAt = null;
+    }
+
+    ensureStream();
+    // Frames arriving while a stream is opening are dropped (~a syllable at
+    // 250ms/frame) — acceptable for the experiment; a queue can come later.
+    stream?.write({ audio: chunk });
+  };
+
   return {
-    write(chunk: Buffer) {
-      if (stopped) return;
-
-      // Proactive rotation: close at the age limit; the write below (or the
-      // next one, for frames arriving mid-reopen) starts a fresh stream.
-      if (stream && Date.now() - streamStartedAt > ROTATE_AFTER_MS) {
-        console.log(
-          `[stt:stream] Rotating stream for session ${opts.sessionId} (age limit)`,
-        );
-        closeStream();
-      }
-
-      ensureStream();
-      // Frames arriving while a stream is opening are dropped (~a syllable at
-      // 250ms/frame) — acceptable for the experiment; a queue can come later.
-      stream?.write({ audio: chunk });
+    write,
+    flush() {
+      // Half-close the current stream so Google finalizes and emits any pending
+      // utterance (listeners stay attached in release()); the next audio frame
+      // lazily reopens. Lets the checkpoint read a complete transcript without
+      // the facilitator stopping the mic.
+      if (stopped || !stream) return;
+      console.log(`[stt:stream] Flushing stream for session ${opts.sessionId}`);
+      closeStream();
     },
     stop() {
       stopped = true;
@@ -198,7 +270,7 @@ function createMockStream(opts: SttStreamOptions): SttStreamHandle {
   let chunks = 0;
   let timer: ReturnType<typeof setInterval> | null = null;
 
-  const flush = () => {
+  const flushBuffered = () => {
     if (bytes === 0) return;
     opts.onFinal(
       `[mock stream] transcribed ${(bytes / 1024).toFixed(0)} KB of PCM ` +
@@ -213,12 +285,15 @@ function createMockStream(opts: SttStreamOptions): SttStreamHandle {
       bytes += chunk.length;
       chunks += 1;
       opts.onInterim(`[mock stream] hearing audio… (${(bytes / 1024).toFixed(0)} KB)`);
-      if (!timer) timer = setInterval(flush, 5_000);
+      if (!timer) timer = setInterval(flushBuffered, 5_000);
+    },
+    flush() {
+      flushBuffered();
     },
     stop() {
       if (timer) clearInterval(timer);
       timer = null;
-      flush();
+      flushBuffered();
     },
   };
 }

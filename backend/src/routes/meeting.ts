@@ -49,6 +49,22 @@ interface SummaryRow {
   project_id: string | null;
 }
 
+// A valid JWT can outlive its database rows: a redeploy onto a fresh or
+// migrated DB leaves the client holding a token whose org/user no longer
+// exist. List queries still work (they just return nothing), so the dashboard
+// renders — and the FIRST insert then fails its foreign key. That is an auth
+// problem, not a server fault: tell the client to log in again instead of 500.
+function isIdentityFkViolation(error: unknown): boolean {
+  return (error as { code?: string } | null)?.code === "23503"; // PG foreign_key_violation
+}
+
+function replyIdentityGone(res: Response) {
+  return res.status(401).json({
+    ok: false,
+    error: "Your session references an account that no longer exists — please log in again",
+  });
+}
+
 function parseLimit(value: unknown, fallback = 10, max = 50): number {
   const n = typeof value === "string" ? Number(value) : fallback;
   if (!Number.isFinite(n) || n <= 0) return fallback;
@@ -385,10 +401,11 @@ meetingRouter.post("/", requireAuth, async (req, res) => {
     const createdMeeting = await getMeeting(id);
 
     res.status(201).json({ ok: true, data: { meeting: createdMeeting } }); 
-  } catch (error) { 
-    console.error("Meeting creation error:", error); 
-    res.status(500).json({ ok: false, error: "Internal server error creating meeting" }); 
-  } 
+  } catch (error) {
+    console.error("Meeting creation error:", error);
+    if (isIdentityFkViolation(error)) return replyIdentityGone(res);
+    res.status(500).json({ ok: false, error: "Internal server error creating meeting" });
+  }
 });
 
 interface ProjectListRow {
@@ -536,6 +553,7 @@ meetingRouter.post("/projects", requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error("Project database creation error:", error);
+    if (isIdentityFkViolation(error)) return replyIdentityGone(res);
     res.status(500).json({ ok: false, error: "Internal server error creating project" });
   }
 });
