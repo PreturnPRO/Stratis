@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from "react";
-import { COLORS, RADIUS, SHADOW, FONT, LETTER_SPACING, SPACE } from "../tokens/colors";
+import { COLORS, RADIUS, FONT, LETTER_SPACING, SPACE } from "../tokens/colors";
+import { useTheme } from "../hooks/useTheme";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Legacy style helpers — kept so pages not yet migrated keep working.
@@ -47,8 +48,9 @@ export function Avatar({ initials, color, size = 36 }: { initials: string; color
 }
 
 export function SectionLabel({ children }: { children: React.ReactNode }) {
+  const { colors } = useTheme();
   return (
-    <div style={{ color: COLORS.textMuted, fontSize: FONT.size.label, letterSpacing: LETTER_SPACING.label, marginBottom: SPACE[4] }}>
+    <div style={{ color: colors.textMuted, fontSize: FONT.size.label, letterSpacing: LETTER_SPACING.label, marginBottom: SPACE[4] }}>
       {children}
     </div>
   );
@@ -75,33 +77,38 @@ const SIZE_STYLE: Record<ButtonSize, React.CSSProperties> = {
   md: { padding: "8px 16px", fontSize: FONT.size.body },
 };
 
-function variantBase(variant: ButtonVariant, hovered: boolean): React.CSSProperties {
+function variantBase(
+  variant: ButtonVariant,
+  hovered: boolean,
+  colors: ReturnType<typeof useTheme>["colors"],
+  shadow: ReturnType<typeof useTheme>["shadow"],
+): React.CSSProperties {
   switch (variant) {
     case "primary":
       return {
-        background: hovered ? COLORS.accentHover : COLORS.accent,
-        border: `1px solid ${hovered ? COLORS.accentHover : COLORS.accent}`,
+        background: hovered ? colors.accentHover : colors.accent,
+        border: `1px solid ${hovered ? colors.accentHover : colors.accent}`,
         color: "#10160b",
-        boxShadow: hovered ? SHADOW.glow(COLORS.accent) : "none",
+        boxShadow: hovered ? shadow.glow(colors.accent) : "none",
       };
     case "danger":
       return {
-        background: hovered ? COLORS.dangerBg : "transparent",
-        border: `1px solid ${hovered ? COLORS.danger : `${COLORS.danger}66`}`,
-        color: COLORS.danger,
+        background: hovered ? colors.dangerBg : "transparent",
+        border: `1px solid ${hovered ? colors.danger : `${colors.danger}66`}`,
+        color: colors.danger,
       };
     case "subtle":
       return {
-        background: hovered ? COLORS.surfaceHover : COLORS.surface,
-        border: `1px solid ${COLORS.border}`,
-        color: COLORS.text,
+        background: hovered ? colors.surfaceHover : colors.surface,
+        border: `1px solid ${colors.border}`,
+        color: colors.text,
       };
     case "ghost":
     default:
       return {
-        background: hovered ? COLORS.surfaceHover : "transparent",
-        border: `1px solid ${hovered ? COLORS.borderLight : COLORS.border}`,
-        color: hovered ? COLORS.text : COLORS.textMuted,
+        background: hovered ? colors.surfaceHover : "transparent",
+        border: `1px solid ${hovered ? colors.borderLight : colors.border}`,
+        color: hovered ? colors.text : colors.textMuted,
       };
   }
 }
@@ -120,6 +127,7 @@ export function Button({
 }: ButtonProps) {
   const [hovered, setHovered] = useState(false);
   const active = hovered && !disabled;
+  const { colors, shadow } = useTheme();
 
   return (
     <button
@@ -138,7 +146,7 @@ export function Button({
         width: fullWidth ? "100%" : undefined,
         whiteSpace: "nowrap",
         ...SIZE_STYLE[size],
-        ...variantBase(variant, active),
+        ...variantBase(variant, active, colors, shadow),
         ...style,
       }}
     >
@@ -158,6 +166,7 @@ export function IconButton({
   ...rest
 }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const [hovered, setHovered] = useState(false);
+  const { colors } = useTheme();
   return (
     <button
       {...rest}
@@ -171,9 +180,9 @@ export function IconButton({
         alignItems: "center",
         justifyContent: "center",
         borderRadius: RADIUS.sm,
-        background: hovered ? COLORS.surfaceHover : "transparent",
+        background: hovered ? colors.surfaceHover : "transparent",
         border: "none",
-        color: hovered ? COLORS.text : COLORS.textMuted,
+        color: hovered ? colors.text : colors.textMuted,
         ...style,
       }}
     >
@@ -188,7 +197,7 @@ export function IconButton({
 
 export function Chip({
   children,
-  color = COLORS.textMuted,
+  color,
   icon,
   mono,
 }: {
@@ -197,6 +206,7 @@ export function Chip({
   icon?: React.ReactNode;
   mono?: boolean;
 }) {
+  const { colors } = useTheme();
   return (
     <span style={{
       display: "inline-flex",
@@ -204,9 +214,9 @@ export function Chip({
       gap: 5,
       padding: "3px 9px",
       borderRadius: RADIUS.pill,
-      background: COLORS.surface,
-      border: `1px solid ${COLORS.border}`,
-      color,
+      background: colors.surface,
+      border: `1px solid ${colors.border}`,
+      color: color ?? colors.textMuted,
       fontSize: FONT.size.caption,
       fontWeight: 500,
       fontFamily: mono ? "'SF Mono', ui-monospace, Menlo, monospace" : undefined,
@@ -241,6 +251,7 @@ export function Modal({
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const { colors, shadow } = useTheme();
 
   // Keep the latest onClose in a ref so the effect below can stay mount-only
   // (empty deps) — depending on `onClose` directly re-ran this effect (and
@@ -287,18 +298,18 @@ export function Modal({
         style={{
           width,
           maxWidth: "100%",
-          background: COLORS.surfaceElevated,
-          border: `1px solid ${COLORS.borderLight}`,
+          background: colors.surfaceElevated,
+          border: `1px solid ${colors.borderLight}`,
           borderRadius: RADIUS.lg,
           padding: 24,
-          boxShadow: SHADOW.shadModal,
+          boxShadow: shadow.shadModal,
           animation: "modalIn 0.28s cubic-bezier(.22,1,.36,1)",
           outline: "none",
         }}
       >
         {title && (
           <h2 id={titleId} style={{
-            color: COLORS.text,
+            color: colors.text,
             fontSize: FONT.size.heading,
             fontWeight: 600,
             margin: "0 0 18px",
