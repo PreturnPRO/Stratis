@@ -199,8 +199,8 @@ export default function Projects({ onNav }: Props) {
                   {owner}
                 </div>
 
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingLeft: 16 }}>
-                  <div style={{ fontFamily: FONT.mono, fontSize: FONT.size.caption, color: colors.textMuted, textTransform: "uppercase" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingLeft: 16 }}>
+                  <div style={{ fontFamily: FONT.mono, fontSize: FONT.size.caption, color: colors.textMuted, textTransform: "uppercase", whiteSpace: "nowrap" }}>
                     {p.meetingCount} meeting{p.meetingCount === 1 ? "" : "s"} · last: {formatDate(p.lastMeetingAt)}
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
