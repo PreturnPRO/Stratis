@@ -111,7 +111,7 @@ export function NewMeetingModal({
           {lockedProject ? `New meeting — ${lockedProject.name}` : "New meeting"}
         </>
       }
-      width={420}
+      width={720}
       onClose={() => !submitting && onClose()}
       footer={
         <>
@@ -136,7 +136,8 @@ export function NewMeetingModal({
         </>
       }
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", gap: 24 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1, minWidth: 0 }}>
         {error && (
           <div
             style={{
@@ -266,7 +267,97 @@ export function NewMeetingModal({
           />
         </div>
       </div>
+
+      <MiniCalendar />
+      </div>
     </Modal>
+  );
+}
+
+// Static month-view mockup — side panel for "New meeting", frame only.
+// No date logic wired to scheduling yet; clicking just toggles a selected
+// day locally so the panel feels alive.
+function MiniCalendar() {
+  const { colors } = useTheme();
+  const [selected, setSelected] = useState<number | null>(null);
+
+  const today = new Date();
+  const monthLabel = today.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const startWeekday = firstOfMonth.getDay();
+  const cells: (number | null)[] = [
+    ...Array(startWeekday).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ];
+
+  return (
+    <div
+      style={{
+        width: 220,
+        flexShrink: 0,
+        borderLeft: `1px solid ${colors.border}`,
+        paddingLeft: 24,
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+      }}
+    >
+      <div style={{ fontSize: FONT.size.label, fontWeight: 600, color: colors.text }}>
+        {monthLabel}
+      </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(7, 1fr)",
+          gap: 4,
+          fontFamily: FONT.mono,
+          fontSize: 10,
+          color: colors.textMuted,
+          textAlign: "center",
+        }}
+      >
+        {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
+          <span key={i}>{d}</span>
+        ))}
+        {cells.map((day, i) => {
+          const isToday = day === today.getDate();
+          const isSelected = day != null && day === selected;
+          return (
+            <button
+              key={i}
+              type="button"
+              disabled={day == null}
+              onClick={() => day != null && setSelected(day)}
+              style={{
+                aspectRatio: "1",
+                border: "none",
+                borderRadius: 6,
+                background: isSelected ? colors.accent : "transparent",
+                color: day == null ? "transparent" : isSelected ? colors.onAccent : isToday ? colors.accent : colors.textMuted,
+                fontWeight: isToday || isSelected ? 700 : 400,
+                cursor: day == null ? "default" : "pointer",
+                transform: isSelected ? "scale(1.08)" : "scale(1)",
+                transition: "transform 0.15s ease, background 0.15s ease, color 0.15s ease",
+              }}
+              onMouseEnter={(e) => {
+                if (day != null && !isSelected) e.currentTarget.style.background = colors.surfaceHover;
+              }}
+              onMouseLeave={(e) => {
+                if (day != null && !isSelected) e.currentTarget.style.background = "transparent";
+              }}
+            >
+              {day ?? ""}
+            </button>
+          );
+        })}
+      </div>
+      {selected != null && (
+        <div style={{ fontSize: FONT.size.label, color: colors.textMuted }}>
+          Selected: {monthLabel.split(" ")[0]} {selected}
+        </div>
+      )}
+    </div>
   );
 }
 
