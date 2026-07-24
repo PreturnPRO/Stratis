@@ -69,8 +69,8 @@ export default function CurtainTransition({
       >
         <div style={{ color: accent, fontSize: 14, fontWeight: 700, letterSpacing: 4 }}>STRATIS</div>
         <div style={{ fontSize: "clamp(18px,2.4vw,30px)", fontWeight: 600, color: curtainText, textAlign: "center" }}>
-          The meeting runs itself.{" "}
-          <span style={{ color: accent }}>The record writes itself.</span>
+          The meeting ran by you,{" "}
+          <span style={{ color: accent }}>written for you.</span>
         </div>
         <div
           style={{

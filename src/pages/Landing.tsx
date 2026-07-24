@@ -81,11 +81,11 @@ function LiveLatency() {
   const [ms, setMs] = useState(0.4);
 
   useEffect(() => {
-    const t = setInterval(() => setMs(0.3 + Math.random() * 0.3), 2200);
+    const t = setInterval(() => setMs(0.28 + Math.random() * 0.35), 400);
     return () => clearInterval(t);
   }, []);
 
-  return <span>LATENCY {ms.toFixed(1)}s</span>;
+  return <span>LATENCY {ms.toFixed(2)}s</span>;
 }
 
 function scrollToId(id: string) {
@@ -108,9 +108,13 @@ export default function Landing({ onNavigate }: Props) {
   const card0Visible = effectiveStep >= 3
   const card1Visible = effectiveStep >= 5
   const card0Answered = effectiveStep >= 6
+  const [pastHero, setPastHero] = useState(false)
 
   return (
-    <div style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', background: colors.bg }}>
+    <div
+      style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', background: colors.bg }}
+      onScroll={(e) => setPastHero(e.currentTarget.scrollTop > window.innerHeight * 0.6)}
+    >
       {/* ── NAV ────────────────────────────────────────────────────────────── */}
       <nav
         style={{
@@ -223,11 +227,11 @@ export default function Landing({ onNavigate }: Props) {
               marginBottom: SPACE[6],
             }}
           >
-            <span>SYS.01 — LISTENING</span>
+            <span>SYS.01 - INTRODUCTION</span>
             <span style={{ width: 1, height: 10, background: colors.border }} />
             <LiveLatency />
             <span style={{ width: 1, height: 10, background: colors.border }} />
-            <span>CARDS: FACILITATOR-ONLY</span>
+            <span>STRATIS : ONLINE</span>
           </div>
 
           <h1
@@ -240,14 +244,14 @@ export default function Landing({ onNavigate }: Props) {
               margin: '0 0 20px',
             }}
           >
-            {['The', 'meeting', 'runs', 'itself.'].map((w, i) => (
+            {['The', 'meeting', 'ran', 'by', 'you,'].map((w, i) => (
               <span key={i} style={wordRevealStyle(i, reducedMotion)}>
-                {w}{i < 3 ? ' ' : ''}
+                {w}{i < 4 ? ' ' : ''}
               </span>
             ))}
             <br />
-            {['The', 'record', 'writes'].map((w, i) => (
-              <span key={i} style={{ ...wordRevealStyle(i + 4, reducedMotion), color: colors.textDim }}>
+            {['written', 'for'].map((w, i) => (
+              <span key={i} style={{ ...wordRevealStyle(i + 5, reducedMotion), color: colors.textDim }}>
                 {w}{' '}
               </span>
             ))}
@@ -260,7 +264,7 @@ export default function Landing({ onNavigate }: Props) {
                   : `${wordRevealStyle(7, reducedMotion).animation}, itselfPulse 4s ease-in-out 2.4s infinite`,
               }}
             >
-              itself.
+              you.
             </span>
           </h1>
 
@@ -273,8 +277,7 @@ export default function Landing({ onNavigate }: Props) {
               maxWidth: 560,
             }}
           >
-            Live transcript in. Facilitator-only suggestion cards out. Every decision,
-            assumption, and risk lands in the living PM document.
+            Just like every other meeting, except no one leaves on a misunderstanding ever again.
           </p>
 
           <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-start' }}>
@@ -295,11 +298,11 @@ export default function Landing({ onNavigate }: Props) {
         <div
           className="scroll-cue"
           style={{
-            position: 'absolute',
-            bottom: '15vh',
+            position: 'fixed',
+            bottom: 40,
             left: '50%',
             transform: 'translateX(-50%)',
-            zIndex: 2,
+            zIndex: 5,
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -307,6 +310,9 @@ export default function Landing({ onNavigate }: Props) {
             color: colors.textMuted,
             fontSize: FONT.size.caption,
             letterSpacing: LETTER_SPACING.wide,
+            opacity: pastHero ? 0 : 1,
+            pointerEvents: pastHero ? 'none' : 'auto',
+            transition: 'opacity 0.3s ease',
           }}
         >
           See it live

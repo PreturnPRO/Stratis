@@ -58,7 +58,7 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
   return (
     <svg
       viewBox="0 0 100 100"
-      preserveAspectRatio="none"
+      preserveAspectRatio="xMidYMid slice"
       style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible" }}
     >
       <g ref={groupRef} style={{ transition: "transform 0.6s ease-out" }}>

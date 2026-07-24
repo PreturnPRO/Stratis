@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { COLORS, FONT, LETTER_SPACING, RADIUS, SPACE } from "./constants";
 import { AuthProvider, useAuth } from "./context/AuthContext";
@@ -108,6 +108,32 @@ function AppShell() {
   const { theme, toggleTheme, colors } = useTheme();
   const [curtainState, setCurtainState] = useState<CurtainState>("idle");
   const [pendingNav, setPendingNav] = useState<{ id: string; params?: Record<string, string> } | null>(null);
+
+  // Curtain for the auth -> app transition (login/register success), reusing
+  // the same sweep used for in-app page nav. isAuthed flips synchronously
+  // when login() sets the token, so this just detects that flip and plays
+  // the curtain in/hold/out over the top of whichever branch is mounted.
+  const [authCurtain, setAuthCurtain] = useState<CurtainState>("idle");
+  const prevAuthedRef = useRef(isAuthed);
+  useEffect(() => {
+    if (!prevAuthedRef.current && isAuthed) setAuthCurtain("in");
+    prevAuthedRef.current = isAuthed;
+  }, [isAuthed]);
+
+  useEffect(() => {
+    if (authCurtain === "in") {
+      const t = setTimeout(() => setAuthCurtain("hold"), 480);
+      return () => clearTimeout(t);
+    }
+    if (authCurtain === "hold") {
+      const t = setTimeout(() => setAuthCurtain("out"), 240);
+      return () => clearTimeout(t);
+    }
+    if (authCurtain === "out") {
+      const t = setTimeout(() => setAuthCurtain("idle"), 600);
+      return () => clearTimeout(t);
+    }
+  }, [authCurtain]);
 
   type HistoryEntry = { page: AppPage; params: Record<string, string> };
   const [history, setHistory] = useState<HistoryEntry[]>([initialEntry]);
@@ -226,6 +252,7 @@ function AppShell() {
       >
         <Preloader onDone={() => {}} theme={theme} />
         <CustomCursor calmZone={false} theme={theme} />
+        <CurtainTransition state={authCurtain} routeLabel="DASHBOARD" onMidpoint={() => {}} theme={theme} />
         {authPage === "landing" && <Landing onNavigate={setAuthPage} />}
         {authPage === "login" && (
           <Login
@@ -257,8 +284,8 @@ function AppShell() {
       }}
     >
       <CurtainTransition
-        state={curtainState}
-        routeLabel={(PAGE_LABELS[pendingNav?.id ?? active] ?? active).toUpperCase()}
+        state={curtainState !== "idle" ? curtainState : authCurtain}
+        routeLabel={curtainState !== "idle" ? (PAGE_LABELS[pendingNav?.id ?? active] ?? active).toUpperCase() : "DASHBOARD"}
         onMidpoint={() => {}}
         theme={theme}
       />
