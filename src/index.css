@@ -309,6 +309,11 @@ input:focus-visible, textarea:focus-visible {
   50% { text-shadow: 0 0 18px currentColor; }
 }
 
+@keyframes constellationBreathe {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;

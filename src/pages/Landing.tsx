@@ -180,7 +180,7 @@ export default function Landing({ onNavigate }: Props) {
         className="landing-hero"
         style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: colors.bg }}
       >
-        <AmbientBackground theme={theme} />
+        <AmbientBackground theme={theme} constellation />
 
         <div
           style={{
