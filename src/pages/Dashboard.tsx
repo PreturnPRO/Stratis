@@ -444,6 +444,8 @@ export default function Dashboard({ onNav }: DashboardProps) {
                     color: colors.text,
                     fontSize: FONT.size.subheading,
                     fontWeight: 600,
+                    textTransform: "uppercase",
+                    letterSpacing: LETTER_SPACING.wide,
                     margin: 0,
                   }}
                 >
@@ -522,6 +524,8 @@ export default function Dashboard({ onNav }: DashboardProps) {
                   color: colors.text,
                   fontSize: FONT.size.subheading,
                   fontWeight: 600,
+                  textTransform: "uppercase",
+                  letterSpacing: LETTER_SPACING.wide,
                   margin: "0 0 16px",
                 }}
               >

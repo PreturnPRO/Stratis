@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { COLORS, FONT, RADIUS, SPACE } from "./constants";
+import { COLORS, FONT, LETTER_SPACING, RADIUS, SPACE } from "./constants";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Sidebar from "./components/Sidebar";
 import CurtainTransition, { type CurtainState } from "./components/CurtainTransition";
@@ -25,6 +25,16 @@ const PAGE_LABELS: Record<string, string> = {
   meeting: "Meeting",
   summary: "Summary",
   document: "Document",
+};
+
+// Per-route SYS codes per the handoff's route table (00 auth / 02 dashboard /
+// 03 meeting / 04 projects / 05 summary / 06 document).
+const PAGE_SYS: Record<string, string> = {
+  dashboard: "SYS.02",
+  meeting: "SYS.03",
+  projects: "SYS.04",
+  summary: "SYS.05",
+  document: "SYS.06",
 };
 
 function renderPage(
@@ -352,6 +362,19 @@ function AppShell() {
               );
             })}
           </div>
+
+          <span
+            style={{
+              marginLeft: "auto",
+              color: COLORS.textDim,
+              fontFamily: FONT.mono,
+              fontSize: FONT.size.caption,
+              letterSpacing: LETTER_SPACING.wide,
+              flexShrink: 0,
+            }}
+          >
+            {PAGE_SYS[active] ?? ""}
+          </span>
         </header>
 
         <main
