@@ -37,6 +37,26 @@ const PAGE_SYS: Record<string, string> = {
   document: "SYS.06",
 };
 
+function LiveClock({ colors }: { colors: { accent: string } }) {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000 * 15);
+    return () => clearInterval(t);
+  }, []);
+
+  const time = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(now);
+  const tz = new Intl.DateTimeFormat(undefined, { timeZoneName: "short" })
+    .formatToParts(now)
+    .find((p) => p.type === "timeZoneName")?.value ?? "";
+
+  return (
+    <span>
+      {tz} <span style={{ color: colors.accent }}>→</span> {time}
+    </span>
+  );
+}
+
 function renderPage(
   active: string,
   navParams: Record<string, string>,
@@ -366,13 +386,17 @@ function AppShell() {
           <span
             style={{
               marginLeft: "auto",
-              color: COLORS.textDim,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 10,
+              color: colors.textDim,
               fontFamily: FONT.mono,
               fontSize: FONT.size.caption,
               letterSpacing: LETTER_SPACING.wide,
               flexShrink: 0,
             }}
           >
+            <LiveClock colors={colors} />
             {PAGE_SYS[active] ?? ""}
           </span>
         </header>
