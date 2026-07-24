@@ -7,6 +7,7 @@
 // re-extract can't clobber human confirmations from the checkpoint.
 import { db } from "../db/database";
 import { newId, now } from "./ids";
+import { normalizeText } from "./textSimilarity";
 import { extractDecisionsCall } from "@ai/index";
 import type { DecisionRecord, DecisionStatus } from "@shared/types";
 
@@ -26,13 +27,6 @@ interface DecisionRow {
   dismissed: boolean;
   created_at: string;
   updated_at: string;
-}
-
-// Mirrors normalizeQuestion in realtime/suggestions.ts — same dedup problem,
-// same tolerance: whitespace, case, and trailing punctuation don't make two
-// decisions different.
-function normalizeDecisionText(text: string): string {
-  return text.trim().toLowerCase().replace(/\s+/g, " ").replace(/[?.!]+$/g, "");
 }
 
 function rowToRecord(r: DecisionRow): DecisionRecord {
@@ -148,9 +142,11 @@ export async function extractAndSaveDecisions(sessionId: string): Promise<Decisi
   // so equality is too weak — either text containing the other counts as the
   // same decision. A full paraphrase can still slip through; the facilitator
   // sees it and can dismiss.
-  const confirmedTexts = facilitatorRows.map((r) => normalizeDecisionText(r.text));
+  // normalizeText (shared with realtime/suggestions.ts dedup): whitespace,
+  // case, and trailing punctuation don't make two decisions different.
+  const confirmedTexts = facilitatorRows.map((r) => normalizeText(r.text));
   const isConfirmedDuplicate = (text: string): boolean => {
-    const norm = normalizeDecisionText(text);
+    const norm = normalizeText(text);
     return confirmedTexts.some((c) => norm.includes(c) || c.includes(norm));
   };
 
