@@ -404,7 +404,15 @@ function AppShell() {
         <main
           style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}
         >
-          <div style={{ flex: 1, overflow: "hidden", height: "100%" }}>
+          <div
+            key={active}
+            style={{
+              flex: 1,
+              overflow: "hidden",
+              height: "100%",
+              animation: "slideUp 0.32s cubic-bezier(.16,1,.3,1)",
+            }}
+          >
             {renderPage(active, navParams, handleNav)}
           </div>
         </main>
