@@ -55,6 +55,14 @@ export const env = {
       | "typhoon"
       | "gemini",
     timeoutMs: Number(process.env.AI_TIMEOUT_MS ?? 10000),
+    // Minimum gap between live-card AI calls per session. A busy meeting emits
+    // a transcript row every few seconds; without pacing the live loop fires a
+    // request per row and burns the provider's requests-per-minute quota
+    // (Gemini free tier: 15/min, 500/day). Rows arriving inside the gap
+    // coalesce — the next call re-reads the recent window, so nothing is lost;
+    // it rides the next call. Raise to cut request count (at the cost of card
+    // latency), lower toward 0 for the old fire-per-row behaviour.
+    minCallIntervalMs: Number(process.env.AI_MIN_CALL_INTERVAL_MS ?? 15000),
     groq: {
       apiKey: process.env.GROQ_API_KEY ?? "",
       model: process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile",
@@ -73,6 +81,11 @@ export const env = {
     gemini: {
       apiKey: process.env.GEMINI_API_KEY ?? "",
       model: process.env.GEMINI_MODEL ?? "gemini-2.5-flash",
+      // Overflow model. Google's endpoint intermittently returns 500/503 when
+      // the primary model is overloaded — the provider retries the same request
+      // once on this lighter model before failing. Empty string disables the
+      // fallback (single attempt). Set distinct from GEMINI_MODEL to have effect.
+      fallbackModel: process.env.GEMINI_MODEL_FALLBACK ?? "gemini-2.5-flash-lite",
       baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
     },
   },
