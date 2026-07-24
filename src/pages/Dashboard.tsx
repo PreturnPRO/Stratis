@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FONT, LETTER_SPACING, TRANSITION, SPACE } from "../constants";
+import { FONT, LETTER_SPACING, SPACE } from "../constants";
 import { Button } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { NewMeetingModal } from "../components/NewMeetingModal";
@@ -83,123 +83,235 @@ function formatDate(value?: string | null): string {
   }).format(d);
 }
 
-// Small hover-lift for otherwise-flat interactive rows — same hover-via-state
-// idiom as Button/IconButton in ui.tsx, just applied locally here. The resting
-// boxShadow/borderColor come from the caller's `style`; only the hover-state
-// border/lift are computed here.
-function HoverLift({
-  as = "div",
-  style,
-  hoverBorderColor,
-  children,
-  ...rest
-}: {
-  as?: "div" | "button";
-  style?: React.CSSProperties;
-  hoverBorderColor?: string;
-  children: React.ReactNode;
-} & React.HTMLAttributes<HTMLElement>) {
-  const [hovered, setHovered] = useState(false);
-  const Comp = as as any;
 
-  return (
-    <Comp
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        ...style,
-        borderColor: hovered ? (hoverBorderColor ?? style?.borderColor) : style?.borderColor,
-        transform: hovered ? "translateY(-2px)" : "translateY(0)",
-        transition: `transform ${TRANSITION.springSoft}, box-shadow ${TRANSITION.base}, border-color ${TRANSITION.base}`,
-      }}
-      {...rest}
-    >
-      {children}
-    </Comp>
-  );
-}
-
-// Quick-notifier stat card — pulsing/plain dot, count + label, optional
-// subline, clickable when there's somewhere to navigate to.
-function StatCard({
+// Single reminder pill combining upcoming meetings + recent summaries.
+// Hover reveals a dropdown with both lists — replaces the old two-stat-card
+// + two-panel layout so the dashboard leads with one glanceable notifier.
+function ReminderCard({
   colors,
   shadow,
-  label,
-  count,
-  subline,
-  dotColor,
-  pulsing,
-  accentBorder,
-  onClick,
+  loading,
+  meetings,
+  summaries,
+  onRefresh,
+  onStartMeeting,
+  onOpenSummary,
 }: {
   colors: Colors;
   shadow: Shadow;
-  label: string;
-  count: number;
-  subline?: string;
-  dotColor: string;
-  pulsing?: boolean;
-  accentBorder?: boolean;
-  onClick?: () => void;
+  loading: boolean;
+  meetings: DashboardMeeting[];
+  summaries: DashboardSummary[];
+  onRefresh: () => void;
+  onStartMeeting: (m: DashboardMeeting) => void;
+  onOpenSummary: (s: DashboardSummary) => void;
 }) {
+  const [open, setOpen] = useState(false);
+  const total = meetings.length + summaries.length;
+  const nextMeeting = meetings[0];
+  const latestSummary = summaries[0];
+
+  const subline = nextMeeting
+    ? `Next: ${formatDate(nextMeeting.scheduledAt ?? nextMeeting.time)} — ${nextMeeting.title}`
+    : latestSummary
+    ? `New: ${formatDate(latestSummary.date)} — ${latestSummary.title}`
+    : undefined;
+
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={!onClick}
-      style={{
-        textAlign: "left",
-        background: colors.surfaceElevated,
-        border: `1px solid ${accentBorder ? colors.accentDim : colors.border}`,
-        borderRadius: 12,
-        padding: "16px 18px",
-        boxShadow: accentBorder ? `${shadow.shadCard}, ${shadow.glow(colors.accent)}` : shadow.shadCard,
-        cursor: onClick ? "pointer" : "default",
-        display: "flex",
-        flexDirection: "column",
-        gap: 6,
-      }}
+    <div
+      style={{ position: "relative", marginBottom: 24, maxWidth: 420 }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ position: "relative", display: "inline-flex", width: 8, height: 8, flexShrink: 0 }}>
-          {pulsing && (
+      <div
+        style={{
+          textAlign: "left",
+          background: colors.surfaceElevated,
+          border: `1px solid ${colors.accentDim}`,
+          borderRadius: 12,
+          padding: "16px 18px",
+          boxShadow: `${shadow.shadCard}, ${shadow.glow(colors.accent)}`,
+          display: "flex",
+          flexDirection: "column",
+          gap: 6,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ position: "relative", display: "inline-flex", width: 8, height: 8, flexShrink: 0 }}>
+            {total > 0 && (
+              <span
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  borderRadius: "50%",
+                  background: colors.accent,
+                  animation: "recPulse 1.5s ease-out infinite",
+                }}
+              />
+            )}
             <span
               style={{
-                position: "absolute",
-                inset: 0,
+                position: "relative",
+                width: 8,
+                height: 8,
                 borderRadius: "50%",
-                background: dotColor,
-                animation: "recPulse 1.5s ease-out infinite",
+                background: colors.accent,
               }}
             />
-          )}
+          </span>
           <span
             style={{
-              position: "relative",
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              background: dotColor,
+              fontFamily: FONT.mono,
+              fontSize: FONT.size.label,
+              fontWeight: 600,
+              letterSpacing: LETTER_SPACING.wide,
+              color: colors.text,
+              textTransform: "uppercase",
             }}
-          />
-        </span>
-        <span
+          >
+            {total} REMINDER{total === 1 ? "" : "S"}
+          </span>
+        </div>
+        {subline && (
+          <div style={{ fontSize: FONT.size.body, color: colors.textMuted }}>{subline}</div>
+        )}
+      </div>
+
+      {open && (
+        <div
           style={{
-            fontFamily: FONT.mono,
-            fontSize: FONT.size.label,
-            fontWeight: 600,
-            letterSpacing: LETTER_SPACING.wide,
-            color: colors.text,
-            textTransform: "uppercase",
+            position: "absolute",
+            top: "100%",
+            left: 0,
+            right: 0,
+            marginTop: 6,
+            zIndex: 5,
+            background: colors.surfaceElevated,
+            border: `1px solid ${colors.border}`,
+            borderRadius: 12,
+            boxShadow: shadow.shadCard,
+            padding: 16,
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
           }}
         >
-          {count} {label}
-        </span>
-      </div>
-      {subline && (
-        <div style={{ fontSize: FONT.size.body, color: colors.textMuted }}>{subline}</div>
+          <div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 10,
+              }}
+            >
+              <span
+                style={{
+                  fontFamily: FONT.mono,
+                  fontSize: FONT.size.caption,
+                  letterSpacing: LETTER_SPACING.wide,
+                  color: colors.textMuted,
+                  textTransform: "uppercase",
+                }}
+              >
+                Upcoming meetings
+              </span>
+              <Button variant="ghost" onClick={onRefresh}>
+                Refresh
+              </Button>
+            </div>
+            {loading ? (
+              <LoadingState count={2} />
+            ) : meetings.length === 0 ? (
+              <EmptyState message="No meetings yet. Create your first meeting." />
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: SPACE[2] }}>
+                {meetings.map((m) => (
+                  <div
+                    key={m.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      padding: "8px 4px",
+                      borderBottom: `1px solid ${colors.border}`,
+                    }}
+                  >
+                    <div>
+                      <div style={{ color: colors.text, fontSize: FONT.size.body, fontWeight: 500 }}>
+                        {m.title}
+                      </div>
+                      <div style={{ fontFamily: FONT.mono, color: colors.textMuted, fontSize: FONT.size.caption }}>
+                        {m.project ?? m.projectId ?? "Project"} · {formatDate(m.scheduledAt ?? m.time)}
+                      </div>
+                    </div>
+                    <Button variant="primary" onClick={() => onStartMeeting(m)}>
+                      {m.activeSession ? "Resume" : "Start"}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div>
+            <div
+              style={{
+                fontFamily: FONT.mono,
+                fontSize: FONT.size.caption,
+                letterSpacing: LETTER_SPACING.wide,
+                color: colors.textMuted,
+                textTransform: "uppercase",
+                marginBottom: 10,
+              }}
+            >
+              Recent summaries
+            </div>
+            {loading ? (
+              <LoadingState count={2} />
+            ) : summaries.length === 0 ? (
+              <EmptyState message="No summaries yet. End a meeting to generate one." />
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column" }}>
+                {summaries.map((s, i) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => onOpenSummary(s)}
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      width: "100%",
+                      textAlign: "left",
+                      background: "transparent",
+                      border: "none",
+                      borderBottom: i === summaries.length - 1 ? "none" : `1px solid ${colors.border}`,
+                      padding: "8px 4px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div>
+                      <div style={{ color: colors.text, fontSize: FONT.size.body, fontWeight: 500 }}>
+                        {s.title}
+                      </div>
+                      <div style={{ fontSize: FONT.size.label, color: colors.textMuted }}>
+                        {s.project ?? "Project summary"}
+                      </div>
+                    </div>
+                    <span style={{ fontFamily: FONT.mono, color: colors.textMuted, fontSize: FONT.size.caption, whiteSpace: "nowrap" }}>
+                      {formatDate(s.date)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       )}
-    </button>
+    </div>
   );
 }
 
@@ -308,9 +420,6 @@ export default function Dashboard({ onNav }: DashboardProps) {
     if (sessionId) setShowNewMeeting(false);
   };
 
-  const nextMeeting = meetings[0];
-  const latestSummary = summaries[0];
-
   const todayLabel = new Intl.DateTimeFormat(undefined, {
     weekday: "short",
     month: "short",
@@ -354,47 +463,16 @@ export default function Dashboard({ onNav }: DashboardProps) {
           </div>
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-            gap: 16,
-            marginBottom: 24,
-          }}
-        >
-          <StatCard
-            colors={colors}
-            shadow={shadow}
-            label="UPCOMING"
-            count={meetings.length}
-            subline={
-              nextMeeting
-                ? `Next: ${formatDate(nextMeeting.scheduledAt ?? nextMeeting.time)} — ${nextMeeting.title}`
-                : undefined
-            }
-            dotColor={colors.accent}
-            pulsing
-            accentBorder
-            onClick={nextMeeting ? () => void handleStartExisting(nextMeeting) : undefined}
-          />
-          <StatCard
-            colors={colors}
-            shadow={shadow}
-            label="SUMMARIES"
-            count={summaries.length}
-            subline={
-              latestSummary
-                ? `New: ${formatDate(latestSummary.date)} — ${latestSummary.title}`
-                : undefined
-            }
-            dotColor={colors.cyan}
-            onClick={
-              latestSummary
-                ? () => onNav?.("summary", { sessionId: latestSummary.sessionId ?? latestSummary.id })
-                : undefined
-            }
-          />
-        </div>
+        <ReminderCard
+          colors={colors}
+          shadow={shadow}
+          loading={loading}
+          meetings={meetings}
+          summaries={summaries}
+          onRefresh={loadDashboard}
+          onStartMeeting={(m) => void handleStartExisting(m)}
+          onOpenSummary={(s) => onNav?.("summary", { sessionId: s.sessionId ?? s.id })}
+        />
 
         <div data-magnet style={{ display: "inline-block", marginBottom: 40 }}>
           <Button variant="primary" onClick={() => setShowNewMeeting(true)}>
@@ -418,177 +496,6 @@ export default function Dashboard({ onNav }: DashboardProps) {
           </div>
         )}
 
-        {loading ? (
-          <LoadingState count={4} />
-        ) : (
-          <div
-            className="dashboard-grid"
-            style={{
-              display: "grid",
-              gap: 32,
-              alignItems: "start",
-            }}
-          >
-            {/* Upcoming Meetings */}
-            <div>
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  marginBottom: 16,
-                }}
-              >
-                <h2
-                  style={{
-                    color: colors.text,
-                    fontSize: FONT.size.subheading,
-                    fontWeight: 600,
-                    textTransform: "uppercase",
-                    letterSpacing: LETTER_SPACING.wide,
-                    margin: 0,
-                  }}
-                >
-                  Upcoming meetings
-                </h2>
-                <Button variant="ghost" onClick={loadDashboard}>
-                  Refresh
-                </Button>
-              </div>
-              {meetings.length === 0 ? (
-                <EmptyState message="No meetings yet. Create your first meeting." />
-              ) : (
-                <div
-                  style={{ display: "flex", flexDirection: "column", gap: SPACE[2.5] }}
-                >
-                  {meetings.map((m) => (
-                    <HoverLift
-                      key={m.id}
-                      hoverBorderColor={colors.borderLight}
-                      style={{
-                        background: colors.surface,
-                        border: `1px solid ${colors.border}`,
-                        borderRadius: 12,
-                        padding: "16px 18px",
-                        boxShadow: shadow.shadCard,
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "flex-start",
-                          justifyContent: "space-between",
-                          gap: 16,
-                        }}
-                      >
-                        <div>
-                          <div
-                            style={{
-                              color: colors.text,
-                              fontSize: FONT.size.body,
-                              fontWeight: 500,
-                              marginBottom: SPACE[1.5],
-                            }}
-                          >
-                            {m.title}
-                          </div>
-                          <div
-                            style={{
-                              fontFamily: FONT.mono,
-                              color: colors.textMuted,
-                              fontSize: FONT.size.caption,
-                            }}
-                          >
-                            {m.project ?? m.projectId ?? "Project"} ·{" "}
-                            {formatDate(m.scheduledAt ?? m.time)}
-                          </div>
-                        </div>
-
-                        <Button
-                          variant="primary"
-                          onClick={() => void handleStartExisting(m)}
-                        >
-                          {m.activeSession ? "Resume" : "Start"}
-                        </Button>
-                      </div>
-                    </HoverLift>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Recent Summaries */}
-            <div>
-              <h2
-                style={{
-                  color: colors.text,
-                  fontSize: FONT.size.subheading,
-                  fontWeight: 600,
-                  textTransform: "uppercase",
-                  letterSpacing: LETTER_SPACING.wide,
-                  margin: "0 0 16px",
-                }}
-              >
-                Recent summaries
-              </h2>
-
-              {summaries.length === 0 ? (
-                <EmptyState message="No summaries yet. End a meeting to generate one." />
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column" }}>
-                  {summaries.map((s, i) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() =>
-                        onNav?.("summary", { sessionId: s.sessionId ?? s.id })
-                      }
-                      style={{
-                        display: "flex",
-                        alignItems: "flex-start",
-                        justifyContent: "space-between",
-                        gap: 16,
-                        width: "100%",
-                        textAlign: "left",
-                        background: "transparent",
-                        border: "none",
-                        borderBottom: i === summaries.length - 1 ? "none" : `1px solid ${colors.border}`,
-                        padding: "14px 4px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <div>
-                        <div
-                          style={{
-                            color: colors.text,
-                            fontSize: FONT.size.body,
-                            fontWeight: 500,
-                            marginBottom: 4,
-                          }}
-                        >
-                          {s.title}
-                        </div>
-                        <div style={{ fontSize: FONT.size.label, color: colors.textMuted }}>
-                          {s.project ?? "Project summary"}
-                        </div>
-                      </div>
-                      <span
-                        style={{
-                          fontFamily: FONT.mono,
-                          color: colors.textMuted,
-                          fontSize: FONT.size.caption,
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {formatDate(s.date)}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
 
         <NewMeetingModal
           open={showNewMeeting}
