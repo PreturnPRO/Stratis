@@ -9,8 +9,9 @@ import {
   Moon,
   type LucideIcon,
 } from "lucide-react";
-import { COLORS, NAV_ITEMS, FONT, RADIUS, SPACE } from "../constants";
+import { NAV_ITEMS, FONT, RADIUS, SPACE } from "../constants";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../hooks/useTheme";
 
 // ─── Icon registry ─────────────────────────────────────────────────────────────
 
@@ -25,7 +26,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
 
 // Kept independent from the semantic COLORS palette (name-hash lookup, not
 // status meaning), but must not visually collide with it — avoid shades near
-// COLORS.danger and COLORS.teal.
+// colors.danger and colors.teal.
 const AVATAR_COLORS = [
   "#a8556c", "#2e86c1", "#1a7a4a", "#8e44ad",
   "#d35400", "#5c7a89", "#2c3e50", "#7f8c8d",
@@ -59,16 +60,17 @@ export default function Sidebar({
   onToggleTheme: () => void;
 }) {
   const { user } = useAuth();
+  const { colors } = useTheme();
 
   const displayName = user?.name ?? "Guest";
   const initials    = nameToInitials(displayName);
-  const avatarColor = user ? nameToColor(user.name) : COLORS.textDim;
+  const avatarColor = user ? nameToColor(user.name) : colors.textDim;
 
   return (
     <nav aria-label="Primary" style={{
       width: 64,
-      background: COLORS.bg,
-      borderRight: `1px solid ${COLORS.border}`,
+      background: colors.bg,
+      borderRight: `1px solid ${colors.border}`,
       display: "flex",
       flexDirection: "column",
       alignItems: "center",
@@ -84,7 +86,7 @@ export default function Sidebar({
         style={{
           width: 44, height: 44, marginBottom: 16,
           display: "flex", alignItems: "center", justifyContent: "center",
-          color: COLORS.accent, background: "transparent", border: "none",
+          color: colors.accent, background: "transparent", border: "none",
           cursor: "pointer", flexShrink: 0,
         }}
       >
@@ -106,10 +108,10 @@ export default function Sidebar({
               onClick={() => onNav(item.id)}
               style={{
                 width: 56, height: 56, borderRadius: RADIUS.lg,
-                background: isActive ? COLORS.surfaceHover : "transparent",
+                background: isActive ? colors.surfaceHover : "transparent",
                 border: "none", cursor: "pointer",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                color: isActive ? COLORS.accent : COLORS.textDim,
+                color: isActive ? colors.accent : colors.textDim,
                 transition: "all 0.15s",
               }}
             >
@@ -123,7 +125,7 @@ export default function Sidebar({
               <div style={{
                 position: "absolute", top: 8, right: 8,
                 width: 14, height: 14, borderRadius: "50%",
-                background: COLORS.red, fontSize: FONT.size.micro, fontWeight: 700,
+                background: colors.red, fontSize: FONT.size.micro, fontWeight: 700,
                 color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
                 pointerEvents: "none",
               }}>
@@ -143,7 +145,7 @@ export default function Sidebar({
           style={{
             width: 44, height: 44, borderRadius: 8,
             background: "transparent", border: "none",
-            color: COLORS.textDim, cursor: "pointer",
+            color: colors.textDim, cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "center",
           }}
         >
@@ -170,7 +172,7 @@ export default function Sidebar({
             style={{
               width: 44, height: 44, borderRadius: 8,
               background: "transparent", border: "none",
-              color: COLORS.textDim, cursor: "pointer",
+              color: colors.textDim, cursor: "pointer",
               display: "flex", alignItems: "center", justifyContent: "center",
               transition: "color 0.15s",
             }}
