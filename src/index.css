@@ -325,6 +325,11 @@ input:focus-visible, textarea:focus-visible {
   50% { opacity: 1; }
 }
 
+@keyframes constellationGlow {
+  0%, 100% { opacity: 0.5; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;

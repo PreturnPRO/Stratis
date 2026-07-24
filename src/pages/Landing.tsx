@@ -77,6 +77,17 @@ function wordRevealStyle(index: number, reducedMotion: boolean): CSSProperties {
   }
 }
 
+function LiveLatency() {
+  const [ms, setMs] = useState(0.4);
+
+  useEffect(() => {
+    const t = setInterval(() => setMs(0.3 + Math.random() * 0.3), 2200);
+    return () => clearInterval(t);
+  }, []);
+
+  return <span>LATENCY {ms.toFixed(1)}s</span>;
+}
+
 function scrollToId(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
@@ -180,7 +191,7 @@ export default function Landing({ onNavigate }: Props) {
         className="landing-hero"
         style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: colors.bg }}
       >
-        <AmbientBackground theme={theme} constellation />
+        <AmbientBackground theme={theme} constellation reducedMotion={reducedMotion} />
 
         <div
           style={{
@@ -197,12 +208,13 @@ export default function Landing({ onNavigate }: Props) {
           <div aria-hidden style={{ position: 'absolute', left: '50%', top: -40, bottom: -40, width: 1, background: colors.border }} />
           <div aria-hidden style={{ position: 'absolute', left: '100%', top: -40, bottom: -40, width: 1, background: colors.border }} />
 
-          {/* HUD readout row */}
+          {/* HUD readout row — coordinate readouts moved into the
+              constellation itself (multiple, tied to real point positions,
+              placed clear of this text column) rather than one static value here. */}
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between',
               gap: 18,
               color: colors.textDim,
               fontFamily: FONT.mono,
@@ -211,14 +223,11 @@ export default function Landing({ onNavigate }: Props) {
               marginBottom: SPACE[6],
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
-              <span>SYS.01 — LISTENING</span>
-              <span style={{ width: 1, height: 10, background: colors.border }} />
-              <span>LATENCY 0.4s</span>
-              <span style={{ width: 1, height: 10, background: colors.border }} />
-              <span>CARDS: FACILITATOR-ONLY</span>
-            </div>
-            <span>18.7861° N, 98.9847° E</span>
+            <span>SYS.01 — LISTENING</span>
+            <span style={{ width: 1, height: 10, background: colors.border }} />
+            <LiveLatency />
+            <span style={{ width: 1, height: 10, background: colors.border }} />
+            <span>CARDS: FACILITATOR-ONLY</span>
           </div>
 
           <h1

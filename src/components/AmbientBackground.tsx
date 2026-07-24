@@ -1,50 +1,139 @@
-// Fixed point set (viewBox 0-100) + the edges connecting them — deterministic,
-// not random-per-render, so layout doesn't shift between mounts.
+import { useEffect, useRef } from "react";
+
+// Fixed point set (viewBox 0-100) + edges — deterministic, not random-per-
+// render, so layout doesn't shift between mounts. Biased toward the edges/
+// corners, leaving the center-left column (where the hero text sits) clear.
 const CONSTELLATION_POINTS: [number, number][] = [
-  [8, 15], [22, 40], [40, 12], [58, 30], [76, 10],
-  [88, 38], [65, 55], [30, 65], [12, 78], [50, 85], [85, 82],
+  [4, 10], [8, 28], [6, 48], [10, 68], [5, 86],
+  [22, 8], [18, 92],
+  [38, 6], [34, 94],
+  [56, 10], [52, 90],
+  [70, 6], [66, 22], [72, 78], [68, 94],
+  [84, 14], [90, 32], [86, 50], [92, 68], [88, 84],
+  [98, 22], [97, 60],
 ];
 const CONSTELLATION_EDGES: [number, number][] = [
-  [0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [3, 6], [6, 7], [1, 7],
-  [7, 8], [6, 9], [9, 10], [5, 6],
+  [0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 7], [7, 9], [9, 11],
+  [11, 12], [12, 15], [15, 16], [16, 17], [17, 18], [18, 19],
+  [4, 6], [6, 8], [8, 10], [10, 13], [13, 14], [14, 19],
+  [16, 20], [18, 21], [12, 20],
 ];
 
-// Trionn.com research: thin animated lines connecting points across the
-// viewport. Opt-in (Landing only) — SVG + CSS opacity breathing, no
-// canvas/rAF, so it inherits the global prefers-reduced-motion collapse.
-function Constellation({ theme }: { theme: "dark" | "light" }) {
-  const stroke = theme === "light" ? "rgba(60,56,36,.14)" : "rgba(255,255,255,.10)";
+// Points safe for a coordinate readout label — away from the hero text
+// column and from each other.
+const COORD_POINT_INDICES = [16, 19, 7];
+
+function formatCoord(x: number, y: number): string {
+  // Cosmetic only — not real geolocation, just decorative HUD flavor tied to
+  // the point's own position in the viewBox.
+  const lat = (18 + y * 0.09).toFixed(4);
+  const lon = (98 + x * 0.02).toFixed(4);
+  return `${lat}° N, ${lon}° E`;
+}
+
+// Trionn.com research: thin animated lines connecting glowing points across
+// the viewport, with a subtle mouse-parallax tilt. SVG + CSS + a throttled
+// mousemove transform (no rAF loop) — inherits the global
+// prefers-reduced-motion collapse for the breathe animation; the parallax
+// itself is JS-driven so it's explicitly guarded by reducedMotion.
+function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; reducedMotion: boolean }) {
+  const groupRef = useRef<SVGGElement>(null);
+
+  useEffect(() => {
+    if (reducedMotion) return;
+    const onMove = (e: MouseEvent) => {
+      const nx = (e.clientX / window.innerWidth - 0.5) * 2; // -1..1
+      const ny = (e.clientY / window.innerHeight - 0.5) * 2;
+      groupRef.current?.style.setProperty("transform", `translate(${nx * -1.4}px, ${ny * -1}px)`);
+    };
+    window.addEventListener("mousemove", onMove);
+    return () => window.removeEventListener("mousemove", onMove);
+  }, [reducedMotion]);
+
+  const stroke = theme === "light" ? "rgba(60,56,36,.16)" : "rgba(255,255,255,.13)";
+  const dot = theme === "light" ? "rgba(84,113,58,.55)" : "rgba(143,174,109,.75)";
+  const dotHalo = theme === "light" ? "rgba(84,113,58,.18)" : "rgba(143,174,109,.22)";
+  const coordColor = theme === "light" ? "rgba(60,56,36,.5)" : "rgba(255,255,255,.42)";
+
   return (
     <svg
       viewBox="0 0 100 100"
       preserveAspectRatio="none"
-      style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible" }}
     >
-      {CONSTELLATION_EDGES.map(([a, b], i) => {
-        const [x1, y1] = CONSTELLATION_POINTS[a];
-        const [x2, y2] = CONSTELLATION_POINTS[b];
-        return (
-          <line
+      <g ref={groupRef} style={{ transition: "transform 0.6s ease-out" }}>
+        {CONSTELLATION_EDGES.map(([a, b], i) => {
+          const [x1, y1] = CONSTELLATION_POINTS[a];
+          const [x2, y2] = CONSTELLATION_POINTS[b];
+          return (
+            <line
+              key={i}
+              x1={x1} y1={y1} x2={x2} y2={y2}
+              stroke={stroke}
+              strokeWidth={0.08}
+              style={{ animation: `constellationBreathe ${6 + (i % 4)}s ease-in-out ${i * 0.25}s infinite` }}
+            />
+          );
+        })}
+        {CONSTELLATION_POINTS.map(([x, y], i) => (
+          <g
             key={i}
-            x1={x1} y1={y1} x2={x2} y2={y2}
-            stroke={stroke}
-            strokeWidth={0.08}
-            style={{ animation: `constellationBreathe ${6 + (i % 4)}s ease-in-out ${i * 0.3}s infinite` }}
-          />
+            style={{
+              transformBox: "fill-box",
+              transformOrigin: "center",
+              animation: `constellationGlow ${5 + (i % 5)}s ease-in-out ${i * 0.2}s infinite`,
+            }}
+          >
+            <circle cx={x} cy={y} r={1.4} fill={dotHalo} />
+            <circle cx={x} cy={y} r={0.35} fill={dot} />
+          </g>
+        ))}
+      </g>
+      {COORD_POINT_INDICES.map((idx, i) => {
+        const [x, y] = CONSTELLATION_POINTS[idx];
+        return (
+          <text
+            key={i}
+            x={x + 1.6}
+            y={y + 0.6}
+            fontSize={1.6}
+            fontFamily="'SF Mono', ui-monospace, Menlo, monospace"
+            fill={coordColor}
+          >
+            {formatCoord(x, y)}
+          </text>
         );
       })}
     </svg>
   );
 }
 
+// Light theme has no dark backdrop for glowing lines to read against, so it
+// gets a different subtle texture instead: a soft dot-matrix (a step down
+// from the linear grid, evoking paper/blueprint rather than "space").
+function DotMatrix() {
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        backgroundImage: "radial-gradient(rgba(60,56,36,.10) 1px, transparent 1px)",
+        backgroundSize: "16px 16px",
+      }}
+    />
+  );
+}
+
 export default function AmbientBackground({
   theme,
   constellation = false,
+  reducedMotion = false,
 }: {
   theme: "dark" | "light";
   constellation?: boolean;
+  reducedMotion?: boolean;
 }) {
-  const grid = theme === "light" ? "rgba(60,56,36,.045)" : "rgba(255,255,255,.028)";
+  const grid = theme === "light" ? "rgba(60,56,36,.02)" : "rgba(255,255,255,.014)";
   const glow = theme === "light" ? "rgba(84,113,58,.10)" : "rgba(143,174,109,.10)";
   const glow2 = theme === "light" ? "rgba(23,127,156,.06)" : "rgba(42,179,212,.06)";
   const bg = theme === "light" ? "#f6f4ee" : "#09090b";
@@ -86,7 +175,7 @@ export default function AmbientBackground({
           animation: "ambB 28s ease-in-out infinite alternate",
         }}
       />
-      {constellation && <Constellation theme={theme} />}
+      {constellation && (theme === "light" ? <DotMatrix /> : <Constellation theme={theme} reducedMotion={reducedMotion} />)}
       <div
         style={{
           position: "absolute",
