@@ -70,6 +70,60 @@ function stripFences(raw: string): string {
   return raw.replace(/```(?:json)?/gi, "").trim();
 }
 
+/**
+ * Pull the JSON object out of a raw model response.
+ *
+ * Every contract prompt in this file demands a bare JSON object, but a
+ * nondeterministic model (even at temperature 0.1) still occasionally wraps it —
+ * in ``` fences (stripped above) or in a line of prose: "Sure, here is the
+ * output: { ... } hope this helps". `JSON.parse` throws on the whole string in
+ * that case, so a single stray sentence discards an otherwise-valid response —
+ * silently dropping a live card, an alignment-checkpoint decision extract, a
+ * summary, or a document patch. That the prompts had to add "never wrap the
+ * whole object in code fences" and that `stripFences` exists at all are evidence
+ * the model does this.
+ *
+ * Recover the outermost balanced `{ ... }`: strip fences, find the first `{`,
+ * then scan forward tracking brace depth while ignoring braces inside string
+ * literals (so a `{` in decision text or rolling-memory markdown can't unbalance
+ * the scan) and return through its matching `}`. This also trims trailing prose
+ * after a valid object. Falls back to the fence-stripped text when there is no
+ * object to recover, so the existing empty / `not valid JSON` errors still fire
+ * unchanged. A top-level array is left untouched — it is malformed for every
+ * contract here, so the parser's "must be a JSON object" error should fire
+ * rather than this digging a nested object out of it.
+ */
+export function extractJsonObject(raw: string): string {
+  const cleaned = stripFences(raw);
+  if (cleaned.startsWith("[")) return cleaned;
+
+  const start = cleaned.indexOf("{");
+  if (start === -1) return cleaned;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < cleaned.length; i++) {
+    const ch = cleaned[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return cleaned.slice(start, i + 1);
+    }
+  }
+  // Unbalanced (e.g. output truncated at the token limit) — return from the
+  // first brace so JSON.parse reports a precise error instead of choking on
+  // leading prose.
+  return cleaned.slice(start);
+}
+
 /** Narrow an unknown value to a validated AIBlock, or explain why not. */
 function validateBlock(value: unknown, index: number): AIBlock | string {
   if (typeof value !== "object" || value === null) {
@@ -109,7 +163,7 @@ function validateBlock(value: unknown, index: number): AIBlock | string {
  * Returns a discriminated result — callers must check `ok` before passing on.
  */
 export function parseStructured(raw: string): ParseResult {
-  const cleaned = stripFences(raw);
+  const cleaned = extractJsonObject(raw);
   if (cleaned === "") return { ok: false, error: "model returned empty output" };
 
   let parsed: unknown;
@@ -262,7 +316,7 @@ function validateLiveCard(value: unknown, index: number): LiveCardDTO | string {
 /** Parse + validate raw model text into a `live_card_output` (minus session_id,
  *  which the backend injects). Cards may be empty. */
 export function parseLiveCard(raw: string): LiveCardParseResult {
-  const cleaned = stripFences(raw);
+  const cleaned = extractJsonObject(raw);
   if (cleaned === "") return { ok: false, error: "model returned empty output" };
 
   let parsed: unknown;
@@ -407,7 +461,7 @@ function validatePatch(value: unknown, index: number): DocumentPatchDTO | string
 /** Parse + validate raw model text into document patches (backend injects
  *  session_id / project_id / base_document_version). Patches may be empty. */
 export function parseDocumentPatch(raw: string): DocPatchParseResult {
-  const cleaned = stripFences(raw);
+  const cleaned = extractJsonObject(raw);
   if (cleaned === "") return { ok: false, error: "model returned empty output" };
 
   let parsed: unknown;
@@ -545,7 +599,7 @@ function validateDecision(value: unknown, index: number): DecisionDTO | string {
 /** Parse + validate raw model text into a `decision_extract_output` (minus
  *  session_id, which the backend injects). Decisions may be empty. */
 export function parseDecisionExtract(raw: string): DecisionExtractParseResult {
-  const cleaned = stripFences(raw);
+  const cleaned = extractJsonObject(raw);
   if (cleaned === "") return { ok: false, error: "model returned empty output" };
 
   let parsed: unknown;
