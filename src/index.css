@@ -18,6 +18,11 @@ body {
   margin: 0;
 }
 
+body[data-theme="light"] {
+  background: #f6f4ee;
+  color: #1b1b16;
+}
+
 /* ── Interaction defaults ─────────────────────────────────────────────────── */
 
 button {

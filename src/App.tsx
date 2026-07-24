@@ -6,7 +6,7 @@ import Sidebar from "./components/Sidebar";
 import CurtainTransition, { type CurtainState } from "./components/CurtainTransition";
 import CustomCursor from "./components/CustomCursor";
 import Preloader from "./components/Preloader";
-import { useTheme } from "./hooks/useTheme";
+import { useTheme, ThemeProvider } from "./hooks/useTheme";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -391,8 +391,10 @@ function AppShell() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppShell />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <AppShell />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }
