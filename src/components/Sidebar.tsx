@@ -9,9 +9,14 @@ import {
   Moon,
   type LucideIcon,
 } from "lucide-react";
+import { useState } from "react";
 import { NAV_ITEMS, FONT, RADIUS, SPACE } from "../constants";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
+import LetterStagger from "./LetterStagger";
+
+const COLLAPSED_WIDTH = 64;
+const EXPANDED_WIDTH = 200;
 
 // ─── Icon registry ─────────────────────────────────────────────────────────────
 
@@ -61,30 +66,38 @@ export default function Sidebar({
 }) {
   const { user } = useAuth();
   const { colors } = useTheme();
+  const [expanded, setExpanded] = useState(false);
 
   const displayName = user?.name ?? "Guest";
   const initials    = nameToInitials(displayName);
   const avatarColor = user ? nameToColor(user.name) : colors.textDim;
 
   return (
-    <nav aria-label="Primary" style={{
-      width: 64,
-      background: colors.bg,
-      borderRight: `1px solid ${colors.border}`,
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      paddingTop: SPACE[2.5],
-      paddingBottom: 12,
-      flexShrink: 0,
-    }}>
+    <nav
+      aria-label="Primary"
+      onMouseEnter={() => setExpanded(true)}
+      onMouseLeave={() => setExpanded(false)}
+      style={{
+        width: expanded ? EXPANDED_WIDTH : COLLAPSED_WIDTH,
+        background: colors.bg,
+        borderRight: `1px solid ${colors.border}`,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "stretch",
+        paddingTop: SPACE[2.5],
+        paddingBottom: 12,
+        flexShrink: 0,
+        overflow: "hidden",
+        transition: "width 0.25s cubic-bezier(.4,0,.2,1)",
+      }}
+    >
       {/* Logo */}
       <button
         title="Dashboard"
         aria-label="Dashboard"
         onClick={() => onNav("dashboard")}
         style={{
-          width: 44, height: 44, marginBottom: 16,
+          width: 44, height: 44, marginBottom: 16, marginLeft: 10,
           display: "flex", alignItems: "center", justifyContent: "center",
           color: colors.accent, background: "transparent", border: "none",
           cursor: "pointer", flexShrink: 0,
@@ -107,23 +120,36 @@ export default function Sidebar({
               aria-current={isActive ? "page" : undefined}
               onClick={() => onNav(item.id)}
               style={{
-                width: 56, height: 56, borderRadius: RADIUS.lg,
+                width: expanded ? EXPANDED_WIDTH - 8 : 56,
+                height: 56, marginLeft: 4, borderRadius: RADIUS.lg,
                 background: isActive ? colors.surfaceHover : "transparent",
                 border: "none", cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center",
+                display: "flex", alignItems: "center",
+                justifyContent: expanded ? "flex-start" : "center",
+                gap: 14, paddingLeft: expanded ? 14 : 0,
                 color: isActive ? colors.accent : colors.textDim,
-                transition: "all 0.15s",
+                transition: "background 0.15s, color 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
               }}
             >
-              {IconComp
-                ? <IconComp size={22} strokeWidth={1.75} />
-                : <span style={{ fontSize: FONT.size.heading }}>{item.icon}</span>
-              }
+              <span style={{ display: "flex", flexShrink: 0 }}>
+                {IconComp
+                  ? <IconComp size={22} strokeWidth={1.75} />
+                  : <span style={{ fontSize: FONT.size.heading }}>{item.icon}</span>
+                }
+              </span>
+              <span style={{
+                display: "inline-block", overflow: "hidden",
+                width: expanded ? "auto" : 0,
+                fontSize: FONT.size.body, fontWeight: 500, whiteSpace: "nowrap",
+                opacity: expanded ? 1 : 0, transition: "opacity 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
+              }}>
+                <LetterStagger text={item.label} accentColor={colors.accent} />
+              </span>
             </button>
 
             {badge && (
               <div style={{
-                position: "absolute", top: 8, right: 8,
+                position: "absolute", top: 8, right: expanded ? undefined : 8, left: expanded ? 40 : undefined,
                 width: 14, height: 14, borderRadius: "50%",
                 background: colors.red, fontSize: FONT.size.micro, fontWeight: 700,
                 color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",

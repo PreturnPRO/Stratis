@@ -6,17 +6,22 @@ import { useState } from "react";
 export default function LetterStagger({
   text,
   accentColor,
+  revealed,
 }: {
   text: string;
   accentColor?: string;
+  // Uncontrolled (hover-driven) by default. Pass this to drive the reveal
+  // from a parent's own state instead (e.g. Sidebar's hover-expand).
+  revealed?: boolean;
 }) {
-  const [hovered, setHovered] = useState(false);
+  const [hoveredState, setHoveredState] = useState(false);
+  const hovered = revealed ?? hoveredState;
   const chars = text.split("");
 
   return (
     <span
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={revealed === undefined ? () => setHoveredState(true) : undefined}
+      onMouseLeave={revealed === undefined ? () => setHoveredState(false) : undefined}
       style={{ display: "inline-flex" }}
     >
       {chars.map((ch, i) => (
