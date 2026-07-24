@@ -86,6 +86,12 @@ export const env = {
       // once on this lighter model before failing. Empty string disables the
       // fallback (single attempt). Set distinct from GEMINI_MODEL to have effect.
       fallbackModel: process.env.GEMINI_MODEL_FALLBACK ?? "gemini-2.5-flash-lite",
+      // Minimum gap between ANY two gemini requests process-wide (the free tier
+      // is 15 req/min → space >= 4s). Unlike AI_MIN_CALL_INTERVAL_MS, which
+      // paces one session's live-card loop, this serializes bursts ACROSS
+      // sessions and the meeting-end doc-patch/decision-extract calls so they
+      // can't collectively blow the per-project quota into a 429. 0 disables it.
+      minRequestIntervalMs: Number(process.env.GEMINI_MIN_REQUEST_INTERVAL_MS ?? 4000),
       baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
     },
   },
