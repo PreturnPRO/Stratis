@@ -177,22 +177,23 @@ export default function Landing({ onNavigate }: Props) {
           style={{
             position: 'relative',
             zIndex: 2,
-            textAlign: 'center',
-            maxWidth: 720,
+            textAlign: 'left',
+            width: '100%',
+            maxWidth: 900,
             padding: '0 32px',
             marginTop: '-6vh', // sit slightly high so the demo can peek at the bottom
           }}
         >
           {/* column hairlines — decorative, loosely evoke a 3-col grid */}
-          <div aria-hidden style={{ position: 'absolute', left: '33%', top: -40, bottom: -40, width: 1, background: colors.border }} />
-          <div aria-hidden style={{ position: 'absolute', left: '66%', top: -40, bottom: -40, width: 1, background: colors.border }} />
+          <div aria-hidden style={{ position: 'absolute', left: '50%', top: -40, bottom: -40, width: 1, background: colors.border }} />
+          <div aria-hidden style={{ position: 'absolute', left: '100%', top: -40, bottom: -40, width: 1, background: colors.border }} />
 
           {/* HUD readout row */}
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
+              justifyContent: 'space-between',
               gap: 18,
               color: colors.textDim,
               fontFamily: FONT.mono,
@@ -201,11 +202,14 @@ export default function Landing({ onNavigate }: Props) {
               marginBottom: SPACE[6],
             }}
           >
-            <span>SYS.01 — LISTENING</span>
-            <span style={{ width: 1, height: 10, background: colors.border }} />
-            <span>LATENCY 0.4s</span>
-            <span style={{ width: 1, height: 10, background: colors.border }} />
-            <span>CARDS: FACILITATOR-ONLY</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+              <span>SYS.01 — LISTENING</span>
+              <span style={{ width: 1, height: 10, background: colors.border }} />
+              <span>LATENCY 0.4s</span>
+              <span style={{ width: 1, height: 10, background: colors.border }} />
+              <span>CARDS: FACILITATOR-ONLY</span>
+            </div>
+            <span>18.7861° N, 98.9847° E</span>
           </div>
 
           <h1
@@ -229,7 +233,7 @@ export default function Landing({ onNavigate }: Props) {
               color: colors.textMuted,
               fontSize: 'clamp(15px, 1.8vw, 18px)',
               lineHeight: 1.7,
-              margin: '0 auto 34px',
+              margin: '0 0 34px',
               maxWidth: 560,
             }}
           >
@@ -237,14 +241,14 @@ export default function Landing({ onNavigate }: Props) {
             assumption, and risk lands in the living PM document.
           </p>
 
-          <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-start' }}>
             <div data-magnet style={{ display: 'inline-block' }}>
-              <Button variant="primary" size="md" style={{ padding: '11px 26px', fontSize: FONT.size.body }} onClick={() => onNavigate('register')}>
+              <Button variant="primary" size="md" style={{ padding: '11px 26px', fontSize: FONT.size.body, textTransform: 'uppercase', letterSpacing: LETTER_SPACING.wide }} onClick={() => onNavigate('register')}>
                 <RollingText accentColor={colors.onAccent}>Get started →</RollingText>
               </Button>
             </div>
             <div data-magnet style={{ display: 'inline-block' }}>
-              <Button variant="ghost" size="md" style={{ padding: '11px 26px', fontSize: FONT.size.body }} onClick={() => onNavigate('login')}>
+              <Button variant="ghost" size="md" style={{ padding: '11px 26px', fontSize: FONT.size.body, textTransform: 'uppercase', letterSpacing: LETTER_SPACING.wide }} onClick={() => onNavigate('login')}>
                 <RollingText accentColor={colors.text}>Sign in</RollingText>
               </Button>
             </div>
