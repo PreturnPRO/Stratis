@@ -1,7 +1,9 @@
-import { COLORS, FONT } from "../constants";
+import { FONT } from "../constants";
 import { useEffect, useState } from "react";
+import { useTheme } from "../hooks/useTheme";
 
 export function EmptyState({ message = "Nothing here yet" }) {
+  const { colors } = useTheme();
   return (
     <div style={{
       display: "flex",
@@ -9,9 +11,9 @@ export function EmptyState({ message = "Nothing here yet" }) {
       alignItems: "center",
       justifyContent: "center",
       padding: "48px 24px",
-      border: `1px dashed ${COLORS.border}`,
+      border: `1px dashed ${colors.border}`,
       borderRadius: 8,
-      color: COLORS.textMuted,
+      color: colors.textMuted,
       fontSize: FONT.size.body,
       textAlign: "center",
       gap: 8,
@@ -23,20 +25,21 @@ export function EmptyState({ message = "Nothing here yet" }) {
 }
 
 function SkeletonCard() {
+  const { colors } = useTheme();
   return (
     <div style={{
-      background: COLORS.surface,
-      border: `1px solid ${COLORS.border}`,
+      background: colors.surface,
+      border: `1px solid ${colors.border}`,
       borderRadius: 8,
       padding: "12px 16px",
       display: "flex",
       flexDirection: "column",
       gap: 8,
     }}>
-      <div style={{ width: 48, height: 10, background: COLORS.borderLight, borderRadius: 3 }} />
-      <div style={{ width: "60%", height: 13, background: COLORS.borderLight, borderRadius: 3 }} />
-      <div style={{ width: "90%", height: 11, background: COLORS.border, borderRadius: 3 }} />
-      <div style={{ width: "75%", height: 11, background: COLORS.border, borderRadius: 3 }} />
+      <div style={{ width: 48, height: 10, background: colors.borderLight, borderRadius: 3 }} />
+      <div style={{ width: "60%", height: 13, background: colors.borderLight, borderRadius: 3 }} />
+      <div style={{ width: "90%", height: 11, background: colors.border, borderRadius: 3 }} />
+      <div style={{ width: "75%", height: 11, background: colors.border, borderRadius: 3 }} />
     </div>
   );
 }
@@ -56,6 +59,7 @@ export function LoadingState({
 }) {
   const [shown, setShown]     = useState(false);
   const [visible, setVisible] = useState(true);
+  const { colors } = useTheme();
 
   useEffect(() => {
     const appearTimer = setTimeout(() => setShown(true), APPEAR_DELAY_MS);
@@ -88,14 +92,14 @@ export function LoadingState({
         justifyContent: "center",
         gap: 8,
         padding: "4px 0 8px",
-        color: COLORS.textMuted,
+        color: colors.textMuted,
         fontSize: FONT.size.label,
       }}>
         <div style={{
           width: 14,
           height: 14,
-          border: `2px solid ${COLORS.border}`,
-          borderTopColor: COLORS.accent,
+          border: `2px solid ${colors.border}`,
+          borderTopColor: colors.accent,
           borderRadius: "50%",
           flexShrink: 0,
           animation: "spin 0.7s linear infinite",
