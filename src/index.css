@@ -299,6 +299,16 @@ input:focus-visible, textarea:focus-visible {
   to   { transform: translateX(-50%); }
 }
 
+@keyframes wordReveal {
+  from { opacity: 0; filter: blur(8px); transform: translateY(6px); }
+  to   { opacity: 1; filter: blur(0); transform: translateY(0); }
+}
+
+@keyframes itselfPulse {
+  0%, 100% { text-shadow: none; }
+  50% { text-shadow: 0 0 18px currentColor; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;

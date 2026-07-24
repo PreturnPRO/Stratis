@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties } from 'react'
 import { Zap, ChevronDown, Sun, Moon } from 'lucide-react'
 import { FONT, LETTER_SPACING, RADIUS, SPACE } from '../tokens/colors'
 import { Button } from '../components/ui'
@@ -66,6 +66,15 @@ function usePrefersReducedMotion(): boolean {
   }, [])
 
   return reduced
+}
+
+// Per-word blur-to-sharp reveal, staggered — trionn.com's load-in reference.
+// prefers-reduced-motion: skip the animation and render the settled end state.
+function wordRevealStyle(index: number, reducedMotion: boolean): CSSProperties {
+  return {
+    display: 'inline-block',
+    animation: reducedMotion ? undefined : `wordReveal 0.6s ease ${index * 0.08}s both`,
+  }
 }
 
 function scrollToId(id: string) {
@@ -222,10 +231,28 @@ export default function Landing({ onNavigate }: Props) {
               margin: '0 0 20px',
             }}
           >
-            The meeting runs itself.
+            {['The', 'meeting', 'runs', 'itself.'].map((w, i) => (
+              <span key={i} style={wordRevealStyle(i, reducedMotion)}>
+                {w}{i < 3 ? ' ' : ''}
+              </span>
+            ))}
             <br />
-            <span style={{ color: colors.textDim }}>The record writes </span>
-            <span style={{ color: colors.accent }}>itself.</span>
+            {['The', 'record', 'writes'].map((w, i) => (
+              <span key={i} style={{ ...wordRevealStyle(i + 4, reducedMotion), color: colors.textDim }}>
+                {w}{' '}
+              </span>
+            ))}
+            <span
+              style={{
+                ...wordRevealStyle(7, reducedMotion),
+                color: colors.accent,
+                animation: reducedMotion
+                  ? wordRevealStyle(7, reducedMotion).animation
+                  : `${wordRevealStyle(7, reducedMotion).animation}, itselfPulse 4s ease-in-out 2.4s infinite`,
+              }}
+            >
+              itself.
+            </span>
           </h1>
 
           <p
