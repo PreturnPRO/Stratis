@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { FONT, LETTER_SPACING, SHADOW, GLASS, SPACE, tint } from '../tokens/colors'
+import { FONT, LETTER_SPACING, SHADOW, GLASS, LIGHT_GLASS, SPACE, tint } from '../tokens/colors'
 import { useTheme } from '../hooks/useTheme'
 import type { LiveCardType, LiveCardUrgency } from '../../shared/types'
 
@@ -70,8 +70,8 @@ function formatAge(createdAt: string): string {
 }
 
 export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkActive }: Props) {
-  const { colors } = useTheme()
-  const styles = makeStyles(colors)
+  const { colors, theme } = useTheme()
+  const styles = makeStyles(colors, theme)
   const [answeredOpen, setAnsweredOpen] = useState(false)
   const [queueOpen, setQueueOpen] = useState(false)
   // Cards the facilitator explicitly opened from the queue jump the line,
@@ -388,7 +388,8 @@ const SLIDE_UP_STYLE = `
   }
 `
 
-function makeStyles(colors: Record<string, string>): Record<string, React.CSSProperties> {
+function makeStyles(colors: Record<string, string>, theme: 'dark' | 'light' = 'dark'): Record<string, React.CSSProperties> {
+  const glass = theme === 'light' ? LIGHT_GLASS : GLASS
   return {
   // Sticky inside its reserved column (see Meeting.tsx's suggestion-gutter) —
   // pins near the top as the page scrolls, never overlaps Transcript/AI
@@ -404,9 +405,9 @@ function makeStyles(colors: Record<string, string>): Record<string, React.CSSPro
     gap: 8,
     padding: '10px 10px 4px',
     borderRadius: 12,
-    background: GLASS.bg,
-    backdropFilter: GLASS.blur,
-    WebkitBackdropFilter: GLASS.blur,
+    background: glass.bg,
+    backdropFilter: glass.blur,
+    WebkitBackdropFilter: glass.blur,
     boxShadow: SHADOW.float,
     animation: 'slideUp 0.3s ease forwards',
   },

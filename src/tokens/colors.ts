@@ -162,6 +162,11 @@ export const GLASS = {
   bg: "rgba(20,20,23,0.72)",
 } as const;
 
+export const LIGHT_GLASS = {
+  blur: "blur(12px)",
+  bg: "rgba(246,244,238,0.72)",
+} as const;
+
 // ── Color mix helper ─────────────────────────────────────────────────────────
 // Chip/badge tints in both themes: color-mix(in srgb, <semantic> 14–16%, var(--bg))
 export function tint(semanticHex: string, bgHex: string, pct = 15): string {
