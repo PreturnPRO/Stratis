@@ -121,10 +121,10 @@ export default function Projects({ onNav }: Props) {
   const owner = user?.name ?? "You";
 
   return (
-    <div className="page-padding" style={{ overflowY: "auto", flex: 1, position: "relative" }}>
+    <div style={{ flex: 1, position: "relative", height: "100%", overflow: "hidden" }}>
       <AmbientBackground theme={theme} />
 
-      <div style={{ position: "relative", zIndex: 1 }}>
+      <div className="page-padding" style={{ position: "relative", zIndex: 1, height: "100%", overflowY: "auto" }}>
       <div style={{ marginBottom: 32 }}>
         <div
           style={{

@@ -23,6 +23,13 @@ body[data-theme="light"] {
   color: #1b1b16;
 }
 
+/* CustomCursor is active: force-hide the native cursor everywhere, including
+   elements that set their own inline `cursor: pointer` (buttons/links). */
+body.custom-cursor-active,
+body.custom-cursor-active * {
+  cursor: none !important;
+}
+
 /* ── Interaction defaults ─────────────────────────────────────────────────── */
 
 button {
@@ -287,7 +294,11 @@ input:focus-visible, textarea:focus-visible {
   50%      { transform: translateY(7px); opacity: 1; }
 }
 
-/* ── Landing marquee strip (seamless loop — content duplicated in markup) ── */
+/* ── Landing marquee strip (seamless loop — content tripled in markup) ──
+   Two copies aren't enough: on wide viewports the visible track can be
+   nearly as wide as two copies combined, leaving a blank gap right before
+   the loop resets. Three copies + a -33.33% translate keeps at least one
+   full extra copy off-screen at all times. */
 .landing-marquee-track {
   display: flex;
   width: max-content;
@@ -296,7 +307,7 @@ input:focus-visible, textarea:focus-visible {
 
 @keyframes marqueeScroll {
   from { transform: translateX(0); }
-  to   { transform: translateX(-50%); }
+  to   { transform: translateX(-33.3333%); }
 }
 
 @keyframes wordReveal {

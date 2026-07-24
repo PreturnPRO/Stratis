@@ -12,9 +12,13 @@ export default function CustomCursor({
 
   useEffect(() => {
     if (isTouch) return;
-    document.body.style.cursor = calmZone ? "auto" : "none";
+    // A body-level inline `cursor: none` doesn't win against elements that set
+    // their own `cursor: pointer` inline (buttons/links throughout the app) —
+    // inline beats inline only by source order, and those get re-applied on
+    // every render. A class + !important stylesheet rule always wins instead.
+    document.body.classList.toggle("custom-cursor-active", !calmZone);
     return () => {
-      document.body.style.cursor = "auto";
+      document.body.classList.remove("custom-cursor-active");
     };
   }, [calmZone, isTouch]);
 
@@ -31,6 +35,10 @@ export default function CustomCursor({
       dot.style.height = interactive ? "30px" : "12px";
     };
 
+    const MAGNET_STRENGTH = 0.12;
+    const MAGNET_MAX_PULL = 10;
+    const clamp = (v: number, max: number) => Math.max(-max, Math.min(max, v));
+
     const magnets = () => Array.from(document.querySelectorAll<HTMLElement>("[data-magnet]"));
     const onMagnetMove = (e: MouseEvent) => {
       for (const el of magnets()) {
@@ -40,8 +48,13 @@ export default function CustomCursor({
         const dx = e.clientX - cx;
         const dy = e.clientY - cy;
         const dist = Math.hypot(dx, dy);
-        if (dist < Math.max(rect.width, rect.height)) {
-          el.style.transform = `translate(${dx * 0.2}px, ${dy * 0.2}px)`;
+        // Pull zone shrunk to just past the element's own edge (not its full
+        // width/height radius) so nearby magnets don't both engage at once,
+        // and pull is capped so they can't overlap each other or drift far.
+        if (dist < Math.max(rect.width, rect.height) * 0.55) {
+          const tx = clamp(dx * MAGNET_STRENGTH, MAGNET_MAX_PULL);
+          const ty = clamp(dy * MAGNET_STRENGTH, MAGNET_MAX_PULL);
+          el.style.transform = `translate(${tx}px, ${ty}px)`;
         } else {
           el.style.transform = "translate(0,0)";
         }

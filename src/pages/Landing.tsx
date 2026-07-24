@@ -319,7 +319,7 @@ export default function Landing({ onNavigate }: Props) {
         }}
       >
         <div className="landing-marquee-track">
-          {[0, 1].map((dup) => (
+          {[0, 1, 2].map((dup) => (
             <div key={dup} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
               {MARQUEE_ITEMS.map((phrase, i) => (
                 <span

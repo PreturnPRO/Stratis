@@ -124,9 +124,8 @@ export default function Sidebar({
                 height: 56, marginLeft: 4, borderRadius: RADIUS.lg,
                 background: isActive ? colors.surfaceHover : "transparent",
                 border: "none", cursor: "pointer",
-                display: "flex", alignItems: "center",
-                justifyContent: expanded ? "flex-start" : "center",
-                gap: 14, paddingLeft: expanded ? 14 : 0,
+                display: "flex", alignItems: "center", justifyContent: "flex-start",
+                gap: 14, paddingLeft: 17,
                 color: isActive ? colors.accent : colors.textDim,
                 transition: "background 0.15s, color 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
               }}
@@ -149,7 +148,7 @@ export default function Sidebar({
 
             {badge && (
               <div style={{
-                position: "absolute", top: 8, right: expanded ? undefined : 8, left: expanded ? 40 : undefined,
+                position: "absolute", top: 8, left: 35,
                 width: 14, height: 14, borderRadius: "50%",
                 background: colors.red, fontSize: FONT.size.micro, fontWeight: 700,
                 color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
@@ -163,31 +162,58 @@ export default function Sidebar({
       })}
 
       {/* Avatar + logout */}
-      <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+      <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
         <button
           title="Toggle theme"
           aria-label="Toggle theme"
           onClick={onToggleTheme}
           style={{
-            width: 44, height: 44, borderRadius: 8,
-            background: "transparent", border: "none",
+            width: expanded ? EXPANDED_WIDTH - 8 : 56, height: 44, marginLeft: 4,
+            borderRadius: 8, background: "transparent", border: "none",
             color: colors.textDim, cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center",
+            display: "flex", alignItems: "center", justifyContent: "flex-start",
+            gap: 14, paddingLeft: 17,
+            transition: "width 0.25s cubic-bezier(.4,0,.2,1)",
           }}
         >
-          {theme === "dark" ? <Sun size={16} strokeWidth={1.75} /> : <Moon size={16} strokeWidth={1.75} />}
+          <span style={{ display: "flex", flexShrink: 0 }}>
+            {theme === "dark" ? <Sun size={16} strokeWidth={1.75} /> : <Moon size={16} strokeWidth={1.75} />}
+          </span>
+          <span style={{
+            display: "inline-block", overflow: "hidden",
+            width: expanded ? "auto" : 0,
+            fontSize: FONT.size.body, fontWeight: 500, whiteSpace: "nowrap",
+            opacity: expanded ? 1 : 0, transition: "opacity 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
+          }}>
+            <LetterStagger text={theme === "dark" ? "Light mode" : "Dark mode"} accentColor={colors.accent} />
+          </span>
         </button>
 
         <div
           title={displayName}
           style={{
-            width: 34, height: 34, borderRadius: "50%",
-            background: avatarColor,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: FONT.size.label, fontWeight: 600, color: "#fff", cursor: "default",
+            width: expanded ? EXPANDED_WIDTH - 8 : 56, height: 44, marginLeft: 4,
+            display: "flex", alignItems: "center", justifyContent: "flex-start",
+            gap: 14, paddingLeft: 11, cursor: "default",
+            transition: "width 0.25s cubic-bezier(.4,0,.2,1)",
           }}
         >
-          {initials}
+          <span style={{
+            width: 34, height: 34, borderRadius: "50%", flexShrink: 0,
+            background: avatarColor,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: FONT.size.label, fontWeight: 600, color: "#fff",
+          }}>
+            {initials}
+          </span>
+          <span style={{
+            display: "inline-block", overflow: "hidden",
+            width: expanded ? "auto" : 0,
+            fontSize: FONT.size.body, fontWeight: 500, whiteSpace: "nowrap", color: colors.text,
+            opacity: expanded ? 1 : 0, transition: "opacity 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
+          }}>
+            {displayName}
+          </span>
         </div>
 
         {onLogout && (
@@ -196,14 +222,25 @@ export default function Sidebar({
             aria-label="Sign out"
             onClick={onLogout}
             style={{
-              width: 44, height: 44, borderRadius: 8,
-              background: "transparent", border: "none",
+              width: expanded ? EXPANDED_WIDTH - 8 : 56, height: 44, marginLeft: 4,
+              borderRadius: 8, background: "transparent", border: "none",
               color: colors.textDim, cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              transition: "color 0.15s",
+              display: "flex", alignItems: "center", justifyContent: "flex-start",
+              gap: 14, paddingLeft: 17,
+              transition: "color 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
             }}
           >
-            <LogOut size={16} strokeWidth={1.75} />
+            <span style={{ display: "flex", flexShrink: 0 }}>
+              <LogOut size={16} strokeWidth={1.75} />
+            </span>
+            <span style={{
+              display: "inline-block", overflow: "hidden",
+              width: expanded ? "auto" : 0,
+              fontSize: FONT.size.body, fontWeight: 500, whiteSpace: "nowrap",
+              opacity: expanded ? 1 : 0, transition: "opacity 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
+            }}>
+              <LetterStagger text="Sign out" accentColor={colors.accent} />
+            </span>
           </button>
         )}
       </div>
