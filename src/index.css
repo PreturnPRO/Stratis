@@ -229,17 +229,6 @@ input:focus-visible, textarea:focus-visible {
   }
 }
 
-/* ── Dashboard (collapses to one column on narrow screens) ────────────────── */
-
-.dashboard-grid {
-  grid-template-columns: 1fr 1fr;
-}
-
-@media (max-width: 860px) {
-  .dashboard-grid {
-    grid-template-columns: 1fr;
-  }
-}
 
 /* ── DocumentView (fixed ToC sidebar collapses above the article) ─────────── */
 
