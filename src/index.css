@@ -256,7 +256,6 @@ input:focus-visible, textarea:focus-visible {
   position: relative;
   min-height: 100vh;
   overflow: hidden;
-  background: #09090b;
 }
 
 @keyframes ambGridDrift {

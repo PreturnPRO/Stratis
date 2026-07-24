@@ -195,6 +195,7 @@ function AppShell() {
         }}
       >
         <Preloader onDone={() => {}} theme={theme} />
+        <CustomCursor calmZone={false} theme={theme} />
         {authPage === "landing" && <Landing onNavigate={setAuthPage} />}
         {authPage === "login" && (
           <Login
