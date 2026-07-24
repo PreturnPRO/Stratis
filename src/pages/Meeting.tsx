@@ -971,7 +971,7 @@ useEffect(() => {
             <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                 <span style={{ color: colors.textMuted, fontSize: FONT.size.label, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase" }}>
-                  Active Suggestions
+                  Facilitator Only
                 </span>
                 {connected && <Chip color={colors.accent} mono>REALTIME SYNCED</Chip>}
               </div>

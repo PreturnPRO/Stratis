@@ -134,6 +134,7 @@ export default function Projects({ onNav }: Props) {
           }}
         >
           <span>SYS.04 — PROJECTS</span>
+          <span>{projects.length} PROJECT{projects.length === 1 ? "" : "S"}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <h1 style={{ color: colors.text, fontSize: "clamp(28px, 3.4vw, 40px)", fontWeight: 600, letterSpacing: "-.028em", margin: 0 }}>
