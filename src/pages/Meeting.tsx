@@ -5,6 +5,7 @@ import { RADIUS, SPACE } from "../tokens/colors";
 import { Button, Chip, Modal } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { SuggestionCardStack } from "../components/SuggestionCardStack";
+import { NotesRibbon } from "../components/NotesRibbon";
 import { CheckpointPanel } from "../components/CheckpointPanel";
 import { useCheckpoint } from "../hooks/useCheckpoint";
 import {
@@ -35,6 +36,11 @@ const CHUNK_MAX_MS = 6000;
 // boundaries to split words. Set VITE_STT_STREAMING=0 to fall back to the
 // 6s clip-batch REST path above.
 const USE_STREAMING_STT = (import.meta.env.VITE_STT_STREAMING ?? "1") !== "0";
+
+// After an stt:flush, how long to let Google finalize the pending utterance and
+// the backend ingest it before running decision extraction (checkpoint opens
+// mid-recording without stopping the mic).
+const FLUSH_SETTLE_MS = 1500;
 
 // Blob → base64 data URL. The backend strips the `data:...;base64,` prefix.
 function blobToBase64(blob: Blob): Promise<string> {
@@ -274,16 +280,28 @@ export default function Meeting({ onNav }: MeetingProps) {
     return [...names];
   }, [transcripts]);
 
+  // Mid-recording, streaming STT holds the in-progress utterance until Google
+  // finalizes it — so extraction used to miss the latest words unless the
+  // facilitator stopped the mic first. Flush (half-close) the stream, give the
+  // pending finals a beat to land in the DB, then extract. Mic stays live; the
+  // stream reopens on the next audio frame.
+  const extractAfterFlush = useCallback(() => {
+    const flushed = isRecording && sendControl({ type: "stt:flush" });
+    window.setTimeout(() => {
+      void checkpoint.extract();
+    }, flushed ? FLUSH_SETTLE_MS : 0);
+  }, [isRecording, sendControl, checkpoint]);
+
   // Opening the checkpoint reads the meeting: extract fresh if we have nothing
   // yet, otherwise just reload what's stored (and let the facilitator re-read).
   const openCheckpoint = useCallback(() => {
     setShowCheckpoint(true);
     if (checkpoint.decisions.length === 0) {
-      void checkpoint.extract();
+      extractAfterFlush();
     } else {
       void checkpoint.load();
     }
-  }, [checkpoint]);
+  }, [checkpoint, extractAfterFlush]);
 
   // --- Real-Time STT: mic → MediaRecorder → Chirp 2 (all browsers) ---
   // The old path used the browser Web Speech API, which only exists in
@@ -739,6 +757,11 @@ useEffect(() => {
           />
         )}
 
+        <NotesRibbon
+          text={liveNotes}
+          fallback={ai.blocks.length > 0 ? <BlockRenderer nodes={ai.blocks} /> : undefined}
+        />
+
         {error && (
           <div
             style={{
@@ -920,36 +943,6 @@ useEffect(() => {
               </div>
             </div>
 
-            {/* AI Session Notes Panel */}
-            <div
-              style={{
-                height: 240,
-                background: COLORS.surfaceMuted,
-                border: `1px solid ${COLORS.border}`,
-                borderRadius: RADIUS.md,
-                padding: "16px",
-                display: "flex",
-                flexDirection: "column",
-                overflow: "hidden",
-              }}
-            >
-              <div style={{ fontSize: FONT.size.micro, fontWeight: 700, color: COLORS.textMuted, letterSpacing: 0.5, textTransform: "uppercase", marginBottom: 12 }}>
-                Strategic Meeting Notes
-              </div>
-              <div style={{ flex: 1, overflowY: "auto" }} aria-live="polite" aria-label="Strategic meeting notes">
-                {liveNotes ? (
-                  <p style={{ fontSize: FONT.size.body, color: COLORS.textPrimary, margin: 0, lineHeight: 1.6 }}>
-                    {liveNotes}
-                  </p>
-                ) : ai.blocks.length > 0 ? (
-                  <BlockRenderer nodes={ai.blocks} />
-                ) : (
-                  <p style={{ fontSize: FONT.size.label, color: COLORS.textMuted, margin: 0, fontStyle: "italic" }}>
-                    Notes build here as the AI hears important moments — decisions, risks, commitments.
-                  </p>
-                )}
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -991,7 +984,7 @@ useEffect(() => {
             speakers={speakerNames}
             present={false}
             onEdit={checkpoint.edit}
-            onReExtract={checkpoint.extract}
+            onReExtract={extractAfterFlush}
             onTogglePresent={() => setPresentMode(true)}
             onClose={() => setShowCheckpoint(false)}
           />
@@ -1018,7 +1011,7 @@ useEffect(() => {
               speakers={speakerNames}
               present={true}
               onEdit={checkpoint.edit}
-              onReExtract={checkpoint.extract}
+              onReExtract={extractAfterFlush}
               onTogglePresent={() => setPresentMode(false)}
               onClose={() => setShowCheckpoint(false)}
             />

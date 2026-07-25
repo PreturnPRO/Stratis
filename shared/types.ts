@@ -324,6 +324,9 @@ export type WsServerEvent =
  * socket carry raw PCM16LE mono audio for the active STT stream. */
 export type WsClientEvent =
   | { type: "stt:start"; sampleRate: number; speaker?: string }
+  /** Half-close the STT stream so pending finals land (checkpoint opens
+   * mid-recording); audio keeps flowing and the stream reopens on next frame. */
+  | { type: "stt:flush" }
   | { type: "stt:stop" };
 
 /** Placeholder until S1-T03-F provides real session IDs from the meeting lifecycle. */

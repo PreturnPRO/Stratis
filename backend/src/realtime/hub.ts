@@ -179,6 +179,7 @@ export function attachHub(server: Server): WebSocketServer {
         try {
           const msg = JSON.parse(String(data)) as WsClientEvent;
           if (msg.type === "stt:start") startSttStream(client, msg);
+          else if (msg.type === "stt:flush") client.stt?.flush();
           else if (msg.type === "stt:stop") stopSttStream(client);
         } catch (err) {
           console.warn("[ws] Ignoring malformed client message:", err);

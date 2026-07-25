@@ -55,6 +55,14 @@ export const env = {
       | "typhoon"
       | "gemini",
     timeoutMs: Number(process.env.AI_TIMEOUT_MS ?? 10000),
+    // Minimum gap between live-card AI calls per session. A busy meeting emits
+    // a transcript row every few seconds; without pacing the live loop fires a
+    // request per row and burns the provider's requests-per-minute quota
+    // (Gemini free tier: 15/min, 500/day). Rows arriving inside the gap
+    // coalesce — the next call re-reads the recent window, so nothing is lost;
+    // it rides the next call. Raise to cut request count (at the cost of card
+    // latency), lower toward 0 for the old fire-per-row behaviour.
+    minCallIntervalMs: Number(process.env.AI_MIN_CALL_INTERVAL_MS ?? 15000),
     groq: {
       apiKey: process.env.GROQ_API_KEY ?? "",
       model: process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile",

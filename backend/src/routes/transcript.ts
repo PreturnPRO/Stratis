@@ -9,6 +9,7 @@ import { detectAnswered } from "../realtime/autodetect";
 import { pushSuggestion, pushAnswered, pushNotes, registerStreamIngest } from "../realtime/hub";
 import { getDocumentRow, rowToDocument, renderDocument } from "../lib/pmDocument";
 import { withRetry } from "../lib/withRetry";
+import { env } from "../config/env";
 
 export const transcriptRouter = Router();
 
@@ -73,7 +74,9 @@ async function saveTranscriptChunk(input: {
 
 // Recent transcript window the live AI sees each chunk (schema spec §6.4 — the
 // last 1-3 minutes, not the whole meeting). Capped to the most recent rows.
-const RECENT_WINDOW_ROWS = 12;
+// Sized to comfortably span more than one AI_MIN_CALL_INTERVAL_MS worth of rows
+// so a paced (batched) call still sees everything said since the previous one.
+const RECENT_WINDOW_ROWS = 24;
 
 // A project's PM document can only change via the post-meeting commit flow
 // (document.ts), which can't happen mid-session — so it's safe (and avoids a
@@ -256,7 +259,16 @@ interface PendingAiChunk {
   transcriptId?: string;
 }
 
-const aiRoutingBySession = new Map<string, { queued: PendingAiChunk | null }>();
+interface AiRoutingState {
+  queued: PendingAiChunk | null;
+  /** Epoch ms the last live-card call STARTED — the rate gate paces off this. */
+  lastStartedAt: number;
+}
+
+const aiRoutingBySession = new Map<string, AiRoutingState>();
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 function scheduleAiRouting(
   sessionId: string,
@@ -266,16 +278,36 @@ function scheduleAiRouting(
 ): void {
   const running = aiRoutingBySession.get(sessionId);
   if (running) {
+    // A call is in flight or cooling down — coalesce. Only the freshest chunk is
+    // kept; the call re-reads the recent window from the DB, so superseded rows
+    // are still covered, they just don't each trigger their own request.
     running.queued = { text, role, transcriptId };
     return;
   }
 
-  const state: { queued: PendingAiChunk | null } = { queued: null };
+  const state: AiRoutingState = { queued: null, lastStartedAt: 0 };
   aiRoutingBySession.set(sessionId, state);
 
   void (async () => {
     let next: PendingAiChunk | null = { text, role, transcriptId };
     while (next) {
+      // Rate gate: pace calls to at most one per minCallIntervalMs so a busy
+      // meeting can't outrun the provider's requests-per-minute quota. The
+      // first call of a session fires immediately (lastStartedAt === 0).
+      const wait = state.lastStartedAt
+        ? env.ai.minCallIntervalMs - (Date.now() - state.lastStartedAt)
+        : 0;
+      if (wait > 0) {
+        await sleep(wait);
+        // Rows that arrived during the wait supersede the pending chunk — run
+        // the freshest so the batched call reflects the latest transcript.
+        if (state.queued) {
+          next = state.queued;
+          state.queued = null;
+        }
+      }
+
+      state.lastStartedAt = Date.now();
       try {
         const routed = await routeTextToAi(sessionId, next.text, next.role, next.transcriptId);
         if (!routed.ok) {
