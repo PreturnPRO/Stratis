@@ -109,6 +109,18 @@ export default function Landing({ onNavigate }: Props) {
   const card0Answered = effectiveStep >= 6
   const [pastHero, setPastHero] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const heroTextRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (reducedMotion) return
+    const onMove = (e: MouseEvent) => {
+      const nx = (e.clientX / window.innerWidth - 0.5) * 2
+      const ny = (e.clientY / window.innerHeight - 0.5) * 2
+      heroTextRef.current?.style.setProperty('transform', `translate(${nx * 1.4}px, ${ny * 1}px)`)
+    }
+    window.addEventListener('mousemove', onMove)
+    return () => window.removeEventListener('mousemove', onMove)
+  }, [reducedMotion])
 
   useEffect(() => {
     const root = scrollRef.current
@@ -210,6 +222,7 @@ export default function Landing({ onNavigate }: Props) {
         <AmbientBackground theme={theme} constellation reducedMotion={reducedMotion} />
 
         <div
+          ref={heroTextRef}
           style={{
             position: 'relative',
             zIndex: 2,
@@ -218,6 +231,7 @@ export default function Landing({ onNavigate }: Props) {
             maxWidth: 900,
             padding: '0 32px',
             marginTop: '-6vh', // sit slightly high so the demo can peek at the bottom
+            transition: 'transform 0.6s ease-out',
           }}
         >
           {/* column hairlines — decorative, loosely evoke a 3-col grid */}
