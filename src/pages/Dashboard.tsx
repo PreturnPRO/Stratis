@@ -259,17 +259,24 @@ function ReminderCard({
               <EmptyState message="No meetings yet. Create your first meeting." />
             ) : (
               <div style={{ position: "relative" }}>
-                <div style={{ position: "absolute", left: 5, top: 6, bottom: 6, width: 1, background: colors.border }} />
-                <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
-                  {meetings.map((m) => {
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  {meetings.map((m, i) => {
                     const dot = hashAccent(m.id, colors);
                     return (
-                      <div key={m.id} style={{ position: "relative", paddingLeft: 26 }}>
+                    <div key={m.id}>
+                      <div style={{ position: "relative", paddingLeft: 26 }}>
+                        {i > 0 && (
+                          <span style={{ position: "absolute", left: 5, top: 0, height: "50%", width: 1, background: colors.border }} />
+                        )}
+                        {i < meetings.length - 1 && (
+                          <span style={{ position: "absolute", left: 5, top: "50%", height: "50%", width: 1, background: colors.border }} />
+                        )}
                         <span
                           style={{
                             position: "absolute",
                             left: 0,
-                            top: 4,
+                            top: "50%",
+                            transform: "translateY(-50%)",
                             width: 11,
                             height: 11,
                             borderRadius: "50%",
@@ -301,6 +308,8 @@ function ReminderCard({
                           </Button>
                         </div>
                       </div>
+                      {i < meetings.length - 1 && <div style={{ height: 22 }} />}
+                    </div>
                     );
                   })}
                 </div>
