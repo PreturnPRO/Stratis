@@ -169,6 +169,11 @@ export async function getGoogleStreamingContext(): Promise<GoogleStreamingContex
   const client = getGoogleClient();
   if (!client) return null;
 
+  // The raw _streamingRecognize() fires initialize() but does NOT await it, so
+  // innerApiCalls is still {} on the same tick → "streamingRecognize is not a
+  // function". Await it here (idempotent) so the stream opens cleanly.
+  await client.initialize();
+
   const projectId = await getProjectId(client);
   const { location, model, languageCodes } = env.stt.google;
 

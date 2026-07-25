@@ -149,6 +149,19 @@ function AppShell() {
   const canBack = historyIndex > 0;
   const canForward = historyIndex < history.length - 1;
 
+  // Sign out clears auth AND resets navigation to the dashboard — otherwise the
+  // stale `active`/history/hash survive and the next login lands on whatever
+  // page was open when logging out.
+  const handleLogout = () => {
+    logout();
+    setActive("dashboard");
+    setNavParams({});
+    setHistory([{ page: "dashboard", params: {} }]);
+    setHistoryIndex(0);
+    setAuthPage("landing");
+    window.history.replaceState(null, "", "#/dashboard");
+  };
+
   if (!isAuthed) {
     return (
       <div
@@ -193,7 +206,7 @@ function AppShell() {
         <MeetingTransition onDone={() => setShowTransition(false)} />
       )}
 
-      <Sidebar active={active} onNav={handleSidebarNav} onLogout={logout} />
+      <Sidebar active={active} onNav={handleSidebarNav} onLogout={handleLogout} />
 
       <div
         style={{
