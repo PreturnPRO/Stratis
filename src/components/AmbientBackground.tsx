@@ -11,12 +11,15 @@ const CONSTELLATION_POINTS: [number, number][] = [
   [70, 6], [66, 22], [72, 78], [68, 94],
   [84, 14], [90, 32], [86, 50], [92, 68], [88, 84],
   [98, 22], [97, 60],
+  [64, 42], [66, 52], [78, 46], [62, 64], [74, 64], [82, 58],
 ];
 const CONSTELLATION_EDGES: [number, number][] = [
   [0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 7], [7, 9], [9, 11],
   [11, 12], [12, 15], [15, 16], [16, 17], [17, 18], [18, 19],
   [4, 6], [6, 8], [8, 10], [10, 13], [13, 14], [14, 19],
   [16, 20], [18, 21], [12, 20],
+  [12, 22], [22, 23], [23, 24], [23, 18], [24, 17], [23, 25], [25, 13],
+  [25, 26], [26, 24], [26, 27], [27, 19],
 ];
 
 // Points safe for a coordinate readout label — away from the hero text
@@ -75,19 +78,33 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
             />
           );
         })}
-        {CONSTELLATION_POINTS.map(([x, y], i) => (
-          <g
-            key={i}
-            style={{
-              transformBox: "fill-box",
-              transformOrigin: "center",
-              animation: `constellationGlow ${5 + (i % 5)}s ease-in-out ${i * 0.2}s infinite`,
-            }}
-          >
-            <circle cx={x} cy={y} r={1.4} fill={dotHalo} />
-            <circle cx={x} cy={y} r={0.35} fill={dot} />
-          </g>
-        ))}
+        {CONSTELLATION_POINTS.map(([x, y], i) => {
+          const glowDot = (
+            <g
+              style={{
+                transformBox: "fill-box",
+                transformOrigin: "center",
+                animation: `constellationGlow ${5 + (i % 5)}s ease-in-out ${i * 0.2}s infinite`,
+              }}
+            >
+              <circle cx={x} cy={y} r={1.4} fill={dotHalo} />
+              <circle cx={x} cy={y} r={0.35} fill={dot} />
+            </g>
+          );
+          if (reducedMotion || i % 3 !== 0) return <g key={i}>{glowDot}</g>;
+          return (
+            <g
+              key={i}
+              style={{
+                transformBox: "fill-box",
+                transformOrigin: "center",
+                animation: `constellationSnap ${10 + (i % 4) * 2}s ease-in-out ${i * 0.4}s infinite`,
+              }}
+            >
+              {glowDot}
+            </g>
+          );
+        })}
         {COORD_POINT_INDICES.map((idx, i) => {
           const [x, y] = CONSTELLATION_POINTS[idx];
           const r = 1.1;

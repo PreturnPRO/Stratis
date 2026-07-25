@@ -334,6 +334,11 @@ input:focus-visible, textarea:focus-visible {
   50% { opacity: 1; transform: scale(1.15); }
 }
 
+@keyframes constellationSnap {
+  0%, 45% { transform: translate(0, 0); }
+  55%, 100% { transform: translate(1.3px, -1.1px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.001ms !important;
