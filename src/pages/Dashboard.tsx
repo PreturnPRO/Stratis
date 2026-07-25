@@ -308,7 +308,11 @@ function ReminderCard({
                           </Button>
                         </div>
                       </div>
-                      {i < meetings.length - 1 && <div style={{ height: 22 }} />}
+                      {i < meetings.length - 1 && (
+                        <div style={{ position: "relative", height: 22 }}>
+                          <span style={{ position: "absolute", left: 31, top: 0, bottom: 0, width: 1, background: colors.border }} />
+                        </div>
+                      )}
                     </div>
                     );
                   })}
