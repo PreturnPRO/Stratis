@@ -230,6 +230,21 @@ input:focus-visible, textarea:focus-visible {
 }
 
 
+/* ── Dashboard reminder expanded panel (collapses to one column) ──────────── */
+
+@media (max-width: 900px) {
+  .dashboard-expand-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 560px) {
+  .dashboard-summary-cards {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+
 /* ── DocumentView (fixed ToC sidebar collapses above the article) ─────────── */
 
 @media (max-width: 760px) {

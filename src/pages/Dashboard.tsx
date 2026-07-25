@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { FONT, LETTER_SPACING, SPACE } from "../constants";
+import { ChevronDown } from "lucide-react";
+import { FONT, LETTER_SPACING, RADIUS, SPACE } from "../constants";
 import { Button } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { NewMeetingModal } from "../components/NewMeetingModal";
@@ -83,10 +84,57 @@ function formatDate(value?: string | null): string {
   }).format(d);
 }
 
+// Deterministic accent per meeting/summary id — same hash idiom as the
+// Sidebar avatar colors, so the timeline dots and summary card edges read
+// as distinct-but-consistent rather than uniform or random-per-render.
+function hashAccent(id: string, colors: Colors): string {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
+  const palette = [colors.accent, colors.cyan, colors.teal, colors.amber];
+  return palette[Math.abs(hash) % palette.length];
+}
 
-// Single reminder pill combining upcoming meetings + recent summaries.
-// Hover reveals a dropdown with both lists — replaces the old two-stat-card
-// + two-panel layout so the dashboard leads with one glanceable notifier.
+// ─── Section header (shared by both expanded-panel columns) ────────────────
+function SectionHeader({
+  colors,
+  label,
+  count,
+  action,
+}: {
+  colors: Colors;
+  label: string;
+  count: number;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span
+          style={{
+            fontFamily: FONT.mono,
+            fontSize: FONT.size.caption,
+            letterSpacing: LETTER_SPACING.wide,
+            color: colors.textMuted,
+            textTransform: "uppercase",
+          }}
+        >
+          {label}
+        </span>
+        <span style={{ fontFamily: FONT.mono, fontSize: FONT.size.caption, color: colors.textDim }}>
+          {String(count).padStart(2, "0")}
+        </span>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+// ─── Reminder pill (click to toggle) ────────────────────────────────────────
+// Collapsed: a single glanceable pill. Expanded: a full-width panel below it
+// fills the dashboard's otherwise-empty center/right — a connected vertical
+// timeline for upcoming meetings (echoes the constellation dot/line motif
+// from Landing) beside a card grid for recent summaries, instead of a
+// cramped dropdown crammed into one corner.
 function ReminderCard({
   colors,
   shadow,
@@ -118,12 +166,10 @@ function ReminderCard({
     : undefined;
 
   return (
-    <div
-      style={{ position: "relative", marginBottom: 24, maxWidth: 420 }}
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-    >
-      <div
+    <div style={{ marginBottom: 32 }}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
         style={{
           textAlign: "left",
           background: colors.surfaceElevated,
@@ -132,185 +178,185 @@ function ReminderCard({
           padding: "16px 18px",
           boxShadow: `${shadow.shadCard}, ${shadow.glow(colors.accent)}`,
           display: "flex",
-          flexDirection: "column",
-          gap: 6,
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 16,
+          width: "100%",
+          maxWidth: 420,
+          cursor: "pointer",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ position: "relative", display: "inline-flex", width: 8, height: 8, flexShrink: 0 }}>
-            {total > 0 && (
-              <span
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  borderRadius: "50%",
-                  background: colors.accent,
-                  animation: "recPulse 1.5s ease-out infinite",
-                }}
-              />
-            )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ position: "relative", display: "inline-flex", width: 8, height: 8, flexShrink: 0 }}>
+              {total > 0 && (
+                <span
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    borderRadius: "50%",
+                    background: colors.accent,
+                    animation: "recPulse 1.5s ease-out infinite",
+                  }}
+                />
+              )}
+              <span style={{ position: "relative", width: 8, height: 8, borderRadius: "50%", background: colors.accent }} />
+            </span>
             <span
               style={{
-                position: "relative",
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background: colors.accent,
-              }}
-            />
-          </span>
-          <span
-            style={{
-              fontFamily: FONT.mono,
-              fontSize: FONT.size.label,
-              fontWeight: 600,
-              letterSpacing: LETTER_SPACING.wide,
-              color: colors.text,
-              textTransform: "uppercase",
-            }}
-          >
-            {total} REMINDER{total === 1 ? "" : "S"}
-          </span>
-        </div>
-        {subline && (
-          <div style={{ fontSize: FONT.size.body, color: colors.textMuted }}>{subline}</div>
-        )}
-      </div>
-
-      {open && (
-        <div
-          style={{
-            position: "absolute",
-            top: "100%",
-            left: 0,
-            right: 0,
-            marginTop: 6,
-            zIndex: 5,
-            background: colors.surfaceElevated,
-            border: `1px solid ${colors.border}`,
-            borderRadius: 12,
-            boxShadow: shadow.shadCard,
-            padding: 16,
-            display: "flex",
-            flexDirection: "column",
-            gap: 16,
-          }}
-        >
-          <div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 10,
+                fontFamily: FONT.mono,
+                fontSize: FONT.size.label,
+                fontWeight: 600,
+                letterSpacing: LETTER_SPACING.wide,
+                color: colors.text,
+                textTransform: "uppercase",
               }}
             >
-              <span
-                style={{
-                  fontFamily: FONT.mono,
-                  fontSize: FONT.size.caption,
-                  letterSpacing: LETTER_SPACING.wide,
-                  color: colors.textMuted,
-                  textTransform: "uppercase",
-                }}
-              >
-                Upcoming meetings
-              </span>
-              <Button variant="ghost" onClick={onRefresh}>
-                Refresh
-              </Button>
+              {total} REMINDER{total === 1 ? "" : "S"}
+            </span>
+          </div>
+          {subline && (
+            <div style={{ fontSize: FONT.size.body, color: colors.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {subline}
             </div>
+          )}
+        </div>
+        <ChevronDown
+          size={16}
+          strokeWidth={2}
+          color={colors.textMuted}
+          style={{ flexShrink: 0, transition: "transform 0.25s cubic-bezier(.4,0,.2,1)", transform: open ? "rotate(180deg)" : "rotate(0)" }}
+        />
+      </button>
+
+      <div
+        style={{
+          maxHeight: open ? 2400 : 0,
+          opacity: open ? 1 : 0,
+          overflow: "hidden",
+          transition: "max-height 0.45s cubic-bezier(.16,1,.3,1), opacity 0.3s ease",
+        }}
+      >
+        <div
+          className="dashboard-expand-grid"
+          style={{
+            marginTop: 24,
+            display: "grid",
+            gridTemplateColumns: "minmax(320px, 480px) minmax(320px, 480px)",
+            gap: 40,
+          }}
+        >
+          {/* Upcoming meetings — vertical connected timeline */}
+          <div>
+            <SectionHeader
+              colors={colors}
+              label="Upcoming meetings"
+              count={meetings.length}
+              action={<Button variant="ghost" onClick={onRefresh}>Refresh</Button>}
+            />
             {loading ? (
-              <LoadingState count={2} />
+              <LoadingState count={3} />
             ) : meetings.length === 0 ? (
               <EmptyState message="No meetings yet. Create your first meeting." />
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: SPACE[2] }}>
-                {meetings.map((m) => (
-                  <div
-                    key={m.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "flex-start",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      padding: "8px 4px",
-                      borderBottom: `1px solid ${colors.border}`,
-                    }}
-                  >
-                    <div>
-                      <div style={{ color: colors.text, fontSize: FONT.size.body, fontWeight: 500 }}>
-                        {m.title}
+              <div style={{ position: "relative" }}>
+                <div style={{ position: "absolute", left: 5, top: 6, bottom: 6, width: 1, background: colors.border }} />
+                <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+                  {meetings.map((m) => {
+                    const dot = hashAccent(m.id, colors);
+                    return (
+                      <div key={m.id} style={{ position: "relative", paddingLeft: 26 }}>
+                        <span
+                          style={{
+                            position: "absolute",
+                            left: 0,
+                            top: 4,
+                            width: 11,
+                            height: 11,
+                            borderRadius: "50%",
+                            background: colors.surfaceElevated,
+                            border: `2px solid ${dot}`,
+                            boxShadow: `0 0 0 3px ${colors.bg}`,
+                          }}
+                        />
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 12,
+                            background: colors.surface,
+                            border: `1px solid ${colors.border}`,
+                            borderRadius: RADIUS.md,
+                            padding: "10px 12px",
+                          }}
+                        >
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ color: colors.text, fontSize: FONT.size.body, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.title}</div>
+                            <div style={{ fontFamily: FONT.mono, color: colors.textMuted, fontSize: FONT.size.caption, marginTop: 2 }}>
+                              {m.project ?? m.projectId ?? "Project"} · {formatDate(m.scheduledAt ?? m.time)}
+                            </div>
+                          </div>
+                          <Button variant="primary" onClick={() => onStartMeeting(m)}>
+                            {m.activeSession ? "Resume" : "Start"}
+                          </Button>
+                        </div>
                       </div>
-                      <div style={{ fontFamily: FONT.mono, color: colors.textMuted, fontSize: FONT.size.caption }}>
-                        {m.project ?? m.projectId ?? "Project"} · {formatDate(m.scheduledAt ?? m.time)}
-                      </div>
-                    </div>
-                    <Button variant="primary" onClick={() => onStartMeeting(m)}>
-                      {m.activeSession ? "Resume" : "Start"}
-                    </Button>
-                  </div>
-                ))}
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
 
+          {/* Recent summaries — card grid */}
           <div>
-            <div
-              style={{
-                fontFamily: FONT.mono,
-                fontSize: FONT.size.caption,
-                letterSpacing: LETTER_SPACING.wide,
-                color: colors.textMuted,
-                textTransform: "uppercase",
-                marginBottom: 10,
-              }}
-            >
-              Recent summaries
-            </div>
+            <SectionHeader colors={colors} label="Recent summaries" count={summaries.length} />
             {loading ? (
-              <LoadingState count={2} />
+              <LoadingState count={3} />
             ) : summaries.length === 0 ? (
               <EmptyState message="No summaries yet. End a meeting to generate one." />
             ) : (
-              <div style={{ display: "flex", flexDirection: "column" }}>
-                {summaries.map((s, i) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => onOpenSummary(s)}
-                    style={{
-                      display: "flex",
-                      alignItems: "flex-start",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      width: "100%",
-                      textAlign: "left",
-                      background: "transparent",
-                      border: "none",
-                      borderBottom: i === summaries.length - 1 ? "none" : `1px solid ${colors.border}`,
-                      padding: "8px 4px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <div>
-                      <div style={{ color: colors.text, fontSize: FONT.size.body, fontWeight: 500 }}>
+              <div
+                className="dashboard-summary-cards"
+                style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+              >
+                {summaries.map((s) => {
+                  const edge = hashAccent(s.id, colors);
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => onOpenSummary(s)}
+                      style={{
+                        textAlign: "left",
+                        background: colors.surface,
+                        border: `1px solid ${colors.border}`,
+                        borderLeft: `3px solid ${edge}`,
+                        borderRadius: RADIUS.md,
+                        padding: "12px 14px",
+                        cursor: "pointer",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 6,
+                        minWidth: 0,
+                      }}
+                    >
+                      <div style={{ color: colors.text, fontSize: FONT.size.body, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {s.title}
                       </div>
-                      <div style={{ fontSize: FONT.size.label, color: colors.textMuted }}>
-                        {s.project ?? "Project summary"}
+                      <div style={{ fontSize: FONT.size.label, color: colors.textMuted }}>{s.project ?? "Project summary"}</div>
+                      <div style={{ fontFamily: FONT.mono, color: colors.textDim, fontSize: FONT.size.caption }}>
+                        {formatDate(s.date)}
                       </div>
-                    </div>
-                    <span style={{ fontFamily: FONT.mono, color: colors.textMuted, fontSize: FONT.size.caption, whiteSpace: "nowrap" }}>
-                      {formatDate(s.date)}
-                    </span>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -463,18 +509,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
           </div>
         </div>
 
-        <ReminderCard
-          colors={colors}
-          shadow={shadow}
-          loading={loading}
-          meetings={meetings}
-          summaries={summaries}
-          onRefresh={loadDashboard}
-          onStartMeeting={(m) => void handleStartExisting(m)}
-          onOpenSummary={(s) => onNav?.("summary", { sessionId: s.sessionId ?? s.id })}
-        />
-
-        <div data-magnet style={{ display: "inline-block", marginBottom: 40 }}>
+        <div data-magnet style={{ display: "inline-block", marginBottom: 20 }}>
           <Button variant="primary" onClick={() => setShowNewMeeting(true)}>
             <RollingText accentColor={colors.onAccent}>+ NEW MEETING</RollingText>
           </Button>
@@ -496,6 +531,16 @@ export default function Dashboard({ onNav }: DashboardProps) {
           </div>
         )}
 
+        <ReminderCard
+          colors={colors}
+          shadow={shadow}
+          loading={loading}
+          meetings={meetings}
+          summaries={summaries}
+          onRefresh={loadDashboard}
+          onStartMeeting={(m) => void handleStartExisting(m)}
+          onOpenSummary={(s) => onNav?.("summary", { sessionId: s.sessionId ?? s.id })}
+        />
 
         <NewMeetingModal
           open={showNewMeeting}
