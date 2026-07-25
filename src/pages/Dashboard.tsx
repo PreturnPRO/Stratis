@@ -590,7 +590,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
           </div>
         </div>
 
-        <div data-magnet style={{ display: "inline-block", marginBottom: 20 }}>
+        <div style={{ display: "inline-block", marginBottom: 20 }}>
           <Button variant="primary" onClick={() => setShowNewMeeting(true)}>
             + NEW MEETING
           </Button>

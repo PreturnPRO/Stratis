@@ -27,26 +27,31 @@ export default function CustomCursor({
     const dot = dotRef.current;
     if (!dot) return;
 
-    const onMove = (e: MouseEvent) => {
-      dot.style.transform = `translate(${e.clientX - 6}px, ${e.clientY - 6}px)`;
-      const target = e.target as HTMLElement;
-      const interactive = target.closest("a, button");
-      dot.style.width = interactive ? "30px" : "12px";
-      dot.style.height = interactive ? "30px" : "12px";
-    };
+    // Magnet set is static per page mount — query once instead of on every
+    // mousemove (was the layout-thrash source: getBoundingClientRect forces
+    // a synchronous reflow, and doing that per-magnet on every mousemove
+    // event, unthrottled, tanked frame rate on DOM-heavy pages).
+    const magnets = Array.from(document.querySelectorAll<HTMLElement>("[data-magnet]"));
 
     const MAGNET_STRENGTH = 0.12;
     const MAGNET_MAX_PULL = 10;
     const clamp = (v: number, max: number) => Math.max(-max, Math.min(max, v));
 
-    const magnets = () => Array.from(document.querySelectorAll<HTMLElement>("[data-magnet]"));
-    const onMagnetMove = (e: MouseEvent) => {
-      for (const el of magnets()) {
+    let lastX = 0;
+    let lastY = 0;
+    let lastInteractive = false;
+    let rafId = 0;
+
+    const applyFrame = () => {
+      rafId = 0;
+      dot.style.transform = `translate(${lastX - 6}px, ${lastY - 6}px)`;
+
+      for (const el of magnets) {
         const rect = el.getBoundingClientRect();
         const cx = rect.left + rect.width / 2;
         const cy = rect.top + rect.height / 2;
-        const dx = e.clientX - cx;
-        const dy = e.clientY - cy;
+        const dx = lastX - cx;
+        const dy = lastY - cy;
         const dist = Math.hypot(dx, dy);
         // Pull zone shrunk to just past the element's own edge (not its full
         // width/height radius) so nearby magnets don't both engage at once,
@@ -61,12 +66,23 @@ export default function CustomCursor({
       }
     };
 
+    const onMove = (e: MouseEvent) => {
+      lastX = e.clientX;
+      lastY = e.clientY;
+      const interactive = !!(e.target as HTMLElement).closest("a, button");
+      if (interactive !== lastInteractive) {
+        lastInteractive = interactive;
+        dot.style.width = interactive ? "30px" : "12px";
+        dot.style.height = interactive ? "30px" : "12px";
+      }
+      if (!rafId) rafId = requestAnimationFrame(applyFrame);
+    };
+
     window.addEventListener("mousemove", onMove);
-    window.addEventListener("mousemove", onMagnetMove);
     return () => {
       window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mousemove", onMagnetMove);
-      for (const el of magnets()) el.style.transform = "translate(0,0)";
+      if (rafId) cancelAnimationFrame(rafId);
+      for (const el of magnets) el.style.transform = "translate(0,0)";
     };
   }, [isTouch, calmZone]);
 

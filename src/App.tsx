@@ -106,8 +106,6 @@ function AppShell() {
   const [active, setActive] = useState<AppPage>(initialEntry.page);
   const [navParams, setNavParams] = useState<Record<string, string>>(initialEntry.params);
   const { theme, toggleTheme, colors } = useTheme();
-  const [curtainState, setCurtainState] = useState<CurtainState>("idle");
-  const [pendingNav, setPendingNav] = useState<{ id: string; params?: Record<string, string> } | null>(null);
 
   // Curtain for the auth -> app transition (login/register success), reusing
   // the same sweep used for in-app page nav. isAuthed flips synchronously
@@ -166,8 +164,6 @@ function AppShell() {
   };
 
   const handleNav = (id: string, params?: Record<string, string>) => {
-    if (curtainState !== "idle") return;
-
     const page = id as AppPage;
     const resolvedParams = params ?? {};
 
@@ -177,27 +173,8 @@ function AppShell() {
       JSON.stringify(current?.params) === JSON.stringify(resolvedParams);
     if (isSamePage && isSameParams) return;
 
-    setPendingNav({ id, params });
-    setCurtainState("in");
+    commitNav(id, params);
   };
-
-  useEffect(() => {
-    if (curtainState === "in") {
-      const t = setTimeout(() => {
-        if (pendingNav) commitNav(pendingNav.id, pendingNav.params);
-        setCurtainState("hold");
-      }, 480);
-      return () => clearTimeout(t);
-    }
-    if (curtainState === "hold") {
-      const t = setTimeout(() => setCurtainState("out"), 240);
-      return () => clearTimeout(t);
-    }
-    if (curtainState === "out") {
-      const t = setTimeout(() => setCurtainState("idle"), 600);
-      return () => clearTimeout(t);
-    }
-  }, [curtainState, pendingNav]);
 
   useEffect(() => {
     const hash = entryToHash(active, navParams);
@@ -206,10 +183,6 @@ function AppShell() {
 
   useEffect(() => {
     const onPopState = () => {
-      if (curtainState !== "idle") {
-        window.history.pushState(null, "", entryToHash(active, navParams));
-        return;
-      }
       const entry = hashToEntry();
       handleNav(entry.page, entry.params);
     };
@@ -253,21 +226,23 @@ function AppShell() {
         <Preloader onDone={() => {}} theme={theme} />
         <CustomCursor calmZone={false} theme={theme} />
         <CurtainTransition state={authCurtain} routeLabel="DASHBOARD" onMidpoint={() => {}} theme={theme} />
-        {authPage === "landing" && <Landing onNavigate={setAuthPage} />}
-        {authPage === "login" && (
-          <Login
-            onNavigate={(p) =>
-              p === "app" ? setAuthPage("app") : setAuthPage(p)
-            }
-          />
-        )}
-        {authPage === "register" && (
-          <Register
-            onNavigate={(p) =>
-              p === "app" ? setAuthPage("app") : setAuthPage(p)
-            }
-          />
-        )}
+        <main style={{ height: "100%" }}>
+          {authPage === "landing" && <Landing onNavigate={setAuthPage} />}
+          {authPage === "login" && (
+            <Login
+              onNavigate={(p) =>
+                p === "app" ? setAuthPage("app") : setAuthPage(p)
+              }
+            />
+          )}
+          {authPage === "register" && (
+            <Register
+              onNavigate={(p) =>
+                p === "app" ? setAuthPage("app") : setAuthPage(p)
+              }
+            />
+          )}
+        </main>
       </div>
     );
   }
@@ -284,8 +259,8 @@ function AppShell() {
       }}
     >
       <CurtainTransition
-        state={curtainState !== "idle" ? curtainState : authCurtain}
-        routeLabel={curtainState !== "idle" ? (PAGE_LABELS[pendingNav?.id ?? active] ?? active).toUpperCase() : "DASHBOARD"}
+        state={authCurtain}
+        routeLabel="DASHBOARD"
         onMidpoint={() => {}}
         theme={theme}
       />
@@ -449,7 +424,6 @@ function AppShell() {
               flex: 1,
               overflow: "hidden",
               height: "100%",
-              animation: "slideUp 0.32s cubic-bezier(.16,1,.3,1)",
             }}
           >
             {renderPage(active, navParams, handleNav)}

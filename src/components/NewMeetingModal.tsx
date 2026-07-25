@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FileText } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileText } from "lucide-react";
 import { FONT, LETTER_SPACING, RADIUS, SPACE } from "../tokens/colors";
 import { Button, Chip, Modal } from "./ui";
 import { useAuth } from "../context/AuthContext";
@@ -280,16 +280,25 @@ export function NewMeetingModal({
 function MiniCalendar() {
   const { colors } = useTheme();
   const [selected, setSelected] = useState<number | null>(null);
-
   const today = new Date();
-  const monthLabel = today.toLocaleDateString(undefined, { month: "long", year: "numeric" });
-  const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-  const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth());
+
+  const monthLabel = new Date(viewYear, viewMonth, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  const firstOfMonth = new Date(viewYear, viewMonth, 1);
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const startWeekday = firstOfMonth.getDay();
   const cells: (number | null)[] = [
     ...Array(startWeekday).fill(null),
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ];
+
+  const goToMonth = (delta: number) => {
+    const next = new Date(viewYear, viewMonth + delta, 1);
+    setViewYear(next.getFullYear());
+    setViewMonth(next.getMonth());
+    setSelected(null);
+  };
 
   return (
     <div
@@ -303,8 +312,26 @@ function MiniCalendar() {
         gap: 10,
       }}
     >
-      <div style={{ fontSize: FONT.size.label, fontWeight: 600, color: colors.text }}>
-        {monthLabel}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <button
+          type="button"
+          onClick={() => goToMonth(-1)}
+          aria-label="Previous month"
+          style={{ background: "transparent", border: "none", color: colors.textMuted, display: "flex", alignItems: "center", padding: 2 }}
+        >
+          <ChevronLeft size={14} strokeWidth={2} />
+        </button>
+        <div style={{ fontSize: FONT.size.label, fontWeight: 600, color: colors.text }}>
+          {monthLabel}
+        </div>
+        <button
+          type="button"
+          onClick={() => goToMonth(1)}
+          aria-label="Next month"
+          style={{ background: "transparent", border: "none", color: colors.textMuted, display: "flex", alignItems: "center", padding: 2 }}
+        >
+          <ChevronRight size={14} strokeWidth={2} />
+        </button>
       </div>
       <div
         style={{
@@ -321,7 +348,7 @@ function MiniCalendar() {
           <span key={i}>{d}</span>
         ))}
         {cells.map((day, i) => {
-          const isToday = day === today.getDate();
+          const isToday = day === today.getDate() && viewMonth === today.getMonth() && viewYear === today.getFullYear();
           const isSelected = day != null && day === selected;
           return (
             <button

@@ -370,7 +370,7 @@ export default function Landing({ onNavigate }: Props) {
                     alignItems: 'center',
                     gap: 24,
                     color: colors.textMuted,
-                    fontSize: FONT.size.body,
+                    fontSize: FONT.size.subheading,
                     fontWeight: 500,
                     whiteSpace: 'nowrap',
                     padding: '0 24px',
