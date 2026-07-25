@@ -4,7 +4,6 @@ import { FONT, LETTER_SPACING, RADIUS, SPACE } from '../tokens/colors'
 import { Button } from '../components/ui'
 import { useTheme } from '../hooks/useTheme'
 import AmbientBackground from '../components/AmbientBackground'
-import RollingText from '../components/RollingText'
 
 type Colors = ReturnType<typeof useTheme>['colors']
 type Shadow = ReturnType<typeof useTheme>['shadow']
@@ -184,7 +183,7 @@ export default function Landing({ onNavigate }: Props) {
           </button>
           <div data-magnet style={{ display: 'inline-block' }}>
             <Button variant="primary" size="sm" onClick={() => onNavigate('register')}>
-              <RollingText accentColor={colors.onAccent}>Get started</RollingText>
+              Get started
             </Button>
           </div>
         </div>
@@ -283,12 +282,12 @@ export default function Landing({ onNavigate }: Props) {
           <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-start' }}>
             <div data-magnet style={{ display: 'inline-block' }}>
               <Button variant="primary" size="md" style={{ padding: '11px 26px', fontSize: FONT.size.body, textTransform: 'uppercase', letterSpacing: LETTER_SPACING.wide }} onClick={() => onNavigate('register')}>
-                <RollingText accentColor={colors.onAccent}>Get started →</RollingText>
+                Get started →
               </Button>
             </div>
             <div data-magnet style={{ display: 'inline-block' }}>
               <Button variant="ghost" size="md" style={{ padding: '11px 26px', fontSize: FONT.size.body, textTransform: 'uppercase', letterSpacing: LETTER_SPACING.wide }} onClick={() => onNavigate('login')}>
-                <RollingText accentColor={colors.text}>Sign in</RollingText>
+                Sign in
               </Button>
             </div>
           </div>
@@ -433,7 +432,7 @@ export default function Landing({ onNavigate }: Props) {
         </h2>
         <div data-magnet style={{ display: 'inline-block' }}>
           <Button variant="primary" size="md" style={{ padding: '11px 26px', fontSize: FONT.size.body }} onClick={() => onNavigate('register')}>
-            <RollingText accentColor={colors.onAccent}>Get started</RollingText>
+            Get started
           </Button>
         </div>
       </section>

@@ -8,7 +8,6 @@ import { useAuth } from "../context/AuthContext";
 import { useCreateMeeting, ACTIVE_SESSION_KEY, projectIdFromTitle } from "../hooks/useCreateMeeting";
 import { useTheme } from "../hooks/useTheme";
 import AmbientBackground from "../components/AmbientBackground";
-import RollingText from "../components/RollingText";
 
 import { API_BASE } from "../lib/api";
 
@@ -511,7 +510,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
 
         <div data-magnet style={{ display: "inline-block", marginBottom: 20 }}>
           <Button variant="primary" onClick={() => setShowNewMeeting(true)}>
-            <RollingText accentColor={colors.onAccent}>+ NEW MEETING</RollingText>
+            + NEW MEETING
           </Button>
         </div>
 

@@ -67,6 +67,12 @@ export default function Sidebar({
   const { user } = useAuth();
   const { colors } = useTheme();
   const [expanded, setExpanded] = useState(false);
+  const [hoveredNav, setHoveredNav] = useState<string | null>(null);
+  const [themeHovered, setThemeHovered] = useState(false);
+  const [logoutHovered, setLogoutHovered] = useState(false);
+  const [pressedNav, setPressedNav] = useState<string | null>(null);
+  const [themePressed, setThemePressed] = useState(false);
+  const [logoutPressed, setLogoutPressed] = useState(false);
 
   const displayName = user?.name ?? "Guest";
   const initials    = nameToInitials(displayName);
@@ -119,6 +125,10 @@ export default function Sidebar({
               aria-label={item.label}
               aria-current={isActive ? "page" : undefined}
               onClick={() => onNav(item.id)}
+              onMouseEnter={() => setHoveredNav(item.id)}
+              onMouseLeave={() => { setHoveredNav(null); setPressedNav(null); }}
+              onMouseDown={() => setPressedNav(item.id)}
+              onMouseUp={() => setPressedNav(null)}
               style={{
                 width: expanded ? EXPANDED_WIDTH - 8 : 56,
                 height: 56, marginLeft: 4, borderRadius: RADIUS.lg,
@@ -127,7 +137,8 @@ export default function Sidebar({
                 display: "flex", alignItems: "center", justifyContent: "flex-start",
                 gap: 14, paddingLeft: 17,
                 color: isActive ? colors.accent : colors.textDim,
-                transition: "background 0.15s, color 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
+                transform: pressedNav === item.id ? "scale(0.96)" : "scale(1)",
+                transition: "transform 0.12s cubic-bezier(.4,0,.2,1), background 0.15s, color 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
               }}
             >
               <span style={{ display: "flex", flexShrink: 0 }}>
@@ -142,7 +153,7 @@ export default function Sidebar({
                 fontSize: FONT.size.body, fontWeight: 500, whiteSpace: "nowrap",
                 opacity: expanded ? 1 : 0, transition: "opacity 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
               }}>
-                <LetterStagger text={item.label} accentColor={colors.accent} />
+                <LetterStagger text={item.label} accentColor={colors.accent} revealed={hoveredNav === item.id} />
               </span>
             </button>
 
@@ -167,13 +178,18 @@ export default function Sidebar({
           title="Toggle theme"
           aria-label="Toggle theme"
           onClick={onToggleTheme}
+          onMouseEnter={() => setThemeHovered(true)}
+          onMouseLeave={() => { setThemeHovered(false); setThemePressed(false); }}
+          onMouseDown={() => setThemePressed(true)}
+          onMouseUp={() => setThemePressed(false)}
           style={{
             width: expanded ? EXPANDED_WIDTH - 8 : 56, height: 44, marginLeft: 4,
             borderRadius: 8, background: "transparent", border: "none",
             color: colors.textDim, cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "flex-start",
             gap: 14, paddingLeft: 17,
-            transition: "width 0.25s cubic-bezier(.4,0,.2,1)",
+            transform: themePressed ? "scale(0.96)" : "scale(1)",
+            transition: "transform 0.12s cubic-bezier(.4,0,.2,1), width 0.25s cubic-bezier(.4,0,.2,1)",
           }}
         >
           <span style={{ display: "flex", flexShrink: 0 }}>
@@ -185,7 +201,7 @@ export default function Sidebar({
             fontSize: FONT.size.body, fontWeight: 500, whiteSpace: "nowrap",
             opacity: expanded ? 1 : 0, transition: "opacity 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
           }}>
-            <LetterStagger text={theme === "dark" ? "Light mode" : "Dark mode"} accentColor={colors.accent} />
+            <LetterStagger text={theme === "dark" ? "Light mode" : "Dark mode"} accentColor={colors.accent} revealed={themeHovered} />
           </span>
         </button>
 
@@ -221,13 +237,18 @@ export default function Sidebar({
             title="Sign out"
             aria-label="Sign out"
             onClick={onLogout}
+            onMouseEnter={() => setLogoutHovered(true)}
+            onMouseLeave={() => { setLogoutHovered(false); setLogoutPressed(false); }}
+            onMouseDown={() => setLogoutPressed(true)}
+            onMouseUp={() => setLogoutPressed(false)}
             style={{
               width: expanded ? EXPANDED_WIDTH - 8 : 56, height: 44, marginLeft: 4,
               borderRadius: 8, background: "transparent", border: "none",
               color: colors.textDim, cursor: "pointer",
               display: "flex", alignItems: "center", justifyContent: "flex-start",
               gap: 14, paddingLeft: 17,
-              transition: "color 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
+              transform: logoutPressed ? "scale(0.96)" : "scale(1)",
+              transition: "transform 0.12s cubic-bezier(.4,0,.2,1), color 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
             }}
           >
             <span style={{ display: "flex", flexShrink: 0 }}>
@@ -239,7 +260,7 @@ export default function Sidebar({
               fontSize: FONT.size.body, fontWeight: 500, whiteSpace: "nowrap",
               opacity: expanded ? 1 : 0, transition: "opacity 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
             }}>
-              <LetterStagger text="Sign out" accentColor={colors.accent} />
+              <LetterStagger text="Sign out" accentColor={colors.accent} revealed={logoutHovered} />
             </span>
           </button>
         )}
