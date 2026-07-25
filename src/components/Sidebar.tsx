@@ -87,7 +87,7 @@ export default function Sidebar({
         paddingTop: SPACE[2.5],
         paddingBottom: 12,
         flexShrink: 0,
-        overflow: "hidden",
+        overflowY: "auto", overflowX: "hidden",
         transition: "width 0.25s cubic-bezier(.4,0,.2,1)",
       }}
     >

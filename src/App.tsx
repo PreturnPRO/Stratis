@@ -41,11 +41,11 @@ function LiveClock({ colors }: { colors: { accent: string } }) {
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000 * 15);
+    const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
 
-  const time = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(now);
+  const time = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(now);
   const tz = new Intl.DateTimeFormat(undefined, { timeZoneName: "short" })
     .formatToParts(now)
     .find((p) => p.type === "timeZoneName")?.value ?? "";
@@ -244,7 +244,7 @@ function AppShell() {
     return (
       <div
         style={{
-          height: "100vh",
+          height: "100dvh",
           background: COLORS.bg,
           color: COLORS.text,
           fontFamily: "'Helvetica Neue', Arial, sans-serif",
@@ -276,7 +276,7 @@ function AppShell() {
     <div
       style={{
         display: "flex",
-        height: "100vh",
+        height: "100dvh",
         background: colors.bg,
         fontFamily: "'Helvetica Neue', Arial, sans-serif",
         overflow: "hidden",
