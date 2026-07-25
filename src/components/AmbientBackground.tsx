@@ -342,9 +342,13 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
   }, [reducedMotion]);
 
   const stroke = theme === "light" ? "rgba(60,56,36,.16)" : "rgba(255,255,255,.13)";
-  const dot = theme === "light" ? "rgba(84,113,58,.55)" : "rgba(143,174,109,.75)";
+  const dot = theme === "light" ? "rgba(84,113,58,.85)" : "rgba(143,174,109,.9)";
   const dotHalo = theme === "light" ? "rgba(84,113,58,.18)" : "rgba(143,174,109,.22)";
   const coordColor = theme === "light" ? "rgba(60,56,36,.5)" : "rgba(255,255,255,.42)";
+  // The user glyph sits inside the dot, so it needs to read against the
+  // dot's own fill rather than the page background — the page background
+  // (which the dot already contrasts against) is too close in value here.
+  const iconColor = theme === "light" ? "#f6f4ee" : "#09090b";
 
   // Only re-renders on structural changes (spawn/fade-removal) — per-frame
   // motion is written directly to the DOM refs above.
@@ -359,11 +363,14 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
     >
       <defs>
         {/* Simplified person/user glyph (head + shoulders), reused per point
-            via <use> so dots read as humanoid instead of plain circles. */}
-        <path
-          id="constellation-user-icon"
-          d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
-        />
+            via <use> so dots read as humanoid instead of plain circles. Must
+            be a <symbol> (not a bare <path>) — only symbol/svg targets honor
+            the width/height/viewBox scaling <use> applies below; a raw path
+            renders at its native 24-unit size, which is huge next to the
+            0-100 viewBox. */}
+        <symbol id="constellation-user-icon" viewBox="0 0 24 24">
+          <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+        </symbol>
       </defs>
       <g ref={groupRef} style={{ transition: "transform 0.6s ease-out" }}>
         {edges.map((e, i) => (
@@ -389,7 +396,8 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
         {points.map((p, i) => {
           const r = 1.1;
           const tick = 0.4;
-          const iconSize = 1.7;
+          const dotRadius = 0.62;
+          const iconSize = 0.85;
           return (
             <g
               key={p.id}
@@ -407,14 +415,14 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
                 }}
               >
                 <circle cx={0} cy={0} r={1.4} fill={dotHalo} />
+                <circle cx={0} cy={0} r={dotRadius} fill={dot} />
                 <use
                   href="#constellation-user-icon"
                   x={-iconSize / 2}
                   y={-iconSize / 2}
                   width={iconSize}
                   height={iconSize}
-                  viewBox="0 0 24 24"
-                  fill={dot}
+                  fill={iconColor}
                 />
               </g>
               {/* Reticle + coord label live in the same drifting group as the
