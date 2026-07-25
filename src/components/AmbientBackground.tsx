@@ -88,22 +88,32 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
             <circle cx={x} cy={y} r={0.35} fill={dot} />
           </g>
         ))}
+        {COORD_POINT_INDICES.map((idx, i) => {
+          const [x, y] = CONSTELLATION_POINTS[idx];
+          const r = 1.1;
+          const tick = 0.4;
+          return (
+            <g key={i}>
+              {/* targeting-reticle corner brackets around the source point */}
+              <path d={`M${x - r},${y - r + tick} L${x - r},${y - r} L${x - r + tick},${y - r}`} stroke={coordColor} strokeWidth={0.09} fill="none" />
+              <path d={`M${x + r - tick},${y - r} L${x + r},${y - r} L${x + r},${y - r + tick}`} stroke={coordColor} strokeWidth={0.09} fill="none" />
+              <path d={`M${x - r},${y + r - tick} L${x - r},${y + r} L${x - r + tick},${y + r}`} stroke={coordColor} strokeWidth={0.09} fill="none" />
+              <path d={`M${x + r - tick},${y + r} L${x + r},${y + r} L${x + r},${y + r - tick}`} stroke={coordColor} strokeWidth={0.09} fill="none" />
+              {/* leader line from reticle to label */}
+              <line x1={x + r} y1={y - r} x2={x + r + 0.9} y2={y - r - 0.9} stroke={coordColor} strokeWidth={0.08} />
+              <text
+                x={x + r + 1.1}
+                y={y - r - 0.9}
+                fontSize={1.1}
+                fontFamily="'SF Mono', ui-monospace, Menlo, monospace"
+                fill={coordColor}
+              >
+                {formatCoord(x, y)}
+              </text>
+            </g>
+          );
+        })}
       </g>
-      {COORD_POINT_INDICES.map((idx, i) => {
-        const [x, y] = CONSTELLATION_POINTS[idx];
-        return (
-          <text
-            key={i}
-            x={x + 1.6}
-            y={y + 0.6}
-            fontSize={1.6}
-            fontFamily="'SF Mono', ui-monospace, Menlo, monospace"
-            fill={coordColor}
-          >
-            {formatCoord(x, y)}
-          </text>
-        );
-      })}
     </svg>
   );
 }
