@@ -7,6 +7,7 @@
 // `nodes`/`notifications` tables is a later task — this owns live state only.
 import type { AIBlock, AnsweredSource, LiveCardDTO, SuggestionCard } from "@shared/types";
 import { newId, now } from "../lib/ids";
+import { isNearDuplicate } from "../lib/textSimilarity";
 
 // sessionId -> (cardId -> card)
 const bySession = new Map<string, Map<string, SuggestionCard>>();
@@ -21,10 +22,6 @@ const MAX_OPEN_CARDS_PER_SESSION = 4;
 // Only applies when the model actually supplied a confidence — cards that
 // omit it are trusted as-is.
 const MIN_CARD_CONFIDENCE = 0.5;
-
-function normalizeQuestion(text: string): string {
-  return text.trim().toLowerCase().replace(/\s+/g, " ").replace(/[?.!]+$/g, "");
-}
 
 function sessionMap(sessionId: string): Map<string, SuggestionCard> {
   let m = bySession.get(sessionId);
@@ -63,19 +60,21 @@ export function createFromLiveCards(sessionId: string, cards: LiveCardDTO[]): Su
   const created: SuggestionCard[] = [];
 
   let openCount = openCards(sessionId).length;
-  // Dedup against EVERY card this session — including answered ones. A struck
-  // card means the room already covered it; re-suggesting it reads as broken.
-  const seenQuestions = new Set(
-    allCards(sessionId).map((c) => normalizeQuestion(c.question))
-  );
+  // Dedup against EVERY card this session — including answered ones — and
+  // against cards accepted earlier in THIS batch. Near-duplicate aware: the
+  // model routinely re-emits the same question reworded ("What's our Q3
+  // budget?" vs "What is the budget for Q3?"), which exact-string matching let
+  // through and stacked as a visible repeat — the facilitator complaint this
+  // guards against. A struck card still counts: re-raising a covered topic
+  // reads as broken.
+  const seenQuestions = allCards(sessionId).map((c) => c.question);
 
   for (const c of cards) {
     if (c.confidence !== undefined && c.confidence < MIN_CARD_CONFIDENCE) continue;
     if (openCount >= MAX_OPEN_CARDS_PER_SESSION) continue;
 
     const question = c.suggested_question?.trim() || c.title;
-    const normalized = normalizeQuestion(question);
-    if (seenQuestions.has(normalized)) continue;
+    if (seenQuestions.some((seen) => isNearDuplicate(question, seen))) continue;
 
     const card: SuggestionCard = {
       id: newId("sug"),
@@ -90,7 +89,7 @@ export function createFromLiveCards(sessionId: string, cards: LiveCardDTO[]): Su
     };
     m.set(card.id, card);
     created.push(card);
-    seenQuestions.add(normalized);
+    seenQuestions.push(question);
     openCount++;
   }
   return created;
