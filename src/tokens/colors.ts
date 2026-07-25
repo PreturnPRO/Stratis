@@ -139,6 +139,7 @@ export const LIGHT_SHADOW = {
   shadCard:  "0 1px 2px rgba(80,74,52,.05), 0 8px 22px rgba(80,74,52,.08)",
   shadFloat2: "0 2px 6px rgba(80,74,52,.07), 0 14px 30px rgba(80,74,52,.11)",
   shadModal: "0 24px 60px rgba(70,64,42,.20), 0 4px 12px rgba(70,64,42,.09)",
+  hero: "0 30px 80px rgba(70,64,42,.18)",
   glowAccent: "0 0 0 1px rgba(84,113,58,.22), 0 6px 18px rgba(84,113,58,.14)",
 } as const;
 
