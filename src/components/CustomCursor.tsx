@@ -88,7 +88,8 @@ export default function CustomCursor({
 
   if (isTouch || calmZone) return null;
 
-  const dotColor = theme === "light" ? "rgba(27,27,22,.9)" : "#8FAE6D";
+  const isLight = theme === "light";
+  const dotColor = isLight ? "#fff" : "#8FAE6D";
 
   return (
     <div
@@ -102,8 +103,8 @@ export default function CustomCursor({
         height: 12,
         borderRadius: "50%",
         background: dotColor,
-        outline: theme === "light" ? "1.5px solid rgba(255,255,255,.7)" : "none",
-        mixBlendMode: theme === "light" ? "normal" : "exclusion",
+        boxShadow: isLight ? "0 0 0 1px rgba(255,255,255,.9)" : "none",
+        mixBlendMode: isLight ? "difference" : "exclusion",
         pointerEvents: "none",
         zIndex: 2000,
         transition: "width .18s ease, height .18s ease",
