@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Zap, ChevronDown, Sun, Moon } from 'lucide-react'
 import { FONT, LETTER_SPACING, RADIUS, SPACE } from '../tokens/colors'
 import { Button } from '../components/ui'
@@ -108,11 +108,24 @@ export default function Landing({ onNavigate }: Props) {
   const card1Visible = effectiveStep >= 5
   const card0Answered = effectiveStep >= 6
   const [pastHero, setPastHero] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const root = scrollRef.current
+    const target = document.getElementById('how-it-works')
+    if (!root || !target) return
+    const observer = new IntersectionObserver(
+      ([entry]) => setPastHero(entry.isIntersecting),
+      { root, threshold: 0 }
+    )
+    observer.observe(target)
+    return () => observer.disconnect()
+  }, [])
 
   return (
     <div
+      ref={scrollRef}
       style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', background: colors.bg }}
-      onScroll={(e) => setPastHero(e.currentTarget.scrollTop > window.innerHeight * 0.6)}
     >
       {/* ── NAV ────────────────────────────────────────────────────────────── */}
       <nav
@@ -295,7 +308,7 @@ export default function Landing({ onNavigate }: Props) {
 
         {/* Scroll cue */}
         <div
-          className="scroll-cue"
+          className={pastHero ? undefined : "scroll-cue"}
           style={{
             position: 'fixed',
             bottom: 40,
