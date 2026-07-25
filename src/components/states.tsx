@@ -2,7 +2,13 @@ import { FONT } from "../constants";
 import { useEffect, useState } from "react";
 import { useTheme } from "../hooks/useTheme";
 
-export function EmptyState({ message = "Nothing here yet" }) {
+export function EmptyState({
+  message = "Nothing here yet",
+  action,
+}: {
+  message?: string;
+  action?: React.ReactNode;
+}) {
   const { colors } = useTheme();
   return (
     <div style={{
@@ -20,6 +26,7 @@ export function EmptyState({ message = "Nothing here yet" }) {
     }}>
       <div style={{ fontSize: FONT.size.heading, opacity: 0.4 }}>⊘</div>
       <div>{message}</div>
+      {action}
     </div>
   );
 }

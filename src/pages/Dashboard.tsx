@@ -83,9 +83,6 @@ function formatDate(value?: string | null): string {
   }).format(d);
 }
 
-// Deterministic accent per meeting/summary id — same hash idiom as the
-// Sidebar avatar colors, so the timeline dots and summary card edges read
-// as distinct-but-consistent rather than uniform or random-per-render.
 function hashAccent(id: string, colors: Colors): string {
   let hash = 0;
   for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
@@ -93,7 +90,6 @@ function hashAccent(id: string, colors: Colors): string {
   return palette[Math.abs(hash) % palette.length];
 }
 
-// ─── Section header (shared by both expanded-panel columns) ────────────────
 function SectionHeader({
   colors,
   label,
@@ -128,12 +124,6 @@ function SectionHeader({
   );
 }
 
-// ─── Reminder pill (click to toggle) ────────────────────────────────────────
-// Collapsed: a single glanceable pill. Expanded: a full-width panel below it
-// fills the dashboard's otherwise-empty center/right — a connected vertical
-// timeline for upcoming meetings (echoes the constellation dot/line motif
-// from Landing) beside a card grid for recent summaries, instead of a
-// cramped dropdown crammed into one corner.
 function ReminderCard({
   colors,
   shadow,
@@ -157,25 +147,15 @@ function ReminderCard({
 }) {
   const [open, setOpen] = useState(false);
 
-  const projectStats = useMemo(() => {
-    type Stat = { name: string; meetingCount: number; summaryCount: number; lastActivity: string | null };
-    const map = new Map<string, Stat>();
-    const bump = (key: string, name: string, when: string | null | undefined, kind: "meeting" | "summary") => {
-      const entry = map.get(key) ?? { name, meetingCount: 0, summaryCount: 0, lastActivity: null };
-      if (kind === "meeting") entry.meetingCount += 1; else entry.summaryCount += 1;
-      if (when && (!entry.lastActivity || new Date(when) > new Date(entry.lastActivity))) entry.lastActivity = when;
-      map.set(key, entry);
-    };
-    meetings.forEach((m) => {
-      const key = m.projectId ?? m.project ?? "unassigned";
-      bump(key, m.project ?? m.projectId ?? "Untitled project", m.scheduledAt ?? m.time, "meeting");
-    });
-    summaries.forEach((sm) => {
-      const key = sm.project ?? "unassigned";
-      bump(key, sm.project ?? "Untitled project", sm.date, "summary");
-    });
-    return [...map.values()].sort((a, b) => (b.lastActivity ?? "").localeCompare(a.lastActivity ?? ""));
-  }, [meetings, summaries]);
+  const nextUp = useMemo(() => {
+    const live = meetings.filter((m) => m.activeSession);
+    const scheduled = meetings
+      .filter((m) => !m.activeSession && (m.scheduledAt ?? m.time))
+      .sort((a, b) =>
+        String(a.scheduledAt ?? a.time).localeCompare(String(b.scheduledAt ?? b.time)),
+      );
+    return [...live, ...scheduled].slice(0, 3);
+  }, [meetings]);
   const total = meetings.length + summaries.length;
   const nextMeeting = meetings[0];
   const latestSummary = summaries[0];
@@ -267,7 +247,6 @@ function ReminderCard({
             gap: 40,
           }}
         >
-          {/* Upcoming meetings — vertical connected timeline */}
           <div>
             <SectionHeader
               colors={colors}
@@ -343,7 +322,6 @@ function ReminderCard({
             )}
           </div>
 
-          {/* Recent summaries — card grid */}
           <div>
             <SectionHeader colors={colors} label="Recent summaries" count={summaries.length} />
             {loading ? (
@@ -390,28 +368,37 @@ function ReminderCard({
             )}
           </div>
 
-          {/* Projects at a glance — client-derived from meetings + summaries,
-              no extra fetch. Fills the third column next to upcoming meetings
-              and recent summaries. */}
           <div>
-            <SectionHeader colors={colors} label="Projects at a glance" count={projectStats.length} />
+            <SectionHeader colors={colors} label="Next up" count={nextUp.length} />
             {loading ? (
               <LoadingState count={2} />
-            ) : projectStats.length === 0 ? (
-              <EmptyState message="No projects yet." />
+            ) : nextUp.length === 0 ? (
+              <EmptyState
+                message="Nothing scheduled."
+                action={
+                  <Button variant="ghost" size="sm" onClick={() => onNav?.("docket")}>
+                    Open the docket
+                  </Button>
+                }
+              />
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {projectStats.map((proj) => {
-                  const total = proj.meetingCount + proj.summaryCount;
+                {nextUp.map((m) => {
+                  const live = !!m.activeSession;
+                  const when = m.scheduledAt ?? m.time ?? null;
                   return (
                     <button
-                      key={proj.name}
+                      key={m.id}
                       type="button"
-                      onClick={() => onNav?.("projects")}
+                      onClick={() =>
+                        live && m.activeSession
+                          ? onNav?.("meeting", { sessionId: m.activeSession.id })
+                          : onNav?.("docket")
+                      }
                       style={{
                         textAlign: "left",
                         background: colors.surface,
-                        border: `1px solid ${colors.border}`,
+                        border: `1px solid ${live ? colors.accentDim : colors.border}`,
                         borderRadius: RADIUS.md,
                         padding: "10px 12px",
                         cursor: "pointer",
@@ -421,18 +408,31 @@ function ReminderCard({
                         minWidth: 0,
                       }}
                     >
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span
+                          style={{
+                            fontFamily: FONT.mono,
+                            fontSize: FONT.size.caption,
+                            color: live ? colors.accent : colors.textMuted,
+                            fontWeight: live ? 700 : 400,
+                          }}
+                        >
+                          {live ? "LIVE NOW" : when ? formatDate(when) : "Unscheduled"}
+                        </span>
+                      </div>
                       <div style={{ color: colors.text, fontSize: FONT.size.body, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {proj.name}
+                        {m.title}
                       </div>
                       <div style={{ fontSize: FONT.size.label, color: colors.textMuted }}>
-                        {total} item{total === 1 ? "" : "s"}
-                      </div>
-                      <div style={{ fontFamily: FONT.mono, color: colors.textDim, fontSize: FONT.size.caption }}>
-                        {proj.lastActivity ? formatDate(proj.lastActivity) : "No recent activity"}
+                        {m.project ?? m.projectId ?? "No project"}
+                        {live ? " · join" : ""}
                       </div>
                     </button>
                   );
                 })}
+                <Button variant="ghost" size="sm" onClick={() => onNav?.("docket")}>
+                  Open the docket
+                </Button>
               </div>
             )}
           </div>
@@ -536,6 +536,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
     durationMinutes: number;
     goal: string;
     brief: string;
+    scheduledAt: string | null;
   }) => {
     const sessionId = await create.createMeeting({
       title: input.title,
@@ -543,6 +544,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
       goal: input.goal,
       brief: input.brief,
       durationMinutes: input.durationMinutes,
+      scheduledAt: input.scheduledAt,
     });
     if (sessionId) setShowNewMeeting(false);
   };

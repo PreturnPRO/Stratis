@@ -1,12 +1,9 @@
-// Auth middleware (S1-T00-B). Protected routes require a valid Bearer token;
-// requireRole() additionally gates by role (e.g. facilitator-only actions).
 import type { Request, Response, NextFunction } from "express";
 import type { Role } from "@shared/types";
 import { verifyToken, type JwtClaims } from "./jwt";
 import { db } from "../db/database";
 
 declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       auth?: JwtClaims;

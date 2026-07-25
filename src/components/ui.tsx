@@ -1,12 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from "react";
 import { COLORS, RADIUS, FONT, LETTER_SPACING, SPACE } from "../tokens/colors";
 import { useTheme } from "../hooks/useTheme";
-import LetterStagger from "./LetterStagger";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Legacy style helpers — kept so pages not yet migrated keep working.
-// Prefer the <Button> component below for new/updated UI.
-// ─────────────────────────────────────────────────────────────────────────────
 
 export function btnAccent(extra = {}) {
   return {
@@ -57,11 +51,6 @@ export function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Button — variants + sizes with real hover/active feedback. Focus ring comes
-// from the global :focus-visible rule in index.css.
-// ─────────────────────────────────────────────────────────────────────────────
-
 export type ButtonVariant = "primary" | "ghost" | "danger" | "subtle";
 export type ButtonSize = "sm" | "md";
 
@@ -82,7 +71,6 @@ function variantBase(
   variant: ButtonVariant,
   hovered: boolean,
   colors: ReturnType<typeof useTheme>["colors"],
-  shadow: ReturnType<typeof useTheme>["shadow"],
 ): React.CSSProperties {
   switch (variant) {
     case "primary":
@@ -90,7 +78,6 @@ function variantBase(
         background: hovered ? colors.accentHover : colors.accent,
         border: `1px solid ${hovered ? colors.accentHover : colors.accent}`,
         color: "#10160b",
-        boxShadow: hovered ? shadow.glow(colors.accent) : "none",
       };
     case "danger":
       return {
@@ -131,15 +118,9 @@ export function Button({
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
   const active = hovered && !disabled;
-  const { colors, shadow } = useTheme();
+  const { colors } = useTheme();
 
-  // Plain string labels get the per-letter roll (same mechanic as Sidebar's
-  // nav items), driven by this button's own hover state so it fires over
-  // the whole row, not just the text. Non-string children (icons, already
-  // custom-composed nodes) pass through untouched.
-  const label = typeof children === "string"
-    ? <LetterStagger text={children} accentColor={variantBase(variant, true, colors, shadow).color as string} revealed={active} />
-    : children;
+  const label = children;
 
   return (
     <button
@@ -159,10 +140,10 @@ export function Button({
         lineHeight: 1,
         width: fullWidth ? "100%" : undefined,
         whiteSpace: "nowrap",
-        transform: pressed && !disabled ? "scale(0.94)" : "scale(1)",
-        transition: "transform 0.12s cubic-bezier(.4,0,.2,1), background 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s",
+        opacity: pressed && !disabled ? 0.82 : 1,
+        transition: "background 0.15s, color 0.15s, border-color 0.15s, opacity 0.1s",
         ...SIZE_STYLE[size],
-        ...variantBase(variant, active, colors, shadow),
+        ...variantBase(variant, active, colors),
         ...style,
       }}
     >
@@ -172,7 +153,6 @@ export function Button({
   );
 }
 
-// IconButton — square, icon-only, ghost hover.
 export function IconButton({
   title,
   style,
@@ -203,8 +183,8 @@ export function IconButton({
         borderRadius: RADIUS.sm,
         background: hovered ? colors.surfaceHover : "transparent",
         border: "none",
-        transform: pressed ? "scale(0.88)" : "scale(1)",
-        transition: "transform 0.12s cubic-bezier(.4,0,.2,1), background 0.15s, color 0.15s",
+        opacity: pressed ? 0.82 : 1,
+        transition: "background 0.15s, color 0.15s, opacity 0.1s",
         color: hovered ? colors.text : colors.textMuted,
         ...style,
       }}
@@ -213,10 +193,6 @@ export function IconButton({
     </button>
   );
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Chip — compact status indicator.
-// ─────────────────────────────────────────────────────────────────────────────
 
 export function Chip({
   children,
@@ -251,10 +227,6 @@ export function Chip({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Modal — backdrop fade, panel pop, Esc-to-close, click-outside, focus capture.
-// ─────────────────────────────────────────────────────────────────────────────
-
 export function Modal({
   title,
   onClose,
@@ -268,18 +240,12 @@ export function Modal({
   children: React.ReactNode;
   footer?: React.ReactNode;
   width?: number;
-  // Form modals pass false: a mouse slip onto the backdrop must not wipe the
-  // user's inputs — those close on Cancel/Escape only.
   closeOnBackdrop?: boolean;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const { colors, shadow } = useTheme();
 
-  // Keep the latest onClose in a ref so the effect below can stay mount-only
-  // (empty deps) — depending on `onClose` directly re-ran this effect (and
-  // re-stole focus onto the panel) on every keystroke, since callers pass a
-  // fresh inline arrow function each render.
   const onCloseRef = useRef(onClose);
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -292,7 +258,6 @@ export function Modal({
     document.addEventListener("keydown", onKey);
     panelRef.current?.focus();
     return () => document.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

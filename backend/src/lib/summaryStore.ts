@@ -1,10 +1,3 @@
-// Summary store (alignment checkpoint, honest summary). Generates the
-// post-meeting summary ONCE and persists it to participant_summaries +
-// summary_blocks — the summary a team ratified must not silently change on
-// every page view, and re-running the AI per GET was slow and unstored.
-//
-// Generation is idempotent: a stored summary short-circuits, so the session-end
-// hook and the GET route's lazy backfill can both call it safely.
 import { db } from "../db/database";
 import { newId, now } from "./ids";
 import { structuredCall } from "@ai/index";
@@ -25,8 +18,6 @@ export interface StoredSummary {
   participants: string[];
   durationMinutes: number;
   blocks: StoredSummaryBlock[];
-  // Live provider name right after generation; null when read back from the DB
-  // (the stored record is provider-agnostic).
   provider: string | null;
   createdAt: string;
 }
@@ -131,7 +122,6 @@ function fallbackSummaryBlock(rows: TranscriptRow[]): StoredSummaryBlock {
   };
 }
 
-/** The stored summary for a session, or null if none has been generated. */
 export async function getStoredSummary(sessionId: string): Promise<StoredSummary | null> {
   const summaryResult = await db.query<{
     id: string;
@@ -156,8 +146,6 @@ export async function getStoredSummary(sessionId: string): Promise<StoredSummary
     [row.id],
   );
 
-  // participants_json is JSONB — pg returns it already parsed; tolerate a
-  // string in case of a driver/config difference.
   const participants = Array.isArray(row.participants_json)
     ? (row.participants_json as string[])
     : JSON.parse(String(row.participants_json ?? "[]"));
@@ -175,13 +163,6 @@ export async function getStoredSummary(sessionId: string): Promise<StoredSummary
   };
 }
 
-/**
- * Generate the summary once and persist it. Idempotent — an existing stored
- * summary is returned untouched. Returns null when the session doesn't exist
- * or has no transcript (nothing worth storing). An AI validation failure does
- * NOT abort: the raw-transcript fallback block is stored instead, because a
- * summary the team can read beats a permanently empty page.
- */
 export async function generateAndSaveSummary(sessionId: string): Promise<StoredSummary | null> {
   const existing = await getStoredSummary(sessionId);
   if (existing) return existing;
@@ -203,9 +184,6 @@ export async function generateAndSaveSummary(sessionId: string): Promise<StoredS
   const participants = uniqueParticipants(transcripts);
   const durationMinutes = minutesBetween(meta.started_at, meta.ended_at);
 
-  // The session-end hook and this function's lazy-GET caller can race; the
-  // unique index on session_id makes the loser's insert a silent no-op, and
-  // blocks are only written by the winner.
   const inserted = await db.query(
     `INSERT INTO participant_summaries
        (id, session_id, summary_title, summary_subtitle, participants_json, duration_minutes, created_at)

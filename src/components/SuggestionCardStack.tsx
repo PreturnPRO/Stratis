@@ -15,11 +15,8 @@ export interface SuggestionCard {
   createdAt: string
 }
 
-// Cards older than this read as "aging" — urgency pill dims slightly as an
-// informational cue. Nothing is ever auto-removed (augment, never interrupt).
 const STALE_MS = 90_000
 
-// Card-type accent + label (schema spec §6.2). Colors pulled from the theme.
 function typeMeta(colors: Record<string, string>): Record<LiveCardType, { color: string; label: string }> {
   return {
     QUESTION_SUGGESTION: { color: colors.accent, label: 'Question' },
@@ -44,16 +41,10 @@ interface Props {
   onMarkActive: (id: string) => void
 }
 
-// Only this many active cards show expanded at once — the rest queue up
-// behind a "+N more open" row so the stack can't grow into an obtrusive wall.
 const VISIBLE_ACTIVE_CAP = 4
 
 const URGENCY_RANK: Record<LiveCardUrgency, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 }
 
-// Hero slots are expensive attention in a live meeting: HIGH/MEDIUM earn a
-// full card; LOW stays a compact row unless nothing higher is on screen.
-// Cards without an urgency predate the field — treated as hero-eligible so
-// they never silently vanish into the LOW lane.
 function isLowTier(card: SuggestionCard): boolean {
   return card.urgency === 'LOW'
 }
@@ -74,13 +65,8 @@ export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkAct
   const styles = makeStyles(colors, theme)
   const [answeredOpen, setAnsweredOpen] = useState(false)
   const [queueOpen, setQueueOpen] = useState(false)
-  // Cards the facilitator explicitly opened from the queue jump the line,
-  // regardless of urgency, so "bring this one forward" always works.
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set())
 
-  // "Thinking" can flip true/false rapidly (Web Speech fires per utterance) —
-  // show immediately, but debounce hiding so rapid flips read as one
-  // continuous "reviewing" state instead of the ghost card flickering.
   const [showThinking, setShowThinking] = useState(!!thinking)
   const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
@@ -106,20 +92,15 @@ export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkAct
     const bRank = b.urgency ? URGENCY_RANK[b.urgency] : 3
     if (aRank !== bRank) return aRank - bRank
 
-    // Same urgency — oldest first, so aging cards surface into the visible
-    // slots instead of being perpetually buried behind newer arrivals.
     return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
   }
 
-  // Pinning a LOW card is a facilitator override — it joins the hero pool.
   const heroPool = active.filter(c => !isLowTier(c) || pinnedIds.has(c.id))
   const lowPool = active.filter(c => isLowTier(c) && !pinnedIds.has(c.id))
 
   const orderedHero = [...heroPool].sort(byPinUrgencyAge)
   const orderedLow = [...lowPool].sort(byPinUrgencyAge)
 
-  // Nothing higher-urgency on screen → LOW may expand. An empty gutter
-  // hiding the only open suggestion is worse than one calm card.
   const heroCards = orderedHero.length > 0 ? orderedHero : orderedLow
   const lowRows = orderedHero.length > 0 ? orderedLow : []
 
@@ -320,8 +301,6 @@ function CollapsedCard({
   )
 }
 
-// A queued (still-active, not-yet-visible) card, collapsed to one line.
-// Clicking the question brings it to the front; the check answers it in place.
 function QueuedRow({
   card,
   onOpen,
@@ -359,9 +338,6 @@ function QueuedRow({
   )
 }
 
-// Ghost placeholder shown while a transcript chunk is being processed by the
-// live AI — the same request that may produce a new suggestion card. Signals
-// "thinking" without claiming a suggestion is coming.
 function ThinkingCard() {
   const { colors } = useTheme()
   const styles = makeStyles(colors)
@@ -391,9 +367,6 @@ const SLIDE_UP_STYLE = `
 function makeStyles(colors: Record<string, string>, theme: 'dark' | 'light' = 'dark'): Record<string, React.CSSProperties> {
   const glass = theme === 'light' ? LIGHT_GLASS : GLASS
   return {
-  // Sticky inside its reserved column (see Meeting.tsx's suggestion-gutter) —
-  // pins near the top as the page scrolls, never overlaps Transcript/AI
-  // notes the way a viewport-fixed overlay could.
   stack: {
     position: 'sticky',
     top: 0,
@@ -411,8 +384,6 @@ function makeStyles(colors: Record<string, string>, theme: 'dark' | 'light' = 'd
     boxShadow: SHADOW.float,
     animation: 'slideUp 0.3s ease forwards',
   },
-  // Thin top wash marking this as the live signal zone — silent when there's
-  // nothing active to flag, so it stays a signal rather than decoration.
   stackSignal: {
     backgroundImage: `linear-gradient(180deg, ${colors.accent}33, transparent 40px)`,
   },
@@ -457,8 +428,6 @@ function makeStyles(colors: Record<string, string>, theme: 'dark' | 'light' = 'd
     padding: '2px 7px',
     borderRadius: 999,
   },
-  // Subheading-size on purpose: the question is the hero of the whole meeting
-  // screen and must outweigh the body-size transcript beside it.
   question: {
     margin: 0,
     fontSize: FONT.size.subheading,
@@ -490,7 +459,6 @@ function makeStyles(colors: Record<string, string>, theme: 'dark' | 'light' = 'd
     background: colors.surfaceMuted,
     border: `1px solid ${colors.border}`,
   },
-  // Past a growing-backlog threshold, tint calmly — a cue, not an alarm.
   toggleGroupBacklog: {
     background: `${colors.accent}0d`,
     border: `1px solid ${colors.accent}33`,

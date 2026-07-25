@@ -31,7 +31,7 @@ function validateRegister(name: string, email: string, password: string): string
   if (!password) return 'Password is required'
   if (password.length < 8) return 'Password must be at least 8 characters'
   if (!/[A-Za-z]/.test(password)) return 'Password must include at least one letter'
-  if (!/[1-9]/.test(password)) return 'Password must include at least one number'
+  if (!/[0-9]/.test(password)) return 'Password must include at least one number'
 
   return null
 }
@@ -76,7 +76,7 @@ export default function Register({ onNavigate }: Props) {
           email: email.trim(),
           password,
           orgName: orgName.trim() || `${name.trim()}'s Team`,
-          role: 'facilitator', // Standard default role for platform onboarding
+          role: 'facilitator',
         }),
       })
 
@@ -87,7 +87,6 @@ export default function Register({ onNavigate }: Props) {
         return
       }
 
-      // Success commits session tokens and loads active dashboard workspace
       login(payload.data.token, payload.data.user)
       onNavigate('app')
     } catch (err) {
@@ -226,8 +225,6 @@ export default function Register({ onNavigate }: Props) {
     </div>
   )
 }
-
-// ─── Style Blocks ────────────────────────────────────────────────────────────
 
 const containerStyle = (colors: Colors): CSSProperties => ({
   display: 'flex',

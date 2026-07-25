@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, FileText } from "lucide-react";
+import { FileText } from "lucide-react";
 import { FONT, LETTER_SPACING, RADIUS, SPACE } from "../tokens/colors";
 import { Button, Chip, Modal } from "./ui";
 import { useAuth } from "../context/AuthContext";
@@ -18,6 +18,12 @@ export interface NewMeetingFormValues {
   durationMinutes: number;
   goal: string;
   brief: string;
+  scheduledAt: string | null;
+}
+
+export interface MeetingSeed {
+  goal: string;
+  title?: string;
 }
 
 interface NewMeetingModalProps {
@@ -26,10 +32,32 @@ interface NewMeetingModalProps {
   onSubmit: (input: NewMeetingFormValues) => void | Promise<void>;
   submitting: boolean;
   error: string | null;
-  // Set only when opened from an existing project card (Projects.tsx) — locks
-  // the project field instead of free-typing a name, so the new meeting can't
-  // accidentally fork a new project via a slug mismatch.
   lockedProject?: LockedProject;
+  defaultScheduled?: boolean;
+  seed?: MeetingSeed;
+}
+
+function localDateValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function toIso(dateStr: string, timeStr: string): string | null {
+  if (!dateStr || !timeStr) return null;
+  const dt = new Date(`${dateStr}T${timeStr}`);
+  return Number.isNaN(dt.getTime()) ? null : dt.toISOString();
+}
+
+function describeWhen(dateStr: string, timeStr: string): string {
+  const iso = toIso(dateStr, timeStr);
+  if (!iso) return "Pick a date and time";
+  return new Date(iso).toLocaleString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export function NewMeetingModal({
@@ -39,6 +67,8 @@ export function NewMeetingModal({
   submitting,
   error,
   lockedProject,
+  defaultScheduled = false,
+  seed,
 }: NewMeetingModalProps) {
   const { token } = useAuth();
   const { colors } = useTheme();
@@ -49,21 +79,25 @@ export function NewMeetingModal({
   const [goal, setGoal] = useState("");
   const [brief, setBrief] = useState("");
   const [docVersion, setDocVersion] = useState<number | null>(null);
+  const [scheduling, setScheduling] = useState(false);
+  const [dateStr, setDateStr] = useState("");
+  const [timeStr, setTimeStr] = useState("14:00");
 
-  // Reset form state each time the modal opens.
   useEffect(() => {
     if (!open) return;
-    setTitle("");
+    setTitle(seed?.title ?? "");
     setProjectName(lockedProject?.name ?? "");
     setDurationMinutes(60);
-    setGoal("");
+    setGoal(seed?.goal ?? "");
     setBrief("");
     setDocVersion(null);
-  }, [open, lockedProject?.id, lockedProject?.name]);
+    setScheduling(defaultScheduled);
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    setDateStr(localDateValue(tomorrow));
+    setTimeStr("14:00");
+  }, [open, lockedProject?.id, lockedProject?.name, defaultScheduled, seed?.goal, seed?.title]);
 
-  // Check whether this project already has a PM document, so the modal can
-  // show an "attached" chip signaling the live AI will get that context
-  // automatically — the user doesn't need to retype it into Goal/Brief.
   useEffect(() => {
     if (!open || !lockedProject || !token) return;
 
@@ -87,7 +121,9 @@ export function NewMeetingModal({
 
   if (!open) return null;
 
-  const canSubmit = title.trim() && (lockedProject || projectName.trim());
+  const scheduledAt = scheduling ? toIso(dateStr, timeStr) : null;
+  const canSubmit =
+    title.trim() && (lockedProject || projectName.trim()) && (!scheduling || !!scheduledAt);
 
   return (
     <Modal
@@ -111,10 +147,23 @@ export function NewMeetingModal({
           {lockedProject ? `New meeting — ${lockedProject.name}` : "New meeting"}
         </>
       }
-      width={720}
+      width={560}
       onClose={() => !submitting && onClose()}
       footer={
         <>
+          <span
+            style={{
+              marginRight: "auto",
+              fontFamily: FONT.mono,
+              fontSize: FONT.size.caption,
+              color: colors.textMuted,
+            }}
+          >
+            {scheduling
+              ? `Starts ${describeWhen(dateStr, timeStr)}`
+              : "Starts immediately"}
+            {` · ${durationMinutes} min`}
+          </span>
           <Button variant="ghost" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
@@ -128,16 +177,100 @@ export function NewMeetingModal({
                 durationMinutes,
                 goal,
                 brief,
+                scheduledAt,
               })
             }
           >
-            {submitting ? "Creating..." : "Create and start"}
+            {submitting
+              ? scheduling
+                ? "Scheduling..."
+                : "Creating..."
+              : scheduling
+                ? "Schedule meeting"
+                : "Create and start"}
           </Button>
         </>
       }
     >
-      <div style={{ display: "flex", gap: 24 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 12, flex: 1, minWidth: 0 }}>
+        {seed && (
+          <div
+            style={{
+              background: colors.tealBg,
+              border: `1px solid ${colors.teal}`,
+              color: colors.textMuted,
+              borderRadius: 8,
+              padding: "9px 11px",
+              fontSize: FONT.size.label,
+              lineHeight: 1.5,
+            }}
+          >
+            Seeded from a decision that has been waiting for a date — the goal below is
+            pre-filled, so the AI walks in already briefed.
+          </div>
+        )}
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: SPACE[1.5],
+            flexWrap: "wrap",
+            background: scheduling ? colors.surfaceMuted : colors.amberSubtle,
+            border: `1px solid ${scheduling ? colors.border : colors.accentDim}`,
+            borderRadius: 8,
+            padding: "10px 11px",
+          }}
+        >
+          <span
+            style={{
+              fontFamily: FONT.mono,
+              fontSize: FONT.size.label,
+              fontWeight: 700,
+              color: scheduling ? colors.text : colors.accent,
+            }}
+          >
+            {scheduling ? "Scheduled" : "Starting now"}
+          </span>
+
+          {scheduling && (
+            <>
+              <input
+                type="date"
+                aria-label="Meeting date"
+                value={dateStr}
+                min={localDateValue(new Date())}
+                onChange={(e) => setDateStr(e.target.value)}
+                style={{ ...inputStyle(colors), width: 148, fontFamily: FONT.mono, padding: "6px 8px" }}
+              />
+              <input
+                type="time"
+                aria-label="Start time"
+                value={timeStr}
+                onChange={(e) => setTimeStr(e.target.value)}
+                style={{ ...inputStyle(colors), width: 108, fontFamily: FONT.mono, padding: "6px 8px" }}
+              />
+            </>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setScheduling((v) => !v)}
+            style={{
+              marginLeft: "auto",
+              background: "none",
+              border: "none",
+              color: colors.accent,
+              fontSize: FONT.size.label,
+              textDecoration: "underline",
+              cursor: "pointer",
+              padding: 0,
+            }}
+          >
+            {scheduling ? "Start now instead" : "Schedule for later"}
+          </button>
+        </div>
+
         {error && (
           <div
             style={{
@@ -267,124 +400,7 @@ export function NewMeetingModal({
           />
         </div>
       </div>
-
-      <MiniCalendar />
-      </div>
     </Modal>
-  );
-}
-
-// Static month-view mockup — side panel for "New meeting", frame only.
-// No date logic wired to scheduling yet; clicking just toggles a selected
-// day locally so the panel feels alive.
-function MiniCalendar() {
-  const { colors } = useTheme();
-  const [selected, setSelected] = useState<number | null>(null);
-  const today = new Date();
-  const [viewYear, setViewYear] = useState(today.getFullYear());
-  const [viewMonth, setViewMonth] = useState(today.getMonth());
-
-  const monthLabel = new Date(viewYear, viewMonth, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
-  const firstOfMonth = new Date(viewYear, viewMonth, 1);
-  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
-  const startWeekday = firstOfMonth.getDay();
-  const cells: (number | null)[] = [
-    ...Array(startWeekday).fill(null),
-    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
-  ];
-
-  const goToMonth = (delta: number) => {
-    const next = new Date(viewYear, viewMonth + delta, 1);
-    setViewYear(next.getFullYear());
-    setViewMonth(next.getMonth());
-    setSelected(null);
-  };
-
-  return (
-    <div
-      style={{
-        width: 220,
-        flexShrink: 0,
-        borderLeft: `1px solid ${colors.border}`,
-        paddingLeft: 24,
-        display: "flex",
-        flexDirection: "column",
-        gap: 10,
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <button
-          type="button"
-          onClick={() => goToMonth(-1)}
-          aria-label="Previous month"
-          style={{ background: "transparent", border: "none", color: colors.textMuted, display: "flex", alignItems: "center", padding: 2 }}
-        >
-          <ChevronLeft size={14} strokeWidth={2} />
-        </button>
-        <div style={{ fontSize: FONT.size.label, fontWeight: 600, color: colors.text }}>
-          {monthLabel}
-        </div>
-        <button
-          type="button"
-          onClick={() => goToMonth(1)}
-          aria-label="Next month"
-          style={{ background: "transparent", border: "none", color: colors.textMuted, display: "flex", alignItems: "center", padding: 2 }}
-        >
-          <ChevronRight size={14} strokeWidth={2} />
-        </button>
-      </div>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(7, 1fr)",
-          gap: 4,
-          fontFamily: FONT.mono,
-          fontSize: 10,
-          color: colors.textMuted,
-          textAlign: "center",
-        }}
-      >
-        {["S", "M", "T", "W", "T", "F", "S"].map((d, i) => (
-          <span key={i}>{d}</span>
-        ))}
-        {cells.map((day, i) => {
-          const isToday = day === today.getDate() && viewMonth === today.getMonth() && viewYear === today.getFullYear();
-          const isSelected = day != null && day === selected;
-          return (
-            <button
-              key={i}
-              type="button"
-              disabled={day == null}
-              onClick={() => day != null && setSelected(day)}
-              style={{
-                aspectRatio: "1",
-                border: "none",
-                borderRadius: 6,
-                background: isSelected ? colors.accent : "transparent",
-                color: day == null ? "transparent" : isSelected ? colors.onAccent : isToday ? colors.accent : colors.textMuted,
-                fontWeight: isToday || isSelected ? 700 : 400,
-                cursor: day == null ? "default" : "pointer",
-                transform: isSelected ? "scale(1.08)" : "scale(1)",
-                transition: "transform 0.15s ease, background 0.15s ease, color 0.15s ease",
-              }}
-              onMouseEnter={(e) => {
-                if (day != null && !isSelected) e.currentTarget.style.background = colors.surfaceHover;
-              }}
-              onMouseLeave={(e) => {
-                if (day != null && !isSelected) e.currentTarget.style.background = "transparent";
-              }}
-            >
-              {day ?? ""}
-            </button>
-          );
-        })}
-      </div>
-      {selected != null && (
-        <div style={{ fontSize: FONT.size.label, color: colors.textMuted }}>
-          Selected: {monthLabel.split(" ")[0]} {selected}
-        </div>
-      )}
-    </div>
   );
 }
 

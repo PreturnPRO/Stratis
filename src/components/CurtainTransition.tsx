@@ -20,7 +20,7 @@ export default function CurtainTransition({
   useEffect(() => {
     if (state === "in" && !firedMidpoint.current) {
       firedMidpoint.current = true;
-      const t = setTimeout(onMidpoint, 480);
+      const t = setTimeout(onMidpoint, 240);
       return () => clearTimeout(t);
     }
     if (state === "idle") firedMidpoint.current = false;
@@ -29,7 +29,7 @@ export default function CurtainTransition({
   if (state === "idle") return null;
 
   const translateY = state === "in" || state === "hold" ? "0" : state === "out" ? "-135vh" : "135vh";
-  const duration = state === "in" ? "0.48s" : state === "out" ? "0.6s" : "0s";
+  const duration = state === "in" ? "0.24s" : state === "out" ? "0.3s" : "0s";
   const curtainBg = theme === "light" ? "#181813" : "#0c0c0e";
   const curtainText = theme === "light" ? "#f4f2ea" : "#f2f2f3";
   const accent = theme === "light" ? "#54713a" : "#8FAE6D";

@@ -66,7 +66,6 @@ export default function Login({ onNavigate }: Props) {
         return
       }
 
-      // Commit to central AuthContext and navigate to App
       login(payload.data.token, payload.data.user)
       onNavigate('app')
     } catch (err) {
@@ -151,8 +150,6 @@ export default function Login({ onNavigate }: Props) {
     </div>
   )
 }
-
-// ─── Style Blocks ────────────────────────────────────────────────────────────
 
 const containerStyle = (colors: Colors): CSSProperties => ({
   display: 'flex',

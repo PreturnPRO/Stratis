@@ -22,9 +22,6 @@ type ThemeValue = ReturnType<typeof buildValue>;
 
 const ThemeContext = createContext<ThemeValue | null>(null);
 
-// Single shared instance — every page called useTheme() independently before,
-// so toggling on one page left every other mounted page's own colors frozen
-// until it happened to remount. A context makes toggle updates visible everywhere at once.
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(readStoredTheme);
 

@@ -1,10 +1,3 @@
-// Idle-session sweeper (meeting-reliability spec, component 3).
-//
-// A facilitator who closes the lid without pressing End leaves the session
-// 'active' forever: the post-meeting summary never fires and /session/recover
-// keeps resurfacing it. This interval finds active sessions with no live
-// facilitator socket that have been silent past the idle limit and ends them
-// via the same endSession() the manual End route uses.
 
 import { db } from "../db/database";
 import { endSession } from "../routes/session";
@@ -12,8 +5,7 @@ import { facilitatorCount } from "./hub";
 import { lastAudioAt, isSessionStale } from "./liveness";
 
 const SWEEP_INTERVAL_MS = 60_000;
-// Deliberately generous so a meeting on a coffee break is never killed.
-const IDLE_LIMIT_MS = 900_000; // 15 min
+const IDLE_LIMIT_MS = 900_000;
 
 let timer: ReturnType<typeof setInterval> | null = null;
 

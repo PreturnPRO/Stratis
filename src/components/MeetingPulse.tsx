@@ -2,18 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { FONT, LETTER_SPACING, RADIUS, SPACE } from "../tokens/colors";
 import { useTheme } from "../hooks/useTheme";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Live-meeting ambient signifiers:
-//   AiPresenceChip — animated waveform chip showing what the AI is doing
-//                    (off / listening / hearing speech / thinking / card ready)
-//   AgendaPulse    — pomodoro-style ring card for the planned-duration agenda
-//   TimeRiver      — 3px peripheral progress bar under the meeting header
-//
-// Phase colors follow one convention everywhere: accent while on track,
-// orange inside the wrap-up window, red in overtime. All motion is calm ease
-// (no springs) per the autonomous-motion rule in tokens/colors.ts.
-// ─────────────────────────────────────────────────────────────────────────────
-
 export type PresenceMode = "off" | "listening" | "speech" | "thinking";
 
 const MODE_LABEL: Record<PresenceMode, string> = {
@@ -25,8 +13,6 @@ const MODE_LABEL: Record<PresenceMode, string> = {
 
 const BAR_COUNT = 5;
 
-// How long the "Suggestion ready" bloom holds before returning to the
-// underlying mode.
 const BLOOM_MS = 1600;
 
 function barAnimation(mode: PresenceMode, index: number): React.CSSProperties {
@@ -58,8 +44,6 @@ export function AiPresenceChip({
   provider,
 }: {
   mode: PresenceMode;
-  // Number of suggestion cards received so far — an increase triggers a
-  // one-shot "Suggestion ready" bloom on the chip.
   cardCount: number;
   provider?: string | null;
 }) {
@@ -132,8 +116,6 @@ export function AiPresenceChip({
     </span>
   );
 }
-
-// ── Agenda timer phase (shared by AgendaPulse + TimeRiver) ───────────────────
 
 const DEFAULT_WRAP_UP_SEC = 15 * 60;
 

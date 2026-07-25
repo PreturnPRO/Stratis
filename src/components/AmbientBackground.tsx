@@ -1,20 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 
-// Live constellation simulation: points spawn, drift, connect, and fade over
-// time. Positions/opacity are written straight to DOM refs every animation
-// frame (no React state per-frame) so drift is always in sync with the lines
-// that follow it — a React re-render can never "snap" a point back to a
-// stale position. React state only bumps on structural changes (a point
-// spawning or fading out), which is when the SVG actually needs new
-// <line>/<g> elements.
-
 interface Point {
   id: number;
   x: number;
   y: number;
-  anchor: boolean; // anchors never fade/despawn — carry the coordinate labels
+  anchor: boolean;
   bornAt: number;
-  lifetime: number; // ms until fade begins (Infinity for anchors)
+  lifetime: number;
   freqX: number;
   freqY: number;
   phaseX: number;
@@ -28,9 +20,6 @@ interface Edge {
 }
 
 const BOUNDS = { minX: 2, maxX: 98, minY: 4, maxY: 96 };
-// Keep only the hero text's own band clear of spawns — narrow enough that
-// dots can still spawn above, below, and to the left of it instead of being
-// pushed almost entirely to the right half of the screen.
 const TEXT_EXCLUSION = { minX: 4, maxX: 44, minY: 34, maxY: 66 };
 
 const MIN_POINTS = 16;
@@ -69,7 +58,6 @@ function dist(ax: number, ay: number, bx: number, by: number) {
   return Math.hypot(ax - bx, ay - by);
 }
 
-// Orientation-based segment intersection (excludes shared endpoints).
 function segmentsIntersect(
   ax: number, ay: number, bx: number, by: number,
   cx: number, cy: number, dx: number, dy: number
@@ -91,7 +79,6 @@ function edgeSegment(byId: Map<number, Point>, e: Edge) {
   return { ax: a.x, ay: a.y, bx: b.x, by: b.y };
 }
 
-// How many times an existing edge is currently crossed by other edges.
 function edgeCrossings(byId: Map<number, Point>, edges: Edge[], edge: Edge): number {
   const seg = edgeSegment(byId, edge);
   if (!seg) return 0;
@@ -106,10 +93,6 @@ function edgeCrossings(byId: Map<number, Point>, edges: Edge[], edge: Edge): num
   return count;
 }
 
-// A candidate edge is only allowed if: (1) it crosses at most one existing
-// edge, and (2) that existing edge hasn't already been crossed once itself
-// — "a single line can only be passed through one time," enforced on both
-// sides of the crossing.
 function canConnect(byId: Map<number, Point>, edges: Edge[], aId: number, bId: number): boolean {
   const a = byId.get(aId);
   const b = byId.get(bId);
@@ -128,9 +111,6 @@ function canConnect(byId: Map<number, Point>, edges: Edge[], aId: number, bId: n
   return true;
 }
 
-// Sample random candidates, reject anything too close to an existing point,
-// then pick the candidate whose nearest neighbor is FARTHEST away — i.e.
-// bias spawns toward the sparsest region of the field.
 function pickSpawnPosition(points: Point[]): { x: number; y: number } | null {
   let best: { x: number; y: number; score: number } | null = null;
   for (let i = 0; i < CANDIDATE_SAMPLES; i++) {
@@ -151,7 +131,6 @@ function pickSpawnPosition(points: Point[]): { x: number; y: number } | null {
 }
 
 function seedPoints(): Point[] {
-  // Anchors: fixed, never fade, carry coordinate-readout labels.
   const anchors: [number, number][] = [
     [84, 14], [88, 84], [22, 8],
   ];
@@ -167,8 +146,6 @@ function seedPoints(): Point[] {
     freqX: rand(0.05, 0.09), freqY: rand(0.05, 0.09),
     phaseX: rand(0, Math.PI * 2), phaseY: rand(0, Math.PI * 2),
   }));
-  // Stagger birth times so seeded points don't all expire in the same
-  // window — without this the whole non-anchor field dies at once ~30s in.
   rest.forEach(([x, y], i) => {
     points.push({
       id: nextId(), x, y, anchor: false,
@@ -205,6 +182,7 @@ function formatCoord(x: number, y: number): string {
 }
 
 function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; reducedMotion: boolean }) {
+  const svgRef = useRef<SVGSVGElement>(null);
   const groupRef = useRef<SVGGElement>(null);
   const pointsRef = useRef<Point[]>(seedPoints());
   const edgesRef = useRef<Edge[]>(seedEdges(pointsRef.current));
@@ -214,19 +192,29 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
   const lineGroupEls = useRef(new Map<string, SVGGElement>());
   const [, bump] = useState(0);
 
-  // Mouse parallax on the whole group — unchanged from before.
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting));
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  const parallaxTarget = useRef({ x: 0, y: 0 });
+  const parallaxPos = useRef({ x: 0, y: 0 });
   useEffect(() => {
     if (reducedMotion) return;
     const onMove = (e: MouseEvent) => {
-      const nx = (e.clientX / window.innerWidth - 0.5) * 2;
-      const ny = (e.clientY / window.innerHeight - 0.5) * 2;
-      groupRef.current?.style.setProperty("transform", `translate(${nx * -1.4}px, ${ny * -1}px)`);
+      parallaxTarget.current.x = (e.clientX / window.innerWidth - 0.5) * 2;
+      parallaxTarget.current.y = (e.clientY / window.innerHeight - 0.5) * 2;
     };
     window.addEventListener("mousemove", onMove);
     return () => window.removeEventListener("mousemove", onMove);
   }, [reducedMotion]);
 
   useEffect(() => {
+    if (!visible) return;
     let raf = 0;
     let running = true;
     let last = performance.now();
@@ -254,7 +242,7 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
         if (!canConnect(byId, [...edgesRef.current, ...newEdges], point.id, c.id)) continue;
         newEdges.push({ key: `${point.id}-${c.id}`, a: point.id, b: c.id });
       }
-      if (newEdges.length === 0) return; // no orphan dots — must join the graph
+      if (newEdges.length === 0) return;
       edgesRef.current = [...edgesRef.current, ...newEdges];
       pointsRef.current = [...points, point];
       bump((t) => t + 1);
@@ -267,9 +255,6 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
         const aliveIds = new Set(alive.map((p) => p.id));
         edgesRef.current = edgesRef.current.filter((e) => aliveIds.has(e.a) && aliveIds.has(e.b));
         pointsRef.current = alive;
-        // Below the floor: spawn sooner instead of blocking despawn (blocking
-        // despawn left fully-faded, invisible points behind — and their
-        // still-visible connecting lines orphaned with nothing at either end).
         if (alive.length < MIN_POINTS) nextSpawnAtRef.current = Math.min(nextSpawnAtRef.current, 800);
         bump((t) => t + 1);
       }
@@ -290,6 +275,15 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
         removeStale();
       }
 
+      if (!reducedMotion && groupRef.current) {
+        const pos = parallaxPos.current;
+        const target = parallaxTarget.current;
+        pos.x += (target.x - pos.x) * 0.08;
+        pos.y += (target.y - pos.y) * 0.08;
+        groupRef.current.style.transform = `translate(${pos.x * -1.4}px, ${pos.y * -1}px)`;
+      }
+
+      const t = elapsed / 1000;
       const drifted = new Map<number, { x: number; y: number }>();
       const opacities = new Map<number, number>();
       for (const p of pointsRef.current) {
@@ -299,7 +293,6 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
           if (age < SPAWN_FADE_MS) opacity = Math.max(0, age / SPAWN_FADE_MS);
           else if (age > p.lifetime) opacity = Math.max(0, 1 - (age - p.lifetime) / FADE_MS);
         }
-        const t = elapsed / 1000;
         const dx = reducedMotion ? 0 : Math.sin(t * p.freqX + p.phaseX) * DRIFT_AMP;
         const dy = reducedMotion ? 0 : Math.cos(t * p.freqY + p.phaseY) * DRIFT_AMP;
         const x = p.x + dx;
@@ -309,11 +302,13 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
 
         const g = pointEls.current.get(p.id);
         if (g) {
+          const glow = reducedMotion ? 1 : 0.8 + 0.2 * Math.sin(t * 1.1 + p.phaseX * 2);
           g.setAttribute("transform", `translate(${x}, ${y})`);
-          g.style.opacity = String(opacity);
+          g.style.opacity = String(opacity * glow);
         }
       }
 
+      let edgeIndex = 0;
       for (const e of edgesRef.current) {
         const a = drifted.get(e.a);
         const b = drifted.get(e.b);
@@ -322,7 +317,8 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
         if (lineGroup) {
           const oa = opacities.get(e.a) ?? 1;
           const ob = opacities.get(e.b) ?? 1;
-          lineGroup.style.opacity = String(Math.min(oa, ob));
+          const breathe = reducedMotion ? 1 : 0.75 + 0.25 * Math.sin(t * 0.9 + edgeIndex * 0.7);
+          lineGroup.style.opacity = String(Math.min(oa, ob) * breathe);
         }
         if (a && b && line) {
           line.setAttribute("x1", String(a.x));
@@ -330,6 +326,7 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
           line.setAttribute("x2", String(b.x));
           line.setAttribute("y2", String(b.y));
         }
+        edgeIndex += 1;
       }
 
       raf = requestAnimationFrame(tick);
@@ -339,41 +336,31 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
       running = false;
       cancelAnimationFrame(raf);
     };
-  }, [reducedMotion]);
+  }, [reducedMotion, visible]);
 
   const stroke = theme === "light" ? "rgba(60,56,36,.16)" : "rgba(255,255,255,.13)";
   const dot = theme === "light" ? "rgba(84,113,58,.85)" : "rgba(143,174,109,.9)";
   const dotHalo = theme === "light" ? "rgba(84,113,58,.18)" : "rgba(143,174,109,.22)";
   const coordColor = theme === "light" ? "rgba(60,56,36,.5)" : "rgba(255,255,255,.42)";
-  // The user glyph sits inside the dot, so it needs to read against the
-  // dot's own fill rather than the page background — the page background
-  // (which the dot already contrasts against) is too close in value here.
   const iconColor = theme === "light" ? "#f6f4ee" : "#09090b";
 
-  // Only re-renders on structural changes (spawn/fade-removal) — per-frame
-  // motion is written directly to the DOM refs above.
   const points = pointsRef.current;
   const edges = edgesRef.current;
 
   return (
     <svg
+      ref={svgRef}
       viewBox="0 0 100 100"
       preserveAspectRatio="xMidYMid slice"
       style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible" }}
     >
       <defs>
-        {/* Simplified person/user glyph (head + shoulders), reused per point
-            via <use> so dots read as humanoid instead of plain circles. Must
-            be a <symbol> (not a bare <path>) — only symbol/svg targets honor
-            the width/height/viewBox scaling <use> applies below; a raw path
-            renders at its native 24-unit size, which is huge next to the
-            0-100 viewBox. */}
         <symbol id="constellation-user-icon" viewBox="0 0 24 24">
           <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
         </symbol>
       </defs>
-      <g ref={groupRef} style={{ transition: "transform 0.6s ease-out" }}>
-        {edges.map((e, i) => (
+      <g ref={groupRef}>
+        {edges.map((e) => (
           <g
             key={e.key}
             ref={(el) => {
@@ -389,11 +376,10 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
               x1={0} y1={0} x2={0} y2={0}
               stroke={stroke}
               strokeWidth={0.08}
-              style={{ animation: `constellationBreathe ${6 + (i % 4)}s ease-in-out ${i * 0.25}s infinite` }}
             />
           </g>
         ))}
-        {points.map((p, i) => {
+        {points.map((p) => {
           const r = 1.1;
           const tick = 0.4;
           const dotRadius = 0.62;
@@ -407,13 +393,7 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
               }}
               style={{ transformBox: "fill-box", transformOrigin: "center" }}
             >
-              <g
-                style={{
-                  transformBox: "fill-box",
-                  transformOrigin: "center",
-                  animation: reducedMotion ? undefined : `constellationGlow ${5 + (i % 5)}s ease-in-out ${i * 0.2}s infinite`,
-                }}
-              >
+              <g style={{ transformBox: "fill-box", transformOrigin: "center" }}>
                 <circle cx={0} cy={0} r={1.4} fill={dotHalo} />
                 <circle cx={0} cy={0} r={dotRadius} fill={dot} />
                 <use
@@ -425,9 +405,6 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
                   fill={iconColor}
                 />
               </g>
-              {/* Reticle + coord label live in the same drifting group as the
-                  dot, so they track it instead of staying pinned to the
-                  point's original static coordinates. */}
               {p.anchor && (
                 <>
                   <path d={`M${-r},${-r + tick} L${-r},${-r} L${-r + tick},${-r}`} stroke={coordColor} strokeWidth={0.09} fill="none" />
@@ -454,9 +431,6 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
   );
 }
 
-// Light theme has no dark backdrop for glowing lines to read against, so it
-// gets a different subtle texture instead: a soft dot-matrix (a step down
-// from the linear grid, evoking paper/blueprint rather than "space").
 function DotMatrix() {
   return (
     <div

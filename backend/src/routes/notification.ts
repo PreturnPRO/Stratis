@@ -16,10 +16,6 @@ interface NotificationRow {
   meeting_title?: string | null;
 }
 
-/**
- * GET /api/notification
- * Fetches all notifications fanned out to the current authenticated user.
- */
 notificationRouter.get("/", requireAuth, async (req, res, next) => {
   try {
     const userId = req.auth!.sub;
@@ -42,10 +38,6 @@ notificationRouter.get("/", requireAuth, async (req, res, next) => {
   }
 });
 
-/**
- * PATCH /api/notification/:id/read
- * Marks a notification as read for the authenticated owner.
- */
 notificationRouter.patch("/:id/read", requireAuth, async (req, res, next) => {
   try {
     const userId = req.auth!.sub;

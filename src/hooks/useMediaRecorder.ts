@@ -1,12 +1,3 @@
-// S1-T04-B — Browser mic capture via MediaRecorder.
-// Owns: permission request, start/stop, chunk collection.
-// Does NOT do STT — chunks handed off via onChunk callback.
-//
-// MVP note:
-// Do NOT use MediaRecorder.start(timeslice) for Deepgram REST uploads.
-// Later WebM chunks can be container fragments and Deepgram may reject them.
-// Instead, record short standalone clips: start recorder -> stop after interval
-// -> emit one complete Blob -> immediately start a new recorder on same stream.
 
 import { useRef, useState, useCallback } from "react";
 

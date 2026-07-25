@@ -1,7 +1,3 @@
-// Backend entry point.
-// Foundation scope (S1-T01-A … S1-T00-B): health check + auth only.
-// Feature routes (sessions, transcript, AI, dashboard) are added from S1-T03 on.
-// WebSocket hub for facilitator suggestion routing: S1-T03-E.
 import { createServer } from "node:http";
 import express from "express";
 import cors from "cors";
@@ -13,7 +9,6 @@ import { errorHandler, notFound } from "./middleware/errorHandler";
 import { attachHub } from "./realtime/hub";
 import { startSessionSweeper } from "./realtime/sessionSweeper";
 import { selectProvider } from "@ai/index";
-// Importing the db module ensures the SQLite file + WAL pragmas initialise on boot.
 import "./db/database";
 
 const app = express();
@@ -24,13 +19,10 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, data: { status: "up", env: env.nodeEnv } });
 });
 
-// Auth (S1-T00-B)
 app.use("/api/auth", authRouter);
 
-// API route skeleton (S1-T03-A): /api/meeting /ai /summary /session /transcript
 app.use("/api", apiRouter);
 
-// Example protected probe — confirms JWT gate works end to end.
 app.get("/api/protected/ping", requireAuth, (req, res) => {
   res.json({ ok: true, data: { message: "authenticated", role: req.auth!.role } });
 });
@@ -38,19 +30,13 @@ app.get("/api/protected/ping", requireAuth, (req, res) => {
 app.use(notFound);
 app.use(errorHandler);
 
-// Wrap Express in an HTTP server so the WebSocket hub (S1-T03-E) can share the
-// same port and upgrade /ws connections.
 const server = createServer(app);
 attachHub(server);
-// Auto-end sessions abandoned without pressing End (meeting-reliability spec §3).
 startSessionSweeper();
-
 
 server.listen(env.port, "0.0.0.0", () => {
   console.log(`[stratis] backend listening on port ${env.port} (${env.nodeEnv})`);
   console.log(`[stratis] websocket hub on ws://0.0.0.0:${env.port}/ws`);
-  // Resolve the provider once at boot so a misconfigured deploy (missing API
-  // key → silent mock) is visible in the logs immediately, not mid-meeting.
   console.log(
     `[stratis] AI provider: ${selectProvider().name} (AI_PROVIDER=${env.ai.provider})`,
   );

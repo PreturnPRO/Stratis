@@ -1,9 +1,3 @@
-// Closing checkpoint state (alignment checkpoint, Feature 2).
-//
-// Reads the decisions the backend extracted from the session, lets the
-// facilitator trigger a fresh extract at wrap-up, and applies edits (set a due
-// date, mark deliberately open, fix wording). The completeness metric comes back
-// with every call so the UI never computes it locally.
 import { useState, useCallback } from "react";
 import type { DecisionRecord, DecisionStatus } from "../../shared/types";
 import { API_BASE } from "../lib/api";
@@ -107,8 +101,6 @@ export function useCheckpoint(
   const edit = useCallback(
     async (decisionId: string, patch: DecisionEdit) => {
       if (!sessionId || !token) return;
-      // Optimistic: reflect the edit immediately; reconcile with the server's
-      // authoritative row + metric when the response lands.
       setDecisions((prev) =>
         prev.map((d) =>
           d.id === decisionId

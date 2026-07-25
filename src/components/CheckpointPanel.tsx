@@ -1,10 +1,3 @@
-// Closing checkpoint (alignment checkpoint, Feature 2 + 3).
-//
-// The facilitator's last-three-minutes instrument: shows the decisions the room
-// made, flags the ones leaving without a due date, and lets the facilitator fix
-// them in place or mark one deliberately open. `present` renders the same list
-// large and read-only for a projector / screenshare (Feature 3) — the room reads
-// along while the facilitator speaks; edits happen in normal mode.
 import { useId, useState } from "react";
 import { Check, CircleAlert, PauseCircle, Pencil, Presentation, RefreshCw, X } from "lucide-react";
 import { FONT, RADIUS, SPACE, tint } from "../tokens/colors";
@@ -17,8 +10,6 @@ interface CheckpointPanelProps {
   decisions: DecisionRecord[];
   metric: CompletenessMetric | null;
   extracting: boolean;
-  // Unique speaker names from the transcript — owner-input suggestions, so the
-  // facilitator picks a name instead of retyping it. Free text still allowed.
   speakers?: string[];
   present: boolean;
   onEdit: (decisionId: string, patch: DecisionEdit) => void;
@@ -38,8 +29,6 @@ function statusMeta(colors: Record<string, string>): Record<
   };
 }
 
-// The AI sometimes returns a spoken phrase ("end of month") rather than an ISO
-// date; a native date input can only bind YYYY-MM-DD, so only prefill it then.
 function isoOrEmpty(due: string | null): string {
   return due && /^\d{4}-\d{2}-\d{2}$/.test(due) ? due : "";
 }
@@ -63,8 +52,6 @@ function DecisionRow({
   const [draftText, setDraftText] = useState(decision.text);
   const datalistId = useId();
 
-  // Soft-dismissed: collapse to a single undoable line. The row is kept in the
-  // DB, so Undo restores it exactly; nothing is ever hard-deleted.
   if (decision.dismissed) {
     if (present) return null;
     return (
@@ -252,7 +239,6 @@ function DecisionRow({
         )
       )}
 
-      {/* Edit controls — normal mode only; present mode is read-only for the room. */}
       {!present && decision.status !== "open" && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
           <input
@@ -353,7 +339,6 @@ export function CheckpointPanel({
         maxHeight: present ? "100%" : "70vh",
       }}
     >
-      {/* Header */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
         <div>
           <span
@@ -403,7 +388,6 @@ export function CheckpointPanel({
         </div>
       </div>
 
-      {/* Decision list */}
       <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: SPACE[2.5] }}>
         {decisions.length === 0 && !extracting ? (
           <div style={{ padding: "32px 0", textAlign: "center", color: colors.textMuted, fontSize: FONT.size.body }}>
@@ -422,7 +406,6 @@ export function CheckpointPanel({
         )}
       </div>
 
-      {/* Actions */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <button
           type="button"

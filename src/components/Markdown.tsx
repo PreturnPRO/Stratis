@@ -4,13 +4,6 @@ import { useTheme } from "../hooks/useTheme";
 
 type Colors = ReturnType<typeof useTheme>["colors"];
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Minimal, dependency-free Markdown renderer for the PM document article view.
-// Supports: # / ## / ### headings, - / * bullet lists, 1. ordered lists,
-// > blockquotes, **bold**, *italic*, `code`, and paragraphs. Good enough for the
-// long-form "Medium style" layout without pulling in a markdown library.
-// ─────────────────────────────────────────────────────────────────────────────
-
 function codeStyleFor(colors: Colors): React.CSSProperties {
   return {
     fontFamily: "'SF Mono', ui-monospace, Menlo, monospace",

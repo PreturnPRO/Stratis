@@ -5,16 +5,10 @@ import { useTheme } from '../hooks/useTheme'
 import { Markdown } from './Markdown'
 
 interface Props {
-  /** Rolling AI notes text — markdown (## Intent / ## Key points / ## Open
-   *  threads). Rendered as markdown when expanded; flattened to a plain snippet
-   *  for the clamped collapsed preview. */
   text: string
-  /** Rendered when there is no rolling text but structured AI blocks exist. */
   fallback?: React.ReactNode
 }
 
-// Flatten markdown to a one-line snippet for the 2-line clamped preview so the
-// collapsed ribbon shows readable text, not raw "##"/"-" syntax.
 function toPreview(md: string): string {
   return md
     .replace(/\r\n/g, '\n')
@@ -24,9 +18,6 @@ function toPreview(md: string): string {
     .join(' · ')
 }
 
-// Full-width ambient strip under the time bar. The notes are context, not the
-// work surface — two clamped lines when collapsed, nothing at all when empty,
-// so the suggestion stack keeps every pixel of the gutter.
 export function NotesRibbon({ text, fallback }: Props) {
   const { colors } = useTheme()
   const [open, setOpen] = useState(false)

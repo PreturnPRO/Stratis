@@ -1,36 +1,55 @@
-import { useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { COLORS, FONT, LETTER_SPACING, RADIUS, SPACE } from "./constants";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Sidebar from "./components/Sidebar";
 import CurtainTransition, { type CurtainState } from "./components/CurtainTransition";
-import CustomCursor from "./components/CustomCursor";
-import Preloader from "./components/Preloader";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { useTheme, ThemeProvider } from "./hooks/useTheme";
-import Landing from "./pages/Landing";
-import Login from "./pages/Login";
-import Register from "./pages/Register";
-import Projects from "./pages/Projects";
-import Meeting from "./pages/Meeting";
-import Dashboard from "./pages/Dashboard";
-import SummaryView from "./pages/SummaryView";
-import DocumentView from "./pages/DocumentView";
+
+const Landing = lazy(() => import("./pages/Landing"));
+const Login = lazy(() => import("./pages/Login"));
+const Register = lazy(() => import("./pages/Register"));
+const Projects = lazy(() => import("./pages/Projects"));
+const Meeting = lazy(() => import("./pages/Meeting"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Docket = lazy(() => import("./pages/Docket"));
+const SummaryView = lazy(() => import("./pages/SummaryView"));
+const DocumentView = lazy(() => import("./pages/DocumentView"));
+
+function RouteFallback({ colors }: { colors: { textDim: string } }) {
+  return (
+    <div
+      style={{
+        flex: 1,
+        minHeight: 160,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: colors.textDim,
+        fontSize: 13,
+      }}
+    >
+      Loading…
+    </div>
+  );
+}
 
 type AuthPage = "landing" | "login" | "register" | "app";
-type AppPage = "dashboard" | "projects" | "meeting" | "summary" | "document";
+type AppPage = "dashboard" | "docket" | "projects" | "meeting" | "summary" | "document";
 
 const PAGE_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
+  docket: "Docket",
   projects: "Projects",
   meeting: "Meeting",
   summary: "Summary",
   document: "Document",
 };
 
-// Per-route SYS codes per the handoff's route table (00 auth / 02 dashboard /
-// 03 meeting / 04 projects / 05 summary / 06 document).
 const PAGE_SYS: Record<string, string> = {
   dashboard: "SYS.02",
+  docket: "SYS.07",
   meeting: "SYS.03",
   projects: "SYS.04",
   summary: "SYS.05",
@@ -41,11 +60,18 @@ function LiveClock({ colors }: { colors: { accent: string } }) {
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const align = setTimeout(() => {
+      setNow(new Date());
+      interval = setInterval(() => setNow(new Date()), 60_000);
+    }, (60 - new Date().getSeconds()) * 1000);
+    return () => {
+      clearTimeout(align);
+      if (interval) clearInterval(interval);
+    };
   }, []);
 
-  const time = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(now);
+  const time = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(now);
   const tz = new Intl.DateTimeFormat(undefined, { timeZoneName: "short" })
     .formatToParts(now)
     .find((p) => p.type === "timeZoneName")?.value ?? "";
@@ -63,6 +89,8 @@ function renderPage(
   handleNav: (id: string, params?: Record<string, string>) => void,
 ) {
   switch (active) {
+    case "docket":
+      return <Docket onNav={handleNav} />;
     case "projects":
       return <Projects onNav={handleNav} />;
     case "meeting":
@@ -107,10 +135,6 @@ function AppShell() {
   const [navParams, setNavParams] = useState<Record<string, string>>(initialEntry.params);
   const { theme, toggleTheme, colors } = useTheme();
 
-  // Curtain for the auth -> app transition (login/register success), reusing
-  // the same sweep used for in-app page nav. isAuthed flips synchronously
-  // when login() sets the token, so this just detects that flip and plays
-  // the curtain in/hold/out over the top of whichever branch is mounted.
   const [authCurtain, setAuthCurtain] = useState<CurtainState>("idle");
   const prevAuthedRef = useRef(isAuthed);
   useEffect(() => {
@@ -120,15 +144,11 @@ function AppShell() {
 
   useEffect(() => {
     if (authCurtain === "in") {
-      const t = setTimeout(() => setAuthCurtain("hold"), 480);
-      return () => clearTimeout(t);
-    }
-    if (authCurtain === "hold") {
       const t = setTimeout(() => setAuthCurtain("out"), 240);
       return () => clearTimeout(t);
     }
     if (authCurtain === "out") {
-      const t = setTimeout(() => setAuthCurtain("idle"), 600);
+      const t = setTimeout(() => setAuthCurtain("idle"), 300);
       return () => clearTimeout(t);
     }
   }, [authCurtain]);
@@ -223,25 +243,27 @@ function AppShell() {
           fontFamily: "'Helvetica Neue', Arial, sans-serif",
         }}
       >
-        <Preloader onDone={() => {}} theme={theme} />
-        <CustomCursor calmZone={false} theme={theme} />
         <CurtainTransition state={authCurtain} routeLabel="DASHBOARD" onMidpoint={() => {}} theme={theme} />
         <main style={{ height: "100%" }}>
-          {authPage === "landing" && <Landing onNavigate={setAuthPage} />}
-          {authPage === "login" && (
-            <Login
-              onNavigate={(p) =>
-                p === "app" ? setAuthPage("app") : setAuthPage(p)
-              }
-            />
-          )}
-          {authPage === "register" && (
-            <Register
-              onNavigate={(p) =>
-                p === "app" ? setAuthPage("app") : setAuthPage(p)
-              }
-            />
-          )}
+          <ErrorBoundary key={authPage} area={authPage}>
+            <Suspense fallback={<RouteFallback colors={colors} />}>
+              {authPage === "landing" && <Landing onNavigate={setAuthPage} />}
+              {authPage === "login" && (
+                <Login
+                  onNavigate={(p) =>
+                    p === "app" ? setAuthPage("app") : setAuthPage(p)
+                  }
+                />
+              )}
+              {authPage === "register" && (
+                <Register
+                  onNavigate={(p) =>
+                    p === "app" ? setAuthPage("app") : setAuthPage(p)
+                  }
+                />
+              )}
+            </Suspense>
+          </ErrorBoundary>
         </main>
       </div>
     );
@@ -264,8 +286,6 @@ function AppShell() {
         onMidpoint={() => {}}
         theme={theme}
       />
-      <CustomCursor calmZone={active === "meeting"} theme={theme} />
-
       <Sidebar
         active={active}
         onNav={handleSidebarNav}
@@ -426,7 +446,11 @@ function AppShell() {
               height: "100%",
             }}
           >
-            {renderPage(active, navParams, handleNav)}
+            <ErrorBoundary key={active} area={active}>
+              <Suspense fallback={<RouteFallback colors={colors} />}>
+                {renderPage(active, navParams, handleNav)}
+              </Suspense>
+            </ErrorBoundary>
           </div>
         </main>
       </div>
@@ -436,10 +460,12 @@ function AppShell() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <AppShell />
-      </AuthProvider>
-    </ThemeProvider>
+    <ErrorBoundary area="app shell">
+      <ThemeProvider>
+        <AuthProvider>
+          <AppShell />
+        </AuthProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }

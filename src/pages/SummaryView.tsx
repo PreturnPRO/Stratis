@@ -7,20 +7,14 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../hooks/useTheme';
 
 import { API_BASE } from '../lib/api';
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 type UserRole = 'facilitator' | 'participant';
 
 interface SummaryViewProps {
   sessionId?: string;
-  autoSendCountdownSeconds?: number; // default 300 (5 min)
+  autoSendCountdownSeconds?: number;
 }
 
-// ─── Block config ─────────────────────────────────────────────────────────────
-
-// Function of the active theme's colors (not a static object) so glyph tints
-// follow light/dark theme switches — same glyph-to-block-type mapping as
-// before, only the color source changed.
 function getBlockConfig(colors: Record<keyof typeof COLORS, string>): Record<
   SummaryBlock['block_type'],
   { icon: string; color: string; nodeType?: 'DECISION' | 'OPEN_QUESTION' | 'ASSUMPTION' | 'RISK' }
@@ -48,8 +42,6 @@ const BLOCK_LABEL: Record<SummaryBlock['block_type'], string> = {
   NEXT_STEPS:   'Next steps',
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
 function formatCountdown(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
@@ -60,12 +52,6 @@ function parseContentLines(content: string): string[] {
   return content.split('\n').map(l => l.trim()).filter(Boolean);
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
-
-// Tinted pill for the header's decision/open-item/action-item counts. Chip
-// (components/ui) hardcodes `background: COLORS.surface` and has no bg/tint
-// prop, so it can't produce the semantic-tinted pill the handoff wants —
-// using a small inline pill with `tint()` instead of forcing Chip's API.
 const CountPill: React.FC<{ colors: Record<keyof typeof COLORS, string>; color: string; children: React.ReactNode }> = ({ colors, color, children }) => (
   <span
     style={{
@@ -312,8 +298,6 @@ const ActionItemsSection: React.FC<{ items: ActionItem[] }> = ({ items }) => {
   );
 };
 
-// ─── SummaryView (main) ───────────────────────────────────────────────────────
-
 const SummaryView: React.FC<SummaryViewProps> = ({
   sessionId,
   autoSendCountdownSeconds = 300,
@@ -323,13 +307,8 @@ const SummaryView: React.FC<SummaryViewProps> = ({
   const role: UserRole = user?.role === 'facilitator' ? 'facilitator' : 'participant';
 
   const [summary, setSummary] = useState<ParticipantSummaryOutput | null>(null);
-  // Verified decision record from the checkpoint — rendered instead of the AI's
-  // DECISIONS prose so an unconfirmed decision can't hide inside a polished
-  // paraphrase.
   const [decisions, setDecisions] = useState<DecisionRecord[]>([]);
   const [completenessRate, setCompletenessRate] = useState<number | null>(null);
-  // Which AI provider produced the summary — 'mock' means the backend has no
-  // API key configured and served canned output; surface that loudly.
   const [provider, setProvider] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -474,9 +453,6 @@ const SummaryView: React.FC<SummaryViewProps> = ({
     );
   }
 
-  // When the verified decision record exists, it replaces the AI's DECISIONS
-  // prose block — the structured list is the ratified record; the paraphrase is
-  // exactly what the honest summary exists to avoid.
   const visibleBlocks = summary.summary_blocks.filter(
     b =>
       b.block_type !== 'ACTION_ITEMS' &&
@@ -511,8 +487,6 @@ const SummaryView: React.FC<SummaryViewProps> = ({
 
       <div style={{ maxWidth: 720, margin: '0 auto' }}>
 
-        {/* Misconfigured backend: the "summary" is canned mock output, not AI.
-            Say so instead of letting it pass as a real summary. */}
         {provider === 'mock' && (
           <div
             role="alert"
@@ -534,12 +508,11 @@ const SummaryView: React.FC<SummaryViewProps> = ({
           </div>
         )}
 
-        {/* Facilitator timer bar — never shown to participants */}
         {isFacilitator && !sent && (
           <TimerBar
             seconds={countdown}
             onSendNow={() => setSent(true)}
-            onEdit={() => { /* wire to edit mode in Sprint 3 */ }}
+            onEdit={() => {  }}
           />
         )}
 
@@ -561,7 +534,6 @@ const SummaryView: React.FC<SummaryViewProps> = ({
           </div>
         )}
 
-        {/* Header */}
         <div style={{ marginBottom: 20 }}>
           <div
             style={{
@@ -604,8 +576,6 @@ const SummaryView: React.FC<SummaryViewProps> = ({
 
         <div style={{ height: 1, background: colors.border, marginBottom: 20 }} />
 
-        {/* Verified decisions from the checkpoint — UNCONFIRMED ones stay visible
-            so the gap the room left is on the record, not smoothed over. */}
         {decisions.length > 0 && (
           <div style={{ marginBottom: 28 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
@@ -661,12 +631,10 @@ const SummaryView: React.FC<SummaryViewProps> = ({
           </div>
         )}
 
-        {/* Summary blocks */}
         {visibleBlocks.map((block, i) => (
           <SummaryBlockSection key={i} block={block} role={role} />
         ))}
 
-        {/* Action items always rendered separately */}
         {summary.action_items.length > 0 && (
           <ActionItemsSection items={summary.action_items} />
         )}

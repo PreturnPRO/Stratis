@@ -12,23 +12,17 @@ interface Props {
   onNavigate: (page: 'login' | 'register') => void
 }
 
-// ── Demo content (a scripted "live meeting") ─────────────────────────────────
 const TRANSCRIPT = [
   { who: 'Sarah K.', color: '#e0533f', text: 'We missed Q2 by 12% — root cause looks like enterprise pricing.' },
   { who: 'Mike R.', color: '#2ab0d4', text: 'Agreed, but the sales cycle lengthened too.' },
   { who: 'Alex T.', color: '#1fae8a', text: '8 of 12 churned customers cited pricing. That’s signal.' },
 ]
 
-// colorKey indexes into the themed `colors` object at render time, rather than
-// baking in a static hex, so the demo card accents follow the active theme.
 const CARDS: { tag: string; colorKey: 'accent' | 'teal'; q: string; r: string }[] = [
   { tag: 'QUESTION', colorKey: 'accent', q: 'Who owns the pricing decision before next meeting?', r: 'Discussed, but no owner was named.' },
   { tag: 'ASSUMPTION', colorKey: 'teal', q: 'Has anyone validated SMB accepts metered billing?', r: 'A core assumption no one has tested.' },
 ]
 
-// Marquee phrases — 4 are directly legible in the handoff screenshot; the 5th
-// ("Flags u...") is completed as "Flags drift" per the existing DRIFT_ALERT
-// vocabulary in SuggestionCardStack.tsx.
 const MARQUEE_ITEMS = [
   'Listens live',
   'Suggests privately',
@@ -43,13 +37,8 @@ const HOW_IT_WORKS = [
   { n: '03', title: 'Record', body: 'Afterward, Stratis writes the participant summary and proposes changes to the living PM document — decisions, assumptions, risks.' },
 ]
 
-// Step timeline (loops): 0 reset · 1 line0 · 2 line1 · 3 card0 · 4 line2 · 5 card1 · 6 card0 answered · 7 hold
 const STEP_COUNT = 8
 const STEP_MS = 1700
-// The "settled" end state — everything shown, first card answered. Used as a
-// static frame for prefers-reduced-motion so the demo still reads correctly
-// without the endless auto-playing loop (WCAG 2.2.2: auto-updating content
-// that runs longer than 5s needs a way to stop it).
 const SETTLED_STEP = STEP_COUNT - 1
 
 function usePrefersReducedMotion(): boolean {
@@ -67,24 +56,11 @@ function usePrefersReducedMotion(): boolean {
   return reduced
 }
 
-// Per-word blur-to-sharp reveal, staggered — trionn.com's load-in reference.
-// prefers-reduced-motion: skip the animation and render the settled end state.
 function wordRevealStyle(index: number, reducedMotion: boolean): CSSProperties {
   return {
     display: 'inline-block',
     animation: reducedMotion ? undefined : `wordReveal 0.6s ease ${index * 0.08}s both`,
   }
-}
-
-function LiveLatency() {
-  const [ms, setMs] = useState(0.4);
-
-  useEffect(() => {
-    const t = setInterval(() => setMs(0.28 + Math.random() * 0.35), 400);
-    return () => clearInterval(t);
-  }, []);
-
-  return <span>LATENCY {ms.toFixed(2)}s</span>;
 }
 
 function scrollToId(id: string) {
@@ -113,13 +89,23 @@ export default function Landing({ onNavigate }: Props) {
 
   useEffect(() => {
     if (reducedMotion) return
-    const onMove = (e: MouseEvent) => {
-      const nx = (e.clientX / window.innerWidth - 0.5) * 2
-      const ny = (e.clientY / window.innerHeight - 0.5) * 2
+    let rafId = 0
+    let nx = 0
+    let ny = 0
+    const apply = () => {
+      rafId = 0
       heroTextRef.current?.style.setProperty('transform', `translate(${nx * 1.4}px, ${ny * 1}px)`)
     }
+    const onMove = (e: MouseEvent) => {
+      nx = (e.clientX / window.innerWidth - 0.5) * 2
+      ny = (e.clientY / window.innerHeight - 0.5) * 2
+      if (!rafId) rafId = requestAnimationFrame(apply)
+    }
     window.addEventListener('mousemove', onMove)
-    return () => window.removeEventListener('mousemove', onMove)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      if (rafId) cancelAnimationFrame(rafId)
+    }
   }, [reducedMotion])
 
   useEffect(() => {
@@ -139,7 +125,6 @@ export default function Landing({ onNavigate }: Props) {
       ref={scrollRef}
       style={{ height: '100%', overflowY: 'auto', overflowX: 'hidden', background: colors.bg }}
     >
-      {/* ── NAV ────────────────────────────────────────────────────────────── */}
       <nav
         style={{
           position: 'sticky',
@@ -206,7 +191,7 @@ export default function Landing({ onNavigate }: Props) {
           >
             {theme === 'dark' ? <Sun size={15} strokeWidth={2} /> : <Moon size={15} strokeWidth={2} />}
           </button>
-          <div data-magnet style={{ display: 'inline-block' }}>
+          <div style={{ display: 'inline-block' }}>
             <Button variant="primary" size="sm" onClick={() => onNavigate('register')}>
               Get started
             </Button>
@@ -214,7 +199,6 @@ export default function Landing({ onNavigate }: Props) {
         </div>
       </nav>
 
-      {/* ── HERO (1c Kinetic mono) ───────────────────────────────────────────── */}
       <section
         className="landing-hero"
         style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: colors.bg }}
@@ -230,17 +214,13 @@ export default function Landing({ onNavigate }: Props) {
             width: '100%',
             maxWidth: 900,
             padding: '0 32px',
-            marginTop: '-6vh', // sit slightly high so the demo can peek at the bottom
+            marginTop: '-6vh',
             transition: 'transform 0.6s ease-out',
           }}
         >
-          {/* column hairlines — decorative, loosely evoke a 3-col grid */}
           <div aria-hidden style={{ position: 'absolute', left: '50%', top: -40, bottom: -40, width: 1, background: colors.border }} />
           <div aria-hidden style={{ position: 'absolute', left: '100%', top: -40, bottom: -40, width: 1, background: colors.border }} />
 
-          {/* HUD readout row — coordinate readouts moved into the
-              constellation itself (multiple, tied to real point positions,
-              placed clear of this text column) rather than one static value here. */}
           <div
             style={{
               display: 'flex',
@@ -255,7 +235,7 @@ export default function Landing({ onNavigate }: Props) {
           >
             <span>SYS.01 - INTRODUCTION</span>
             <span style={{ width: 1, height: 10, background: colors.border }} />
-            <LiveLatency />
+            <span>THAI + ENGLISH</span>
             <span style={{ width: 1, height: 10, background: colors.border }} />
             <span>STRATIS : ONLINE</span>
           </div>
@@ -307,12 +287,12 @@ export default function Landing({ onNavigate }: Props) {
           </p>
 
           <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-start' }}>
-            <div data-magnet style={{ display: 'inline-block' }}>
+            <div style={{ display: 'inline-block' }}>
               <Button variant="primary" size="md" style={{ padding: '11px 26px', fontSize: FONT.size.body, textTransform: 'uppercase', letterSpacing: LETTER_SPACING.wide }} onClick={() => onNavigate('register')}>
                 Get started →
               </Button>
             </div>
-            <div data-magnet style={{ display: 'inline-block' }}>
+            <div style={{ display: 'inline-block' }}>
               <Button variant="ghost" size="md" style={{ padding: '11px 26px', fontSize: FONT.size.body, textTransform: 'uppercase', letterSpacing: LETTER_SPACING.wide }} onClick={() => onNavigate('login')}>
                 Sign in
               </Button>
@@ -320,7 +300,6 @@ export default function Landing({ onNavigate }: Props) {
           </div>
         </div>
 
-        {/* Scroll cue */}
         <div
           className={pastHero ? undefined : "scroll-cue"}
           style={{
@@ -346,7 +325,6 @@ export default function Landing({ onNavigate }: Props) {
         </div>
       </section>
 
-      {/* ── MARQUEE (overlaps the hero's bottom edge) ───────────────────────── */}
       <div
         style={{
           position: 'relative',
@@ -361,7 +339,11 @@ export default function Landing({ onNavigate }: Props) {
       >
         <div className="landing-marquee-track">
           {[0, 1, 2].map((dup) => (
-            <div key={dup} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+            <div
+              key={dup}
+              aria-hidden={dup > 0 ? true : undefined}
+              style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}
+            >
               {MARQUEE_ITEMS.map((phrase, i) => (
                 <span
                   key={i}
@@ -385,7 +367,6 @@ export default function Landing({ onNavigate }: Props) {
         </div>
       </div>
 
-      {/* ── DEMO (peeks ~10% above the fold, full on scroll) ───────────────── */}
       <section
         id="live-demo"
         style={{
@@ -412,7 +393,6 @@ export default function Landing({ onNavigate }: Props) {
         </p>
       </section>
 
-      {/* ── HOW STRATIS WORKS ────────────────────────────────────────────────── */}
       <section id="how-it-works" style={{ padding: '40px 32px 110px', maxWidth: 1040, margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginBottom: 40 }}>
           <h2 style={{ color: colors.text, fontSize: FONT.size.title, fontWeight: 700, margin: 0 }}>
@@ -446,7 +426,6 @@ export default function Landing({ onNavigate }: Props) {
         </div>
       </section>
 
-      {/* ── FOOTER CTA ───────────────────────────────────────────────────────── */}
       <section
         style={{
           padding: '70px 32px',
@@ -457,7 +436,7 @@ export default function Landing({ onNavigate }: Props) {
         <h2 style={{ color: colors.text, fontSize: FONT.size.heading, fontWeight: 700, margin: '0 0 22px' }}>
           Ready to see it in your next meeting?
         </h2>
-        <div data-magnet style={{ display: 'inline-block' }}>
+        <div style={{ display: 'inline-block' }}>
           <Button variant="primary" size="md" style={{ padding: '11px 26px', fontSize: FONT.size.body }} onClick={() => onNavigate('register')}>
             Get started
           </Button>
@@ -478,8 +457,6 @@ function navLinkStyle(colors: Colors) {
     cursor: 'pointer',
   } as const
 }
-
-// ── The framed live-meeting mock ─────────────────────────────────────────────
 
 function MeetingDemo({
   colors, shadow, linesVisible, card0Visible, card1Visible, card0Answered,
@@ -503,7 +480,6 @@ function MeetingDemo({
         overflow: 'hidden',
       }}
     >
-      {/* title bar */}
       <div
         style={{
           display: 'flex',
@@ -528,7 +504,6 @@ function MeetingDemo({
         </span>
       </div>
 
-      {/* body: transcript + floating suggestion stack */}
       <div style={{ position: 'relative', height: 320, padding: 20 }}>
         <div style={{ color: colors.textMuted, fontSize: FONT.size.caption, fontWeight: 600, letterSpacing: LETTER_SPACING.label, marginBottom: SPACE[4] }}>
           TRANSCRIPT
@@ -558,7 +533,6 @@ function MeetingDemo({
           })}
         </div>
 
-        {/* floating facilitator-only suggestion stack (bottom-right) */}
         <div
           style={{
             position: 'absolute',
@@ -611,7 +585,6 @@ function DemoCard({
         <span style={{ color: answered ? colors.textMuted : colors.text, fontSize: FONT.size.body, fontWeight: 600, lineHeight: 1.4 }}>
           {card.q}
         </span>
-        {/* animated strike line — transform, not width, to avoid layout thrash */}
         <span
           style={{
             position: 'absolute',

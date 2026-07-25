@@ -2,10 +2,6 @@ import { env } from "../../../backend/src/config/env";
 import { fetchWithTimeout, type AIProvider, type ChatMessage, type CompletionResult } from "./types";
 import { createPacer, fetchWithRateLimit, type RateLimitOptions } from "./rateLimit";
 
-// Typhoon's hosted API rate-limits like any other cloud endpoint. Reuse the
-// shared 429 layer (honor Retry-After, capped linear backoff) + a proactive
-// pacer so a busy meeting can't hammer it into 429s. Constants are conservative;
-// tune if Typhoon becomes the primary provider.
 const TYPHOON_RATE_LIMIT: RateLimitOptions = {
   maxRetries: 2,
   maxBackoffMs: 10_000,
@@ -32,8 +28,8 @@ export const typhoonProvider: AIProvider = {
             body: JSON.stringify({
               model,
               messages,
-              temperature: 0.1, // precision focus
-              max_tokens: 4096,  // large prediction limit
+              temperature: 0.1,
+              max_tokens: 4096,
             }),
           },
           env.ai.timeoutMs,
@@ -54,7 +50,6 @@ export const typhoonProvider: AIProvider = {
       throw new Error(`Typhoon API error: ${res.status} ${errorText}`);
     }
 
-    // Type-assertion cast: satisfies strict compilation parameters by defining the expected envelope shape
     const payload = (await res.json()) as {
       choices?: {
         message?: {
@@ -63,7 +58,6 @@ export const typhoonProvider: AIProvider = {
       }[];
     };
 
-    // Bracket-free destructuring safely extracts the first array item
     const [firstChoice] = payload.choices ?? [];
     const text = firstChoice?.message?.content ?? "";
 

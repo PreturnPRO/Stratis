@@ -76,13 +76,10 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
   const [showRemoveDoc, setShowRemoveDoc] = useState(false)
   const [removingDoc, setRemovingDoc] = useState(false)
 
-  // Version history viewing / restore UI states
   const [viewingVersion, setViewingVersion] = useState<number | null>(null)
   const [viewState, setViewState] = useState<PmDocumentState | null>(null)
   const [showRestore, setShowRestore] = useState<number | null>(null)
   const [restoring, setRestoring] = useState(false)
-
-  // ─── loaders ────────────────────────────────────────────────────────────────
 
   const loadProject = useCallback(
     async (pid: string) => {
@@ -128,7 +125,6 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
         }
         setDocState({ sections: data.data.document.sections })
         setVersion(data.data.document.version ?? 0)
-        // FIX: anchor the project so Remove / Edit / per-section actions work.
         setActiveProjectId(data.data.projectId ?? null)
         const out: DocumentPatchOutput = data.data.proposed
         setProposed(out)
@@ -165,8 +161,6 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
     else if (projectId) void loadProject(projectId)
     else void loadPicker()
   }, [sessionId, projectId, generate, loadProject, loadPicker])
-
-  // ─── review helpers ───────────────────────────────────────────────────────
 
   const setDecision = (id: string, decision: Decision) =>
     setReviews((rs) => rs.map((r) => (r.patch.client_patch_id === id ? { ...r, decision } : r)))
@@ -221,8 +215,6 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
     }
   }
 
-  // ─── manual section edit ────────────────────────────────────────────────────
-
   const openEditSection = (key: string, currentContent: string) => {
     setEditSectionKey(key)
     setEditContent(currentContent)
@@ -248,8 +240,6 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
       setSavingDoc(false)
     }
   }
-
-  // ─── remove document ──────────────────────────────────────────────────────
 
   const handleRemoveDocument = async () => {
     if (!activeProjectId) return
@@ -281,8 +271,6 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
     document.getElementById(`sec-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  // ─── version history viewing / restore ──────────────────────────────────────
-
   const loadVersion = useCallback(
     async (v: number) => {
       if (!activeProjectId) return
@@ -313,7 +301,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
       const res = await fetch(`${API_BASE}/api/document/${activeProjectId}/restore`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
-        body: JSON.stringify({ version: v }), // Matches working logic target fetch
+        body: JSON.stringify({ version: v }),
       })
       const data = await res.json()
       if (!res.ok || !data.ok) { setError(data.error ?? 'Could not restore that version'); return }
@@ -329,8 +317,6 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
     }
   }
 
-  // ─── render ─────────────────────────────────────────────────────────────────
-
   if (loading) {
     return (
       <div style={styles.page}>
@@ -339,7 +325,6 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
     )
   }
 
-  // Project picker (no session, no project selected).
   if (browsable && !docState) {
     return (
       <div style={styles.page}>
@@ -366,7 +351,6 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
 
   return (
     <div className="document-shell" style={styles.shell}>
-      {/* ── Left ToC sidebar ─────────────────────────────────────────────── */}
       <nav aria-label="Table of contents" style={styles.toc}>
         {!sessionId && (docState || error) && (
           <button
@@ -429,7 +413,6 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
         )}
       </nav>
 
-      {/* ── Article ──────────────────────────────────────────────────────── */}
       <div style={styles.articleScroll}>
         <article style={styles.article}>
           <header style={styles.articleHeader}>
@@ -451,7 +434,6 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
 
           {error && <div style={styles.errorBox}>{error}</div>}
 
-          {/* Viewing a past version */}
           {isHistorical && (
             <div style={styles.historyBanner}>
               <div style={{ flex: 1, minWidth: 0, fontSize: FONT.size.body, fontWeight: 600, color: colors.cyan }}>
@@ -470,7 +452,6 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
             </div>
           )}
 
-          {/* Slim review banner */}
           {!isHistorical && proposed && proposedCount > 0 && (
             <div style={styles.reviewBanner}>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -499,7 +480,6 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
             <div style={styles.noChanges}>This meeting didn't change the project's state.</div>
           )}
 
-          {/* Sections */}
           {displayState && PM_SECTIONS.map((s, i) => {
             const sec = displayState.sections[s.key]
             const secReviews = isHistorical ? [] : (reviewsBySection[s.key] ?? [])
@@ -519,12 +499,10 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
                   )}
                 </div>
 
-                {/* Current content */}
                 {(sec?.content?.trim() || !secReviews.length) && (
                   <Markdown>{sec?.content ?? ''}</Markdown>
                 )}
 
-                {/* Proposed changes for this section */}
                 {secReviews.map((r) => (
                   <ProposedChange
                     key={r.patch.client_patch_id}
@@ -541,7 +519,6 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
         </article>
       </div>
 
-      {/* ── Edit section modal ───────────────────────────────────────────── */}
       {editSectionKey && (
         <Modal
           title="Edit section"
@@ -567,7 +544,6 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
         </Modal>
       )}
 
-      {/* ── Remove document confirm ──────────────────────────────────────── */}
       {showRemoveDoc && (
         <Modal
           title="Remove document?"
@@ -588,7 +564,6 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
         </Modal>
       )}
 
-      {/* ── Restore version confirm ──────────────────────────────────────── */}
       {showRestore != null && (
         <Modal
           title={`Restore version ${showRestore}?`}
@@ -612,8 +587,6 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
     </div>
   )
 }
-
-// ─── ProposedChange (inline review) ──────────────────────────────────────────
 
 function ProposedChange({
   review, onApprove, onReject, onToggleEdit, onContent,
@@ -706,7 +679,6 @@ function makeStyles(colors: Record<string, string>): Record<string, React.CSSPro
     page: { padding: '40px 60px', overflowY: 'auto', flex: 1, color: colors.textPrimary },
     shell: { display: 'flex', flex: 1, height: '100%', minHeight: 0, background: colors.bg },
 
-    // ToC
     toc: {
       width: 220,
       flexShrink: 0,
@@ -727,7 +699,6 @@ function makeStyles(colors: Record<string, string>): Record<string, React.CSSPro
     },
     tocDot: {
       width: 6, height: 6, borderRadius: '50%', background: colors.amber, flexShrink: 0,
-      animation: 'pulse 2.4s ease-in-out infinite',
     },
     backBtn: {
       background: 'transparent', border: 'none', color: colors.accent,
@@ -739,7 +710,6 @@ function makeStyles(colors: Record<string, string>): Record<string, React.CSSPro
       padding: '9px 10px', cursor: 'pointer', textAlign: 'left',
     },
 
-    // Article
     articleScroll: { flex: 1, overflowY: 'auto', minWidth: 0, minHeight: 0 },
     article: { maxWidth: 1060, margin: '0 auto', padding: '44px 56px' },
     articleHeader: {
@@ -792,7 +762,6 @@ function makeStyles(colors: Record<string, string>): Record<string, React.CSSPro
       cursor: 'pointer', padding: '4px', borderRadius: RADIUS.sm,
     },
 
-    // Proposed change card
     proposed: {
       background: colors.surface, border: '1px solid', borderRadius: 10,
       padding: '14px 16px', marginTop: SPACE[4], display: 'flex', flexDirection: 'column', gap: 8,
@@ -817,7 +786,6 @@ function makeStyles(colors: Record<string, string>): Record<string, React.CSSPro
       color: colors.textMuted, cursor: 'pointer',
     },
 
-    // Picker
     pickerList: { display: 'flex', flexDirection: 'column', gap: SPACE[2.5], maxWidth: 640 },
     pickerRow: {
       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -826,7 +794,6 @@ function makeStyles(colors: Record<string, string>): Record<string, React.CSSPro
     },
     pickerName: { fontSize: FONT.size.body, fontWeight: 600, color: colors.textPrimary },
 
-    // History (ToC)
     historyRow: {
       display: 'flex', gap: 8, alignItems: 'flex-start', width: '100%',
       background: 'transparent', border: '1px solid transparent', borderRadius: RADIUS.sm,

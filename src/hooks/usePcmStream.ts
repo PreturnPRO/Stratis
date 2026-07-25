@@ -1,15 +1,3 @@
-// S-EXP — raw PCM mic capture for streaming STT.
-//
-// Captures mic audio through an AudioWorklet and emits little-endian Int16
-// mono PCM frames (~250ms each) via onFrame. Used instead of useMediaRecorder
-// for the streaming path: raw PCM has no container, so every frame is
-// independently decodable and the backend can rotate its gRPC stream
-// mid-meeting without losing a WebM header.
-//
-// The context asks for 16kHz (what STT models want); browsers that refuse
-// (Safari ties MediaStream sources to the hardware rate) fall back to the
-// native rate, which is reported to the caller via beforeFlow so the backend
-// can configure Google accordingly.
 
 import { useCallback, useRef, useState } from "react";
 
@@ -39,11 +27,6 @@ export interface UsePcmStreamOptions {
 export interface UsePcmStreamReturn {
   status: PcmStreamStatus;
   error: string | null;
-  /**
-   * beforeFlow runs with the actual sample rate after the mic is live but
-   * before the first frame is emitted — send the stt:start control message
-   * from it so no audio outruns the stream setup.
-   */
   start: (beforeFlow?: (sampleRate: number) => void) => Promise<void>;
   stop: () => void;
 }
@@ -77,7 +60,6 @@ export function usePcmStream({ onFrame }: UsePcmStreamOptions): UsePcmStreamRetu
       try {
         node.disconnect();
       } catch {
-        /* already disconnected */
       }
     }
     nodesRef.current = [];
@@ -132,8 +114,6 @@ export function usePcmStream({ onFrame }: UsePcmStreamOptions): UsePcmStreamRetu
         });
         streamRef.current = media;
 
-        // Prefer a 16kHz context; retry at the native rate if this browser
-        // can't bind a MediaStream source to a resampling context.
         let ctx: AudioContext;
         let source: MediaStreamAudioSourceNode;
         try {
@@ -159,7 +139,6 @@ export function usePcmStream({ onFrame }: UsePcmStreamOptions): UsePcmStreamRetu
           numberOfOutputs: 1,
           channelCount: 1,
         });
-        // Keep the tap in the rendering graph (silently) so it gets processed.
         const mute = ctx.createGain();
         mute.gain.value = 0;
 

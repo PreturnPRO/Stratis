@@ -26,7 +26,6 @@ function formatDate(value?: string | null): string {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(d);
 }
 
-// Stable-ish dot color derived from the project name.
 function colorFor(name: string, dotColors: readonly string[]): string {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
@@ -106,6 +105,7 @@ export default function Projects({ onNav }: Props) {
     durationMinutes: number;
     goal: string;
     brief: string;
+    scheduledAt: string | null;
   }) => {
     if (!newMeetingProject) return;
     const sessionId = await create.createMeeting({
@@ -114,6 +114,7 @@ export default function Projects({ onNav }: Props) {
       goal: input.goal,
       brief: input.brief,
       durationMinutes: input.durationMinutes,
+      scheduledAt: input.scheduledAt,
     });
     if (sessionId) setNewMeetingProject(null);
   };

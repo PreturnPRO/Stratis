@@ -49,13 +49,8 @@ interface SummaryRow {
   project_id: string | null;
 }
 
-// A valid JWT can outlive its database rows: a redeploy onto a fresh or
-// migrated DB leaves the client holding a token whose org/user no longer
-// exist. List queries still work (they just return nothing), so the dashboard
-// renders — and the FIRST insert then fails its foreign key. That is an auth
-// problem, not a server fault: tell the client to log in again instead of 500.
 function isIdentityFkViolation(error: unknown): boolean {
-  return (error as { code?: string } | null)?.code === "23503"; // PG foreign_key_violation
+  return (error as { code?: string } | null)?.code === "23503";
 }
 
 function replyIdentityGone(res: Response) {
@@ -71,7 +66,6 @@ function parseLimit(value: unknown, fallback = 10, max = 50): number {
   return Math.min(Math.floor(n), max);
 }
 
-// Converted to async using db.query
 async function getMeeting(id: string): Promise<MeetingRow | undefined> {
   const result = await db.query<MeetingRow>(
     `
@@ -127,7 +121,7 @@ async function listMeetings(req: Request, res: Response) {
 
     const params: unknown[] = [req.auth!.orgId];
     const where: string[] = ["m.org_id = $1"];
-    let pIdx = 2; // PG parameters are 1-indexed, $1 is used
+    let pIdx = 2;
 
     if (req.auth!.role === "facilitator") {
       where.push(`m.created_by = $${pIdx++}`);
@@ -212,21 +206,10 @@ async function listMeetings(req: Request, res: Response) {
   }
 }
 
-/**
- * GET /api/meeting
- * Dashboard upcoming meetings.
- */
 meetingRouter.get("/", requireAuth, listMeetings);
 
-/**
- * GET /api/meeting/upcoming
- */
 meetingRouter.get("/upcoming", requireAuth, listMeetings);
 
-/**
- * GET /api/meeting/dashboard
- * One-call dashboard payload.
- */
 meetingRouter.get("/dashboard", requireAuth, async (req, res) => {
   try {
     const limit = parseLimit(req.query.limit, 5, 20);
@@ -349,9 +332,6 @@ meetingRouter.get("/dashboard", requireAuth, async (req, res) => {
   }
 });
 
-/**
- * POST /api/meeting
- */
 meetingRouter.post("/", requireAuth, async (req, res) => {
   try {
     const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
@@ -370,13 +350,11 @@ meetingRouter.post("/", requireAuth, async (req, res) => {
       return res.status(400).json({ ok: false, error: "Scheduled date cannot be in the past" }); 
     }
 
-    // 1. CRITICAL ALIGNMENT: Check if the project exists in our new relational table
     const projectCheck = await db.query(
       "SELECT id FROM projects WHERE id = $1 AND org_id = $2 LIMIT 1",
       [projectId, req.auth!.orgId]
     );
 
-    // 2. Automatically register the project if it was created on-the-fly from the Dashboard
     if (projectCheck.rows.length === 0) {
       const projectName = titleFromProjectId(projectId);
       const ts = now();
@@ -390,7 +368,6 @@ meetingRouter.post("/", requireAuth, async (req, res) => {
     const id = newId("mtg"); 
     const timestamp = now();
 
-    // 3. Insert the meeting (safe from foreign-key violations now!)
     await db.query(
       `INSERT INTO meetings (
         id, org_id, project_id, title, goal, brief, duration_minutes, scheduled_at, created_by, created_at
@@ -430,9 +407,192 @@ function titleFromProjectId(projectId: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-/**
- * GET /api/meeting/projects
- */
+interface DocketMeetingRow {
+  id: string;
+  title: string;
+  project_id: string;
+  goal: string | null;
+  duration_minutes: number | null;
+  scheduled_at: string | null;
+  created_at: string;
+  active_session_id: string | null;
+  active_session_status: SessionStatus | null;
+  carried_open: number;
+  carried_unowned: number;
+}
+
+interface WaitingRow {
+  id: string;
+  text: string;
+  status: "open" | "incomplete";
+  owner: string | null;
+  missing: string | null;
+  source_meeting: string | null;
+  project_id: string | null;
+  since: string;
+}
+
+meetingRouter.get("/docket", requireAuth, async (req, res) => {
+  try {
+    const orgId = req.auth!.orgId;
+    const ts = now();
+
+    const meetingsResult = await db.query<DocketMeetingRow>(
+      `
+      SELECT
+        m.id,
+        m.title,
+        m.project_id,
+        m.goal,
+        m.duration_minutes,
+        m.scheduled_at,
+        m.created_at,
+        live.id     AS active_session_id,
+        live.status AS active_session_status,
+        COALESCE(carry.open_count, 0)    AS carried_open,
+        COALESCE(carry.unowned_count, 0) AS carried_unowned
+      FROM meetings m
+      LEFT JOIN LATERAL (
+        SELECT s.id, s.status
+        FROM sessions s
+        WHERE s.meeting_id = m.id AND s.status = 'active'
+        ORDER BY s.started_at DESC NULLS LAST
+        LIMIT 1
+      ) live ON TRUE
+      -- Continuity: unresolved decisions from EARLIER meetings on the same
+      -- project. These are what the next meeting inherits.
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(*) FILTER (WHERE d.status IN ('open', 'incomplete'))                        AS open_count,
+          COUNT(*) FILTER (WHERE d.owner IS NULL OR btrim(d.owner) = '')                    AS unowned_count
+        FROM decisions d
+        JOIN meetings dm ON dm.id = d.meeting_id
+        WHERE dm.project_id = m.project_id
+          AND dm.org_id = m.org_id
+          AND dm.id <> m.id
+          AND d.dismissed = FALSE
+          AND d.status IN ('open', 'incomplete')
+      ) carry ON TRUE
+      WHERE m.org_id = $1
+        AND (
+          (m.scheduled_at IS NOT NULL AND m.scheduled_at >= $2)
+          OR live.id IS NOT NULL
+        )
+      ORDER BY
+        CASE WHEN live.id IS NOT NULL THEN 0 ELSE 1 END,
+        m.scheduled_at ASC NULLS LAST,
+        m.created_at ASC
+      LIMIT 50
+      `,
+      [orgId, ts],
+    );
+
+    const waitingResult = await db.query<WaitingRow>(
+      `
+      SELECT
+        d.id,
+        d.text,
+        d.status,
+        d.owner,
+        d.missing,
+        dm.title      AS source_meeting,
+        dm.project_id AS project_id,
+        d.created_at  AS since
+      FROM decisions d
+      JOIN meetings dm ON dm.id = d.meeting_id
+      WHERE dm.org_id = $1
+        AND d.dismissed = FALSE
+        AND d.status IN ('open', 'incomplete')
+        AND NOT EXISTS (
+          SELECT 1 FROM meetings up
+          WHERE up.project_id = dm.project_id
+            AND up.org_id = dm.org_id
+            AND up.scheduled_at IS NOT NULL
+            AND up.scheduled_at >= $2
+        )
+      ORDER BY d.created_at ASC
+      LIMIT 20
+      `,
+      [orgId, ts],
+    );
+
+    res.json({
+      ok: true,
+      data: {
+        meetings: meetingsResult.rows.map((row) => ({
+          id: row.id,
+          title: row.title,
+          projectId: row.project_id,
+          goal: row.goal,
+          durationMinutes: row.duration_minutes,
+          scheduledAt: row.scheduled_at,
+          createdAt: row.created_at,
+          activeSession:
+            row.active_session_id && row.active_session_status
+              ? { id: row.active_session_id, status: row.active_session_status }
+              : null,
+          carriedOpen: Number(row.carried_open) || 0,
+          carriedUnowned: Number(row.carried_unowned) || 0,
+        })),
+        waiting: waitingResult.rows.map((row) => ({
+          id: row.id,
+          text: row.text,
+          status: row.status,
+          owner: row.owner,
+          missing: row.missing,
+          sourceMeeting: row.source_meeting,
+          projectId: row.project_id,
+          since: row.since,
+        })),
+      },
+    });
+  } catch (error) {
+    console.error("Docket load error:", error);
+    if (isIdentityFkViolation(error)) return replyIdentityGone(res);
+    res.status(500).json({ ok: false, error: "Could not load the docket" });
+  }
+});
+
+meetingRouter.get("/:id/ics", requireAuth, async (req, res) => {
+  try {
+    const meeting = await getMeeting(req.params.id);
+    if (!meeting || meeting.org_id !== req.auth!.orgId) {
+      return res.status(404).json({ ok: false, error: "Meeting not found" });
+    }
+    if (!meeting.scheduled_at) {
+      return res.status(409).json({ ok: false, error: "This meeting has no scheduled time" });
+    }
+
+    const start = new Date(meeting.scheduled_at);
+    const end = new Date(start.getTime() + (meeting.duration_minutes ?? 60) * 60_000);
+    const stamp = (d: Date) => `${d.toISOString().replace(/[-:]/g, "").split(".")[0]}Z`;
+    const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/[,;]/g, (m) => `\\${m}`).replace(/\r?\n/g, "\\n");
+
+    const lines = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//Stratis//Docket//EN",
+      "CALSCALE:GREGORIAN",
+      "BEGIN:VEVENT",
+      `UID:${meeting.id}@stratis`,
+      `DTSTAMP:${stamp(new Date())}`,
+      `DTSTART:${stamp(start)}`,
+      `DTEND:${stamp(end)}`,
+      `SUMMARY:${esc(meeting.title)}`,
+      ...(meeting.goal ? [`DESCRIPTION:${esc(`Goal: ${meeting.goal}`)}`] : []),
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ];
+
+    res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${meeting.id}.ics"`);
+    res.send(lines.join("\r\n"));
+  } catch (error) {
+    console.error("ICS export error:", error);
+    res.status(500).json({ ok: false, error: "Could not build the calendar file" });
+  }
+});
+
 meetingRouter.get("/projects", requireAuth, async (req, res) => {
   try {
     const orgId = req.auth!.orgId;
@@ -447,7 +607,6 @@ meetingRouter.get("/projects", requireAuth, async (req, res) => {
       params.push(userId);
     }
 
-    // Advanced relational query: aggregates count and latest datetime via LEFT JOIN
     const rows = await db.query<{
       id: string;
       name: string;
@@ -484,10 +643,6 @@ meetingRouter.get("/projects", requireAuth, async (req, res) => {
   }
 });
 
-/**
- * POST /api/meeting/projects
- * Creates a new project in the projects table and initializes its first Kickoff meeting.
- */
 meetingRouter.post("/projects", requireAuth, async (req, res) => {
   try {
     const orgId = req.auth!.orgId;
@@ -514,18 +669,16 @@ meetingRouter.post("/projects", requireAuth, async (req, res) => {
     }
 
     const ts = now();
-    const projectId = newId("prj"); // New projects table primary key!
+    const projectId = newId("prj");
     const meetingId = newId("mtg");
     const title = `Kickoff: ${name}`;
 
-    // 1. Insert directly into the projects relation table
     await db.query(
       `INSERT INTO projects (id, org_id, name, slug, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6)`,
       [projectId, orgId, name, slug, ts, ts]
     );
 
-    // 2. Insert kickoff meeting referencing our projects table primary key with a default 60-minute duration
     await db.query(
       `INSERT INTO meetings (id, org_id, project_id, title, duration_minutes, scheduled_at, created_by, created_at)
        VALUES ($1, $2, $3, $4, 60, null, $5, $6)`,
@@ -558,9 +711,6 @@ meetingRouter.post("/projects", requireAuth, async (req, res) => {
   }
 });
 
-/**
- * GET /api/meeting/:id
- */
 meetingRouter.get("/:id", requireAuth, async (req, res) => {
   try {
     const meeting = await getMeeting(req.params.id);
@@ -596,9 +746,6 @@ meetingRouter.get("/:id", requireAuth, async (req, res) => {
   }
 });
 
-/**
- * PATCH /api/meeting/:id
- */
 meetingRouter.patch("/:id", requireAuth, async (req, res) => {
   try {
     const meeting = await getMeeting(req.params.id);
@@ -690,9 +837,6 @@ meetingRouter.patch("/:id", requireAuth, async (req, res) => {
   }
 });
 
-/**
- * DELETE /api/meeting/:id
- */
 meetingRouter.delete("/:id", requireAuth, async (req, res) => {
   try {
     const meeting = await getMeeting(req.params.id);

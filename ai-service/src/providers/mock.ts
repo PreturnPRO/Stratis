@@ -1,5 +1,3 @@
-// Mock provider (S1-T03-B) — deterministic, offline, no network. Lets the first
-// AI call succeed with zero setup, and keeps CI/tests independent of any key.
 import type { AIProvider, ChatMessage, CompletionResult } from "./types";
 
 export const mockProvider: AIProvider = {
@@ -8,8 +6,6 @@ export const mockProvider: AIProvider = {
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
     const echo = lastUser?.content?.slice(0, 120) ?? "";
 
-    // Live card gateway (schema spec §6): emit a valid live_card_output so the
-    // live pipeline is exercisable offline / in CI with no key.
     const wantsLiveCard = messages.some(
       (m) => m.role === "system" && m.content.includes('"output_type": "live_card_output"')
     );
@@ -33,7 +29,6 @@ export const mockProvider: AIProvider = {
       return { text, provider: "mock", raw: { mock: true, liveCard: true, text } };
     }
 
-    // Document patch gateway (schema spec §7): emit a valid document_patch_output.
     const wantsDocPatch = messages.some(
       (m) => m.role === "system" && m.content.includes("PM document after a meeting")
     );
@@ -57,8 +52,6 @@ export const mockProvider: AIProvider = {
       return { text, provider: "mock", raw: { mock: true, docPatch: true, text } };
     }
 
-    // S1-T03-C: when asked for structured output, emit valid JSON so the
-    // parse+validate path is exercisable offline / in CI with no key.
     const wantsJson = messages.some(
       (m) => m.role === "system" && m.content.includes("STRUCTURED DATA ONLY")
     );

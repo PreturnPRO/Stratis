@@ -26,23 +26,12 @@ import { API_BASE } from "../lib/api";
 
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 
-// Mic capture cadence: record short standalone WebM/Opus clips and POST each to
-// the backend, which runs Google Speech v2 chirp_2 (th-TH,en-US). Short clips
-// (not timesliced fragments) keep every upload independently decodable.
 const CHUNK_MAX_MS = 6000;
 
-// S-EXP — streaming STT: raw PCM over the /ws hub into Google v2
-// StreamingRecognize, with live interim text in the ghost row and no clip
-// boundaries to split words. Set VITE_STT_STREAMING=0 to fall back to the
-// 6s clip-batch REST path above.
 const USE_STREAMING_STT = (import.meta.env.VITE_STT_STREAMING ?? "1") !== "0";
 
-// After an stt:flush, how long to let Google finalize the pending utterance and
-// the backend ingest it before running decision extraction (checkpoint opens
-// mid-recording without stopping the mic).
 const FLUSH_SETTLE_MS = 1500;
 
-// Blob → base64 data URL. The backend strips the `data:...;base64,` prefix.
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -52,20 +41,10 @@ function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-// Chat-style auto-follow: within this many px of the bottom counts as "at the
-// bottom", so auto-scroll stays armed despite sub-pixel rounding and the
-// growing live ghost row.
 const NEAR_BOTTOM_PX = 80;
 
-// Each CHUNK_MAX_MS audio clip becomes its own transcript row in the DB, so a
-// continuous sentence arrives as a run of short rows. Consecutive rows from
-// the same speaker within this gap render as one flowing block instead of a
-// separate 1-2 word box each.
 const GROUP_GAP_MS = 30_000;
 
-// Thai has no spaces between words — joining Thai chunk texts with " " would
-// scatter spaces mid-sentence. Mirrors the Thai-aware cleanup applied per
-// chunk in backend/src/routes/transcript.ts.
 function joinChunkText(a: string, b: string): string {
   if (!a) return b;
   if (!b) return a;
@@ -142,17 +121,12 @@ function RecDot() {
   );
 }
 
-// Stable per-speaker color, reusing the name-hash idiom from Sidebar/Projects
-// so the same speaker always maps to the same one of the 3 speaker colors.
 function speakerColor(name: string, spkColors: readonly string[]): string {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
   return spkColors[Math.abs(hash) % spkColors.length];
 }
 
-// Small agenda ring beside the header's mono elapsed-time readout — additive
-// to the existing gutter AgendaPulse, per the handoff's 36px/r=15/stroke-3
-// header spec. Reuses the same elapsed/duration values driving the mm:ss text.
 function AgendaPulseRing({ elapsed, duration, phaseColor }: { elapsed: number; duration: number; phaseColor: string }) {
   const circumference = 94.2;
   const pct = duration > 0 ? Math.min(1, elapsed / duration) : 0;
@@ -214,33 +188,20 @@ export default function Meeting({ onNav }: MeetingProps) {
   const [durationMin, setDurationMin] = useState<number | null>(null);
   const [startMs, setStartMs] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
-  // Last time speech recognition produced a result — drives the "hearing you"
-  // state of the AI presence chip.
   const [lastSpeechMs, setLastSpeechMs] = useState<number | null>(null);
 
-  // Ghost-row state: words shown instantly, before any backend/AI round-trip.
-  // liveText = recognized but not yet flushed; pendingText = flushed chunk
-  // still in flight to the backend.
   const [liveText] = useState("");
   const [pendingText, setPendingText] = useState("");
   const inFlightChunksRef = useRef(0);
-  // Live "Strategic Meeting Notes" — the AI's rolling memory, pushed over the
-  // socket whenever an IMPORTANT chunk rewrites it.
   const [liveNotes, setLiveNotes] = useState("");
 
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
-  // Chat-style auto-follow: pinned to the newest line while the user is at the
-  // bottom; scrolling up to read history pauses it and reveals a "jump to
-  // latest" affordance (Discord-style).
   const [stickToBottom, setStickToBottom] = useState(true);
 
   const authHeaders = useMemo((): Record<string, string> => {
     return token ? { Authorization: `Bearer ${token}` } : {};
   }, [token]);
 
-  // Merge consecutive rows from the same speaker into one continuous display
-  // block — the DB keeps one row per audio clip, but reading a sentence split
-  // across a stack of 1-2 word boxes is unusable.
   const transcriptGroups = useMemo(() => {
     const groups: Array<{ id: string; speaker: string; timestamp: string; text: string }> = [];
     let prevMs = NaN;
@@ -271,17 +232,12 @@ export default function Meeting({ onNav }: MeetingProps) {
   const appendTranscript = useCallback((row: TranscriptRow) => {
     setTranscripts((prev) => {
       if (prev.some((p) => p.id === row.id)) return prev;
-      // Keep rows in timestamp order even if two in-flight uploads resolve
-      // out of order (ISO timestamps sort lexicographically).
       const next = [...prev, row];
       next.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
       return next;
     });
   }, []);
 
-  // Placed after appendTranscript so the streaming handlers can reference it.
-  // Interim text drives the same ghost row the clip path uses; finals are
-  // saved server-side and arrive here as ordinary transcript rows.
   const { cards, connected, markAnswered, markActive, sendControl, sendAudioFrame } =
     useSuggestionSocket(sessionId, {
       onSttInterim: (text) => {
@@ -299,7 +255,6 @@ export default function Meeting({ onNav }: MeetingProps) {
 
   const checkpoint = useCheckpoint(sessionId, token);
 
-  // Owner-input suggestions at the checkpoint: everyone who has spoken.
   const speakerNames = useMemo(() => {
     const names = new Set<string>();
     for (const row of transcripts) {
@@ -309,11 +264,6 @@ export default function Meeting({ onNav }: MeetingProps) {
     return [...names];
   }, [transcripts]);
 
-  // Mid-recording, streaming STT holds the in-progress utterance until Google
-  // finalizes it — so extraction used to miss the latest words unless the
-  // facilitator stopped the mic first. Flush (half-close) the stream, give the
-  // pending finals a beat to land in the DB, then extract. Mic stays live; the
-  // stream reopens on the next audio frame.
   const extractAfterFlush = useCallback(() => {
     const flushed = isRecording && sendControl({ type: "stt:flush" });
     window.setTimeout(() => {
@@ -321,8 +271,6 @@ export default function Meeting({ onNav }: MeetingProps) {
     }, flushed ? FLUSH_SETTLE_MS : 0);
   }, [isRecording, sendControl, checkpoint]);
 
-  // Opening the checkpoint reads the meeting: extract fresh if we have nothing
-  // yet, otherwise just reload what's stored (and let the facilitator re-read).
   const openCheckpoint = useCallback(() => {
     setShowCheckpoint(true);
     if (checkpoint.decisions.length === 0) {
@@ -332,17 +280,8 @@ export default function Meeting({ onNav }: MeetingProps) {
     }
   }, [checkpoint, extractAfterFlush]);
 
-  // --- Real-Time STT: mic → MediaRecorder → Chirp 2 (all browsers) ---
-  // The old path used the browser Web Speech API, which only exists in
-  // Chrome/Edge/Safari (Firefox has none) and transcribes on Google's consumer
-  // endpoint — never our Chirp 2 project. MediaRecorder + getUserMedia work in
-  // every modern browser; each short clip POSTs to /api/transcript/audio-chunk,
-  // which runs Speech v2 chirp_2 (th-TH,en-US) and returns Thai transcript rows.
   const sendAudioChunk = useCallback(async (blob: Blob) => {
     if (!token || !sessionId || blob.size === 0) return;
-    // Uploads can overlap (a new clip starts while the previous one is still
-    // in flight) — count them so the first response back doesn't clear the
-    // "Transcribing…" indicator out from under the later one.
     inFlightChunksRef.current += 1;
     setSendingChunk(true);
     setPendingText("Transcribing…");
@@ -394,10 +333,6 @@ export default function Meeting({ onNav }: MeetingProps) {
     if (recError) setError(recError);
   }, [recError]);
 
-  // --- Streaming STT path (S-EXP) ---
-  // Mic → AudioWorklet PCM frames → binary WS frames → backend
-  // StreamingRecognize. Interim/final results come back over the same socket
-  // (see the useSuggestionSocket handlers above).
   const streamingActiveRef = useRef(false);
   const streamSampleRateRef = useRef<number | null>(null);
 
@@ -411,8 +346,6 @@ export default function Meeting({ onNav }: MeetingProps) {
     if (pcm.error) setError(pcm.error);
   }, [pcm.error]);
 
-  // If the socket drops mid-meeting, the backend loses its stream state — re-arm
-  // it on reconnect so audio keeps transcribing.
   useEffect(() => {
     if (connected && streamingActiveRef.current && streamSampleRateRef.current) {
       sendControl({
@@ -437,7 +370,6 @@ export default function Meeting({ onNav }: MeetingProps) {
           });
         })
         .catch((err) => {
-          // Worklet/mic failure on this browser — fall back to the clip path.
           console.warn("[speech:stream] PCM capture failed, using clip upload:", err);
           streamingActiveRef.current = false;
           void startRec();
@@ -458,7 +390,6 @@ export default function Meeting({ onNav }: MeetingProps) {
     stopRec();
   };
 
-  // --- Past Transcript Syncing ---
   const loadTranscript = useCallback(async () => {
     if (!token || !sessionId) return;
     setLoadingTranscript(true);
@@ -487,10 +418,6 @@ export default function Meeting({ onNav }: MeetingProps) {
     }
   }, [sessionId, loadTranscript]);
 
-  // Reconnect backfill: rows finalized during a socket drop are broadcast while
-  // we're disconnected and never reach this client. On every reconnect (not the
-  // first connect — the mount load above covers that) refetch and merge so the
-  // panel matches the database with no silent gap. Silent: no spinner, dedup by id.
   const backfillTranscript = useCallback(async () => {
     if (!token || !sessionId) return;
     try {
@@ -511,13 +438,12 @@ export default function Meeting({ onNav }: MeetingProps) {
   useEffect(() => {
     if (!connected) return;
     if (!hadConnectionRef.current) {
-      hadConnectionRef.current = true; // first connect — mount load already ran
+      hadConnectionRef.current = true;
       return;
     }
     void backfillTranscript();
   }, [connected, backfillTranscript]);
 
-  // Sync starting server timestamps
   useEffect(() => {
     if (!sessionId || !token) return;
     const pingStartEndpoint = async () => {
@@ -544,9 +470,6 @@ export default function Meeting({ onNav }: MeetingProps) {
     setStartMs((prev) => (Number.isFinite(serverStart) ? serverStart : prev ?? Date.now()));
   }, [sessionId, recovery.session?.started_at]);
 
-  // Planned duration: the server-stored value on the meeting wins (it survives
-  // cleared localStorage and other devices); localStorage covers sessions
-  // created before duration_minutes existed; 60 is the last-resort default.
   const recoveredDuration = recovery.session?.id === sessionId ? recovery.session?.duration_minutes : null;
 
 useEffect(() => {
@@ -555,7 +478,6 @@ useEffect(() => {
     return;
   }
 
-  // 1. If server recovery has finished and returned a valid duration, prioritize it immediately
   const server = Number(recoveredDuration);
   if (Number.isFinite(server) && server > 0) {
     setDurationMin(server);
@@ -563,7 +485,6 @@ useEffect(() => {
     return;
   }
 
-  // 2. Wait until recovery finishes loading before falling back to local storage or defaults
   if (recovery.status !== "loading") {
     const raw = window.localStorage.getItem(`stratis.duration.${sessionId}`);
     const n = raw ? parseInt(raw, 10) : NaN;
@@ -577,9 +498,6 @@ useEffect(() => {
     return () => clearInterval(t);
   }, [sessionId]);
 
-  // User scroll intent: reaching the bottom re-arms auto-follow; scrolling up
-  // pauses it. Our own programmatic scroll-to-bottom lands here too and simply
-  // keeps auto-follow armed, so no "is this programmatic?" flag is needed.
   const handleTranscriptScroll = useCallback(() => {
     const el = transcriptScrollRef.current;
     if (!el) return;
@@ -594,8 +512,6 @@ useEffect(() => {
     setStickToBottom(true);
   }, []);
 
-  // While auto-follow is armed, keep the newest line — and the live ghost row
-  // as it grows word by word — pinned to the bottom as content streams in.
   useEffect(() => {
     if (!stickToBottom) return;
     const el = transcriptScrollRef.current;
@@ -671,9 +587,16 @@ useEffect(() => {
             margin: "0 0 24px",
           }}
         >
-          Control Room Workspace
+          Meeting
         </h1>
-        <EmptyState message="No active meeting session found. Initialize or join a workspace session from your Dashboard." />
+        <EmptyState
+          message="No meeting is running right now."
+          action={
+            <Button variant="primary" size="sm" onClick={() => onNav?.("dashboard")}>
+              Go to dashboard to start one
+            </Button>
+          }
+        />
       </div>
     );
   }
@@ -682,7 +605,6 @@ useEffect(() => {
     <div style={{ display: "flex", flex: 1, height: "100%", minHeight: 0, background: colors.bg }}>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0 }}>
         
-        {/* Header */}
         <div
           style={{
             borderBottom: `1px solid ${colors.border}`,
@@ -814,10 +736,8 @@ useEffect(() => {
           </div>
         )}
 
-        {/* Main Two-Column Control Workspace */}
         <div className="meeting-grid" style={{ flex: 1, padding: "24px", overflow: "hidden" }}>
           
-          {/* Column 1: Live Ingestion Feed */}
           <div
             style={{
               background: colors.surface,
@@ -916,8 +836,6 @@ useEffect(() => {
               )}
             </div>
 
-            {/* Jump-to-latest: re-arms auto-scroll after the user has scrolled
-                up to read history. Only shown while auto-follow is paused. */}
             {!stickToBottom && (
               <button
                 type="button"
@@ -948,7 +866,6 @@ useEffect(() => {
             )}
           </div>
 
-          {/* Column 2: Suggestion Gutter Stack */}
           <div
             className="suggestion-gutter"
             style={{
@@ -967,7 +884,6 @@ useEffect(() => {
               />
             )}
 
-            {/* Live Strategic Recommendations */}
             <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                 <span style={{ color: colors.textMuted, fontSize: FONT.size.label, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase" }}>
@@ -990,7 +906,6 @@ useEffect(() => {
         </div>
       </div>
 
-      {/* End Meeting Confirmation Modal */}
       {showEndConfirm && (
         <Modal
           title="Conclude Meeting Session?"
@@ -1012,7 +927,6 @@ useEffect(() => {
         </Modal>
       )}
 
-      {/* Alignment Checkpoint — normal (modal) or present (fullscreen overlay) */}
       {showCheckpoint && !presentMode && (
         <Modal
           title=""

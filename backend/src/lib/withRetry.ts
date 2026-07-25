@@ -1,15 +1,6 @@
-// Generic async retry with exponential backoff.
-//
-// Runs `fn`, and on rejection retries up to `retries` more times, waiting
-// `baseMs * 2^attempt` between tries (attempt 0 is the wait after the first
-// failure). Resolves with the first success; rejects with the last error once
-// retries are exhausted. Used to survive transient DB blips when persisting a
-// finalized transcript utterance (see routes/transcript.ts streamIngest).
 
 export interface RetryOptions {
-  /** Retries after the initial attempt. Total attempts = retries + 1. */
   retries?: number;
-  /** Base backoff in ms; doubles each retry. */
   baseMs?: number;
 }
 

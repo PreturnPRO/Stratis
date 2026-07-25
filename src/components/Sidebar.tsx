@@ -1,37 +1,34 @@
 import {
   LayoutDashboard,
   FolderKanban,
+  ListChecks,
   Video,
   FileText,
   LogOut,
   Zap,
   Sun,
   Moon,
+  PanelLeft,
+  PanelLeftClose,
   type LucideIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { NAV_ITEMS, FONT, RADIUS, SPACE } from "../constants";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
-import LetterStagger from "./LetterStagger";
 
 const COLLAPSED_WIDTH = 64;
 const EXPANDED_WIDTH = 200;
-
-// ─── Icon registry ─────────────────────────────────────────────────────────────
+const STORAGE_KEY = "stratis-sidebar-expanded";
 
 const ICON_MAP: Record<string, LucideIcon> = {
   LayoutDashboard,
   FolderKanban,
+  ListChecks,
   Video,
   FileText,
 };
 
-// ─── Avatar helpers ────────────────────────────────────────────────────────────
-
-// Kept independent from the semantic COLORS palette (name-hash lookup, not
-// status meaning), but must not visually collide with it — avoid shades near
-// colors.danger and colors.teal.
 const AVATAR_COLORS = [
   "#a8556c", "#2e86c1", "#1a7a4a", "#8e44ad",
   "#d35400", "#5c7a89", "#2c3e50", "#7f8c8d",
@@ -49,8 +46,6 @@ function nameToColor(name: string): string {
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
 
-// ─── Sidebar ───────────────────────────────────────────────────────────────────
-
 export default function Sidebar({
   active,
   onNav,
@@ -66,25 +61,42 @@ export default function Sidebar({
 }) {
   const { user } = useAuth();
   const { colors } = useTheme();
-  const [expanded, setExpanded] = useState(false);
-  const [hoveredNav, setHoveredNav] = useState<string | null>(null);
-  const [themeHovered, setThemeHovered] = useState(false);
-  const [logoutHovered, setLogoutHovered] = useState(false);
+  const [expanded, setExpanded] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   const [pressedNav, setPressedNav] = useState<string | null>(null);
   const [themePressed, setThemePressed] = useState(false);
   const [logoutPressed, setLogoutPressed] = useState(false);
+  const [togglePressed, setTogglePressed] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, expanded ? "1" : "0");
+    } catch {
+    }
+  }, [expanded]);
 
   const displayName = user?.name ?? "Guest";
   const initials    = nameToInitials(displayName);
   const avatarColor = user ? nameToColor(user.name) : colors.textDim;
 
+  const onRailClick = (e: ReactMouseEvent) => {
+    if (expanded) return;
+    if ((e.target as HTMLElement).closest("button")) return;
+    setExpanded(true);
+  };
+
   return (
     <nav
       aria-label="Primary"
-      onMouseEnter={() => setExpanded(true)}
-      onMouseLeave={() => setExpanded(false)}
+      onClick={onRailClick}
       style={{
         width: expanded ? EXPANDED_WIDTH : COLLAPSED_WIDTH,
+        flexShrink: 0,
         background: colors.bg,
         borderRight: `1px solid ${colors.border}`,
         display: "flex",
@@ -92,31 +104,64 @@ export default function Sidebar({
         alignItems: "stretch",
         paddingTop: SPACE[2.5],
         paddingBottom: 12,
-        flexShrink: 0,
         overflow: "hidden",
-        transition: "width 0.25s cubic-bezier(.4,0,.2,1)",
+        cursor: expanded ? "default" : "e-resize",
+        transition: "width 0.2s cubic-bezier(.4,0,.2,1)",
       }}
     >
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column" }}>
-      {/* Logo */}
-      <button
-        title="Dashboard"
-        aria-label="Dashboard"
-        onClick={() => onNav("dashboard")}
+      <div
         style={{
-          width: 44, height: 44, marginBottom: 16, marginLeft: 10,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          color: colors.accent, background: "transparent", border: "none",
-          cursor: "pointer", flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: expanded ? "space-between" : "center",
+          gap: 4,
+          height: 44,
+          marginBottom: 16,
+          paddingLeft: expanded ? 14 : 0,
+          paddingRight: expanded ? 8 : 0,
+          flexShrink: 0,
         }}
       >
-        <Zap size={20} strokeWidth={2} />
-      </button>
+        {expanded && (
+          <button
+            title="Dashboard"
+            aria-label="Dashboard"
+            onClick={() => onNav("dashboard")}
+            style={{
+              width: 32, height: 32,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: colors.accent, background: "transparent", border: "none",
+              cursor: "pointer", flexShrink: 0,
+            }}
+          >
+            <Zap size={20} strokeWidth={2} />
+          </button>
+        )}
 
-      {/* Nav items */}
+        <button
+          title={expanded ? "Collapse sidebar" : "Expand sidebar"}
+          aria-label={expanded ? "Collapse sidebar" : "Expand sidebar"}
+          aria-expanded={expanded}
+          onClick={() => setExpanded((v) => !v)}
+          onMouseLeave={() => setTogglePressed(false)}
+          onMouseDown={() => setTogglePressed(true)}
+          onMouseUp={() => setTogglePressed(false)}
+          style={{
+            width: 36, height: 36, borderRadius: RADIUS.sm,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: colors.textDim, background: "transparent", border: "none",
+            cursor: "pointer", flexShrink: 0,
+            opacity: togglePressed ? 0.7 : 1,
+            transition: "opacity 0.1s, color 0.15s",
+          }}
+        >
+          {expanded ? <PanelLeftClose size={18} strokeWidth={1.75} /> : <PanelLeft size={18} strokeWidth={1.75} />}
+        </button>
+      </div>
+
       {NAV_ITEMS.map((item: { id: string; icon: string; label: string }) => {
         const isActive = active === item.id;
-        const badge    = item.id === "decisions" ? 2 : item.id === "inbox" ? 4 : null;
         const IconComp = ICON_MAP[item.icon];
 
         return (
@@ -126,8 +171,7 @@ export default function Sidebar({
               aria-label={item.label}
               aria-current={isActive ? "page" : undefined}
               onClick={() => onNav(item.id)}
-              onMouseEnter={() => setHoveredNav(item.id)}
-              onMouseLeave={() => { setHoveredNav(null); setPressedNav(null); }}
+              onMouseLeave={() => setPressedNav(null)}
               onMouseDown={() => setPressedNav(item.id)}
               onMouseUp={() => setPressedNav(null)}
               style={{
@@ -138,8 +182,8 @@ export default function Sidebar({
                 display: "flex", alignItems: "center", justifyContent: "flex-start",
                 gap: 14, paddingLeft: 17,
                 color: isActive ? colors.accent : colors.textDim,
-                transform: pressedNav === item.id ? "scale(0.96)" : "scale(1)",
-                transition: "transform 0.12s cubic-bezier(.4,0,.2,1), background 0.15s, color 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
+                opacity: pressedNav === item.id ? 0.7 : 1,
+                transition: "opacity 0.1s, background 0.15s, color 0.15s, width 0.2s cubic-bezier(.4,0,.2,1)",
               }}
             >
               <span style={{ display: "flex", flexShrink: 0 }}>
@@ -149,40 +193,24 @@ export default function Sidebar({
                 }
               </span>
               <span style={{
-                display: "inline-block", overflow: "hidden",
-                width: expanded ? "auto" : 0,
                 fontSize: FONT.size.body, fontWeight: 500, whiteSpace: "nowrap",
-                opacity: expanded ? 1 : 0, transition: "opacity 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
+                opacity: expanded ? 1 : 0, transition: "opacity 0.15s",
               }}>
-                <LetterStagger text={item.label} accentColor={colors.accent} revealed={hoveredNav === item.id} />
+                {item.label}
               </span>
             </button>
-
-            {badge && (
-              <div style={{
-                position: "absolute", top: 8, left: 35,
-                width: 14, height: 14, borderRadius: "50%",
-                background: colors.red, fontSize: FONT.size.micro, fontWeight: 700,
-                color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
-                pointerEvents: "none",
-              }}>
-                {badge}
-              </div>
-            )}
           </div>
         );
       })}
 
       </div>
 
-      {/* Avatar + logout */}
       <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: 4 }}>
         <button
           title="Toggle theme"
           aria-label="Toggle theme"
           onClick={onToggleTheme}
-          onMouseEnter={() => setThemeHovered(true)}
-          onMouseLeave={() => { setThemeHovered(false); setThemePressed(false); }}
+          onMouseLeave={() => setThemePressed(false)}
           onMouseDown={() => setThemePressed(true)}
           onMouseUp={() => setThemePressed(false)}
           style={{
@@ -191,20 +219,18 @@ export default function Sidebar({
             color: colors.textDim, cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "flex-start",
             gap: 14, paddingLeft: 17,
-            transform: themePressed ? "scale(0.96)" : "scale(1)",
-            transition: "transform 0.12s cubic-bezier(.4,0,.2,1), width 0.25s cubic-bezier(.4,0,.2,1)",
+            opacity: themePressed ? 0.7 : 1,
+            transition: "opacity 0.1s, width 0.2s cubic-bezier(.4,0,.2,1)",
           }}
         >
           <span style={{ display: "flex", flexShrink: 0 }}>
             {theme === "dark" ? <Sun size={16} strokeWidth={1.75} /> : <Moon size={16} strokeWidth={1.75} />}
           </span>
           <span style={{
-            display: "inline-block", overflow: "hidden",
-            width: expanded ? "auto" : 0,
             fontSize: FONT.size.body, fontWeight: 500, whiteSpace: "nowrap",
-            opacity: expanded ? 1 : 0, transition: "opacity 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
+            opacity: expanded ? 1 : 0, transition: "opacity 0.15s",
           }}>
-            <LetterStagger text={theme === "dark" ? "Light mode" : "Dark mode"} accentColor={colors.accent} revealed={themeHovered} />
+            {theme === "dark" ? "Light mode" : "Dark mode"}
           </span>
         </button>
 
@@ -214,7 +240,7 @@ export default function Sidebar({
             width: expanded ? EXPANDED_WIDTH - 8 : 56, height: 44, marginLeft: 4,
             display: "flex", alignItems: "center", justifyContent: "flex-start",
             gap: 14, paddingLeft: 11, cursor: "default",
-            transition: "width 0.25s cubic-bezier(.4,0,.2,1)",
+            transition: "width 0.2s cubic-bezier(.4,0,.2,1)",
           }}
         >
           <span style={{
@@ -226,10 +252,8 @@ export default function Sidebar({
             {initials}
           </span>
           <span style={{
-            display: "inline-block", overflow: "hidden",
-            width: expanded ? "auto" : 0,
             fontSize: FONT.size.body, fontWeight: 500, whiteSpace: "nowrap", color: colors.text,
-            opacity: expanded ? 1 : 0, transition: "opacity 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
+            opacity: expanded ? 1 : 0, transition: "opacity 0.15s",
           }}>
             {displayName}
           </span>
@@ -240,8 +264,7 @@ export default function Sidebar({
             title="Sign out"
             aria-label="Sign out"
             onClick={onLogout}
-            onMouseEnter={() => setLogoutHovered(true)}
-            onMouseLeave={() => { setLogoutHovered(false); setLogoutPressed(false); }}
+            onMouseLeave={() => setLogoutPressed(false)}
             onMouseDown={() => setLogoutPressed(true)}
             onMouseUp={() => setLogoutPressed(false)}
             style={{
@@ -250,20 +273,18 @@ export default function Sidebar({
               color: colors.textDim, cursor: "pointer",
               display: "flex", alignItems: "center", justifyContent: "flex-start",
               gap: 14, paddingLeft: 17,
-              transform: logoutPressed ? "scale(0.96)" : "scale(1)",
-              transition: "transform 0.12s cubic-bezier(.4,0,.2,1), color 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
+              opacity: logoutPressed ? 0.7 : 1,
+              transition: "opacity 0.1s, color 0.15s, width 0.2s cubic-bezier(.4,0,.2,1)",
             }}
           >
             <span style={{ display: "flex", flexShrink: 0 }}>
               <LogOut size={16} strokeWidth={1.75} />
             </span>
             <span style={{
-              display: "inline-block", overflow: "hidden",
-              width: expanded ? "auto" : 0,
               fontSize: FONT.size.body, fontWeight: 500, whiteSpace: "nowrap",
-              opacity: expanded ? 1 : 0, transition: "opacity 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
+              opacity: expanded ? 1 : 0, transition: "opacity 0.15s",
             }}>
-              <LetterStagger text="Sign out" accentColor={colors.accent} revealed={logoutHovered} />
+              Sign out
             </span>
           </button>
         )}

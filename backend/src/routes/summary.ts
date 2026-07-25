@@ -1,10 +1,3 @@
-// /api/summary
-//
-// Honest summary: generated ONCE (session-end hook, or lazily on first view for
-// older sessions) and persisted by lib/summaryStore. This route serves the
-// stored record plus the session's decisions joined live from the decisions
-// table, so checkpoint edits show up and the ratified summary never silently
-// changes between page views.
 
 import { Router } from "express";
 import { requireAuth } from "../auth/middleware";
@@ -89,7 +82,6 @@ async function getSessionForSummary(
   return result.rows[0];
 }
 
-
 summaryRouter.get("/", requireAuth, (_req, res) => {
   res.json({
     ok: true,
@@ -119,10 +111,6 @@ summaryRouter.get("/:sessionId", requireAuth, async (req, res, next) => {
       });
     }
 
-    // Serve the stored summary — generated once at session end. Sessions ended
-    // before persistence existed (or whose end-hook failed) lazily generate and
-    // store here, once; every later view is a fast DB read. The summary a team
-    // ratified must not silently change per page view.
     let stored = await getStoredSummary(sessionId);
     if (!stored) {
       stored = await generateAndSaveSummary(sessionId);
@@ -134,9 +122,6 @@ summaryRouter.get("/:sessionId", requireAuth, async (req, res, next) => {
       });
     }
 
-    // Decisions join live (not snapshotted) so facilitator checkpoint edits
-    // after the meeting show up — the decisions table is the verified record.
-    // Dismissed rows are rejected extractions; the summary never shows them.
     const decisions = (await getDecisions(sessionId)).filter((d) => !d.dismissed);
 
     const summary: ParticipantSummaryOutput = {

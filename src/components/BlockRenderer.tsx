@@ -1,7 +1,3 @@
-// S1-T03-D: renders AI output blocks. Handles all 4 AIBlockType values.
-// QuestionSuggestion is normally routed to SuggestionCardStack by useAiBlocks
-// and only appears here as a graceful fallback. Unknown types render as
-// UnknownBlock — never throws.
 
 import { FONT, RADIUS, SPACE } from '../constants'
 import { useTheme } from '../hooks/useTheme'
@@ -94,8 +90,6 @@ function UnknownBlock({ node }: { node: Block }) {
   )
 }
 
-// EmptyPlaceholder is a frontend-only sentinel, never in AIBlockType.
-// Cast to string for the switch so the compiler doesn't reject it.
 const EMPTY = 'EmptyPlaceholder' as string as AIBlockType
 
 function BlockSwitch({ node }: { node: Block }) {

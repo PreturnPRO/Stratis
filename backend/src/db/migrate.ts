@@ -1,5 +1,3 @@
-// Migration runner. Applies schema.sql. `--reset` drops all tables
-// first so `npm run db:reset` gives a clean, seedable database.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -26,7 +24,6 @@ const TABLES = [
 async function run() {
   try {
     if (reset) {
-      // PostgreSQL handles foreign keys strictly; CASCADE forces the drop
       for (const t of TABLES) {
         await db.query(`DROP TABLE IF EXISTS ${t} CASCADE;`);
       }
@@ -39,7 +36,7 @@ async function run() {
   } catch (err) {
     console.error("[migrate] error:", err);
   } finally {
-    process.exit(0); // Exit the pool connection so the terminal doesn't hang
+    process.exit(0);
   }
 }
 

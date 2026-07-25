@@ -1,16 +1,3 @@
-// /api/session — S1-T03-F
-//
-// Meeting session lifecycle:
-// - create session linked to a meeting
-// - start session, which begins capture
-// - end session, which becomes the summary-generation trigger point
-//
-// Session ID is the anchor for:
-// - transcripts
-// - live AI outputs / suggestion cards
-// - summaries
-// - future tree nodes
-// - future document outputs
 
 import { Router } from "express";
 import { requireAuth } from "../auth/middleware";
@@ -57,7 +44,7 @@ interface SessionWithMeetingRow  extends SessionRow {
 }
 
 interface CountRow {
-  count: string; // Note: PostgreSQL COUNT() returns a string natively
+  count: string;
 }
 
 async function getSession(sessionId: string): Promise<any> {
@@ -130,13 +117,6 @@ async function requireAccessibleSession(
   };
 }
 
-/**
- * End a session: mark it ended, stamp timestamps, drop caches, release liveness
- * tracking, and expose the summary-generation trigger seam. Shared by
- * POST /:id/end and the idle-session sweeper so a manually-ended and an
- * auto-ended session are indistinguishable downstream. Returns the updated
- * session, or undefined if the session no longer exists.
- */
 export async function endSession(sessionId: string): Promise<any> {
   const session = await getSession(sessionId);
   if (!session) return undefined;
@@ -158,12 +138,6 @@ export async function endSession(sessionId: string): Promise<any> {
   clearProjectDocCache(session.id);
   forgetSession(session.id);
 
-  // Decision extraction + summary persistence, chained off the response path —
-  // both are heavy whole-transcript AI calls and End Meeting must return
-  // immediately. Decisions run first (the summary page joins them); a failed
-  // extraction still lets the summary persist. If the checkpoint already
-  // extracted at wrap-up, extraction refreshes with the final transcript;
-  // facilitator-confirmed rows are preserved.
   void extractAndSaveDecisions(session.id)
     .catch((err) =>
       console.error(`[session:end] decision extraction failed for ${session.id}:`, err),
@@ -179,13 +153,6 @@ export async function endSession(sessionId: string): Promise<any> {
   return getSession(session.id);
 }
 
-/**
- * GET /api/session
- *
- * List sessions.
- * - admin: all sessions
- * - facilitator/participant: sessions facilitated by current user
- */
 sessionRouter.get("/", requireAuth, async (req, res) => {
   try {
     const userId = req.auth!.sub;
@@ -249,12 +216,6 @@ sessionRouter.get("/", requireAuth, async (req, res) => {
   }
 });
 
-/**
- * GET /api/session/active
- *
- * Get the current active session.
- * Useful for meeting recovery and reconnecting the facilitator UI.
- */
 sessionRouter.get("/active", requireAuth, async (req, res) => {
   try {
     const userId = req.auth!.sub;
@@ -325,11 +286,6 @@ sessionRouter.get("/active", requireAuth, async (req, res) => {
   }
 });
 
-/**
- * POST /api/session
- *
- * Create a new session linked to an existing meeting.
- */
 sessionRouter.post("/", requireAuth, async (req, res) => {
   try {
     const meetingId =
@@ -427,11 +383,6 @@ sessionRouter.post("/", requireAuth, async (req, res) => {
   }
 });
 
-/**
- * GET /api/session/recover
- *
- * Recover latest non-ended session after browser/app crash.
- */
 sessionRouter.get("/recover", requireAuth, async (req, res) => {
   try {
     const role = req.auth!.role;
@@ -511,11 +462,6 @@ sessionRouter.get("/recover", requireAuth, async (req, res) => {
   }
 });
 
-/**
- * GET /api/session/:id
- *
- * Get one session and basic linked counts.
- */
 sessionRouter.get("/:id", requireAuth, async (req, res) => {
   try {
     const accessible = await requireAccessibleSession(
@@ -569,11 +515,6 @@ sessionRouter.get("/:id", requireAuth, async (req, res) => {
   }
 });
 
-/**
- * POST /api/session/:id/start
- *
- * Start capture for an existing session.
- */
 sessionRouter.post("/:id/start", requireAuth, async (req, res) => {
   try {
     const accessible = await requireAccessibleSession(
@@ -635,12 +576,6 @@ sessionRouter.post("/:id/start", requireAuth, async (req, res) => {
   }
 });
 
-/**
- * POST /api/session/:id/end
- *
- * End a created or active session.
- * This is the Sprint 1 trigger seam for later post-meeting summary generation.
- */
 sessionRouter.post("/:id/end", requireAuth, async (req, res) => {
   try {
     const accessible = await requireAccessibleSession(
@@ -685,11 +620,6 @@ sessionRouter.post("/:id/end", requireAuth, async (req, res) => {
   }
 });
 
-/**
- * GET /api/session/:id/decisions
- * The extracted decisions for a session plus the completeness metric. Powers the
- * closing checkpoint, the honest summary, and the traction dashboard.
- */
 sessionRouter.get("/:id/decisions", requireAuth, async (req, res) => {
   try {
     const accessible = await requireAccessibleSession(req.params.id, req.auth!.sub, req.auth!.role);
@@ -707,11 +637,6 @@ sessionRouter.get("/:id/decisions", requireAuth, async (req, res) => {
   }
 });
 
-/**
- * POST /api/session/:id/decisions/extract
- * Run (or re-run) decision extraction on demand — the checkpoint calls this when
- * the facilitator opens it at wrap-up, so the list reflects the meeting so far.
- */
 sessionRouter.post("/:id/decisions/extract", requireAuth, async (req, res) => {
   try {
     const accessible = await requireAccessibleSession(req.params.id, req.auth!.sub, req.auth!.role);
@@ -729,11 +654,6 @@ sessionRouter.post("/:id/decisions/extract", requireAuth, async (req, res) => {
   }
 });
 
-/**
- * PATCH /api/session/:id/decisions/:decisionId
- * Facilitator edit from the checkpoint — set a due date/owner, mark a decision
- * deliberately open, or fix the wording. Flips the row to facilitator-authored.
- */
 sessionRouter.patch("/:id/decisions/:decisionId", requireAuth, async (req, res) => {
   try {
     const accessible = await requireAccessibleSession(req.params.id, req.auth!.sub, req.auth!.role);
