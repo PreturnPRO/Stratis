@@ -311,6 +311,7 @@ function AppShell() {
             padding: "0 12px",
             gap: SPACE[1.5],
             flexShrink: 0,
+            overflow: "hidden",
           }}
         >
           <button
@@ -363,6 +364,8 @@ function AppShell() {
               alignItems: "center",
               gap: 4,
               marginLeft: 4,
+              minWidth: 0,
+              overflow: "hidden",
             }}
           >
             {history.slice(0, historyIndex + 1).map((entry, i) => {

@@ -93,10 +93,11 @@ export default function Sidebar({
         paddingTop: SPACE[2.5],
         paddingBottom: 12,
         flexShrink: 0,
-        overflowY: "auto", overflowX: "hidden",
+        overflow: "hidden",
         transition: "width 0.25s cubic-bezier(.4,0,.2,1)",
       }}
     >
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column" }}>
       {/* Logo */}
       <button
         title="Dashboard"
@@ -172,8 +173,10 @@ export default function Sidebar({
         );
       })}
 
+      </div>
+
       {/* Avatar + logout */}
-      <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+      <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: 4 }}>
         <button
           title="Toggle theme"
           aria-label="Toggle theme"
