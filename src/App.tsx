@@ -291,7 +291,16 @@ function AppShell() {
       />
       <CustomCursor calmZone={active === "meeting"} theme={theme} />
 
-      <Sidebar active={active} onNav={handleSidebarNav} onLogout={logout} theme={theme} onToggleTheme={toggleTheme} />
+      <Sidebar
+        active={active}
+        onNav={handleSidebarNav}
+        onLogout={() => {
+          logout();
+          setAuthPage("landing");
+        }}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+      />
 
       <div
         style={{

@@ -28,8 +28,10 @@ interface Edge {
 }
 
 const BOUNDS = { minX: 2, maxX: 98, minY: 4, maxY: 96 };
-// Keep the center-left column (hero text) clear of spawns.
-const TEXT_EXCLUSION = { minX: 0, maxX: 46, minY: 20, maxY: 78 };
+// Keep only the hero text's own band clear of spawns — narrow enough that
+// dots can still spawn above, below, and to the left of it instead of being
+// pushed almost entirely to the right half of the screen.
+const TEXT_EXCLUSION = { minX: 4, maxX: 44, minY: 34, maxY: 66 };
 
 const MIN_POINTS = 16;
 const MAX_POINTS = 24;
@@ -209,6 +211,7 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
   const nextSpawnAtRef = useRef(rand(SPAWN_MIN_MS, SPAWN_MAX_MS));
   const pointEls = useRef(new Map<number, SVGGElement>());
   const lineEls = useRef(new Map<string, SVGLineElement>());
+  const lineGroupEls = useRef(new Map<string, SVGGElement>());
   const [, bump] = useState(0);
 
   // Mouse parallax on the whole group — unchanged from before.
@@ -260,11 +263,14 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
     const removeStale = () => {
       const points = pointsRef.current;
       const alive = points.filter((p) => p.anchor || elapsed - p.bornAt < p.lifetime + FADE_MS);
-      // Never cull below the floor — let a slow spawn cadence catch up first.
-      if (alive.length !== points.length && alive.length >= MIN_POINTS) {
+      if (alive.length !== points.length) {
         const aliveIds = new Set(alive.map((p) => p.id));
         edgesRef.current = edgesRef.current.filter((e) => aliveIds.has(e.a) && aliveIds.has(e.b));
         pointsRef.current = alive;
+        // Below the floor: spawn sooner instead of blocking despawn (blocking
+        // despawn left fully-faded, invisible points behind — and their
+        // still-visible connecting lines orphaned with nothing at either end).
+        if (alive.length < MIN_POINTS) nextSpawnAtRef.current = Math.min(nextSpawnAtRef.current, 800);
         bump((t) => t + 1);
       }
     };
@@ -285,6 +291,7 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
       }
 
       const drifted = new Map<number, { x: number; y: number }>();
+      const opacities = new Map<number, number>();
       for (const p of pointsRef.current) {
         const age = elapsed - p.bornAt;
         let opacity = 1;
@@ -298,6 +305,7 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
         const x = p.x + dx;
         const y = p.y + dy;
         drifted.set(p.id, { x, y });
+        opacities.set(p.id, opacity);
 
         const g = pointEls.current.get(p.id);
         if (g) {
@@ -310,6 +318,12 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
         const a = drifted.get(e.a);
         const b = drifted.get(e.b);
         const line = lineEls.current.get(e.key);
+        const lineGroup = lineGroupEls.current.get(e.key);
+        if (lineGroup) {
+          const oa = opacities.get(e.a) ?? 1;
+          const ob = opacities.get(e.b) ?? 1;
+          lineGroup.style.opacity = String(Math.min(oa, ob));
+        }
         if (a && b && line) {
           line.setAttribute("x1", String(a.x));
           line.setAttribute("y1", String(a.y));
@@ -343,23 +357,39 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
       preserveAspectRatio="xMidYMid slice"
       style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible" }}
     >
+      <defs>
+        {/* Simplified person/user glyph (head + shoulders), reused per point
+            via <use> so dots read as humanoid instead of plain circles. */}
+        <path
+          id="constellation-user-icon"
+          d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
+        />
+      </defs>
       <g ref={groupRef} style={{ transition: "transform 0.6s ease-out" }}>
         {edges.map((e, i) => (
-          <line
+          <g
             key={e.key}
             ref={(el) => {
-              if (el) lineEls.current.set(e.key, el);
-              else lineEls.current.delete(e.key);
+              if (el) lineGroupEls.current.set(e.key, el);
+              else lineGroupEls.current.delete(e.key);
             }}
-            x1={0} y1={0} x2={0} y2={0}
-            stroke={stroke}
-            strokeWidth={0.08}
-            style={{ animation: `constellationBreathe ${6 + (i % 4)}s ease-in-out ${i * 0.25}s infinite` }}
-          />
+          >
+            <line
+              ref={(el) => {
+                if (el) lineEls.current.set(e.key, el);
+                else lineEls.current.delete(e.key);
+              }}
+              x1={0} y1={0} x2={0} y2={0}
+              stroke={stroke}
+              strokeWidth={0.08}
+              style={{ animation: `constellationBreathe ${6 + (i % 4)}s ease-in-out ${i * 0.25}s infinite` }}
+            />
+          </g>
         ))}
         {points.map((p, i) => {
           const r = 1.1;
           const tick = 0.4;
+          const iconSize = 1.7;
           return (
             <g
               key={p.id}
@@ -377,7 +407,15 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
                 }}
               >
                 <circle cx={0} cy={0} r={1.4} fill={dotHalo} />
-                <circle cx={0} cy={0} r={0.35} fill={dot} />
+                <use
+                  href="#constellation-user-icon"
+                  x={-iconSize / 2}
+                  y={-iconSize / 2}
+                  width={iconSize}
+                  height={iconSize}
+                  viewBox="0 0 24 24"
+                  fill={dot}
+                />
               </g>
               {/* Reticle + coord label live in the same drifting group as the
                   dot, so they track it instead of staying pinned to the
