@@ -1,7 +1,3 @@
-// /api/ai (S1-T03-B). Sends a hardcoded test prompt to the configured AI
-// provider, logs the raw response server-side, and returns it.
-// Structured-JSON output + validation comes in S1-T03-C / S1-T05.
-// Suggestion routing to the facilitator's card stack: S1-T03-E.
 import { Router } from "express";
 import { firstCall, structuredCall } from "@ai/index";
 import { requireAuth } from "../auth/middleware";
@@ -13,7 +9,6 @@ import { validateAiOutput } from "../middleware/validateAiOutput";
 
 export const aiRouter = Router();
 
-// Info ping — confirms the namespace is mounted.
 aiRouter.get(
   "/",
   placeholder(
@@ -22,7 +17,6 @@ aiRouter.get(
   ),
 );
 
-// S1-T03-B: trigger the first AI call.
 aiRouter.get("/test", async (_req, res, next) => {
   try {
     const result = await firstCall();
@@ -35,9 +29,6 @@ aiRouter.get("/test", async (_req, res, next) => {
   }
 });
 
-// S1-T03-C: send input, get JSON-only output, validate against the schema, and
-// return the typed blocks. Invalid model output → 422 with the parse error,
-// never an unvalidated payload.
 aiRouter.post("/structure", async (req, res, next) => {
   try {
     const input = typeof req.body?.input === "string" ? req.body.input : "";
@@ -74,9 +65,6 @@ aiRouter.post("/structure", async (req, res, next) => {
   }
 });
 
-// S1-T03-E: generate suggestions for a session. Runs the structured call, turns
-// any QuestionSuggestion blocks into cards, and pushes each to the facilitator's
-// stack over WebSocket (newest on top). Facilitator-only.
 aiRouter.post("/suggest", requireAuth, async (req, res, next) => {
   try {
     const sessionId =
@@ -117,9 +105,6 @@ aiRouter.post("/suggest", requireAuth, async (req, res, next) => {
   }
 });
 
-// S1-T03-E: auto-detect. Feed a transcript chunk; any open card the transcript
-// has now raised AND answered is struck through and the event pushed to the
-// facilitator. Returns the answered card ids.
 aiRouter.post("/suggest/scan", requireAuth, (req, res) => {
   const sessionId =
     typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
@@ -147,8 +132,6 @@ aiRouter.post("/suggest/scan", requireAuth, (req, res) => {
   res.json({ ok: true, data: { sessionId, answered } });
 });
 
-// S1-T03-E: manual override. The facilitator taps a card to mark it answered,
-// regardless of the transcript.
 aiRouter.post("/suggest/answer", requireAuth, (req, res) => {
   const sessionId =
     typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
@@ -180,8 +163,12 @@ aiRouter.post("/suggest/answer", requireAuth, (req, res) => {
   res.json({ ok: true, data: { card } });
 });
 
-// S1-T03-E: read the current stack (newest first) for a session.
-aiRouter.get("/suggest/:sessionId", requireAuth, (req, res) => {
-  const cards = suggestions.allCards(req.params.sessionId);
-  res.json({ ok: true, data: { sessionId: req.params.sessionId, cards } });
+aiRouter.get("/suggest/:sessionId", requireAuth, async (req, res, next) => {
+  try {
+    await suggestions.hydrate(req.params.sessionId);
+    const cards = suggestions.allCards(req.params.sessionId);
+    res.json({ ok: true, data: { sessionId: req.params.sessionId, cards } });
+  } catch (err) {
+    next(err);
+  }
 });

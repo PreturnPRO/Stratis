@@ -1,10 +1,9 @@
-// JWT issue + verify (S1-T00-B).
 import jwt from "jsonwebtoken";
 import type { Role } from "@shared/types";
 import { env } from "../config/env";
 
 export interface JwtClaims {
-  sub: string; // user id
+  sub: string;
   orgId: string;
   role: Role;
 }

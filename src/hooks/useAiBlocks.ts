@@ -1,6 +1,3 @@
-// S1-T03-D/E + S1-T05-D — async AI calls with loading/timeout state.
-// Calls POST /api/ai/structure and returns renderable blocks.
-// QuestionSuggestion blocks are filtered out here; live cards use /api/ai/suggest + /ws.
 
 import { useState, useCallback, useRef } from "react";
 import type { AIBlock } from "../../shared/types";
@@ -87,7 +84,6 @@ export function useAiBlocks(): UseAiBlocksReturn {
 
       const allBlocks: AIBlock[] = data.data?.blocks ?? [];
 
-      // QuestionSuggestion is delivered via /ws, not transcript renderer.
       const renderBlocks = allBlocks.filter(
         (b) => b.type !== "QuestionSuggestion",
       );

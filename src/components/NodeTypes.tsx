@@ -1,8 +1,6 @@
 import React from 'react';
 import { COLORS, FONT, LETTER_SPACING, RADIUS, SPACE } from '../tokens/colors';
 
-// ─── Node type + status enums ────────────────────────────────────────────────
-
 export type NodeType =
   | 'DECISION'
   | 'ASSUMPTION'
@@ -16,8 +14,6 @@ export type NodeStatus =
   | 'STALLED'
   | 'BLOCKED'
   | 'ARCHIVED';
-
-// ─── Per-type token map ───────────────────────────────────────────────────────
 
 interface NodeTypeTokens {
   dot: string;
@@ -71,8 +67,6 @@ export const NODE_TYPE_TOKENS: Record<NodeType, NodeTypeTokens> = {
   },
 };
 
-// ─── NodeBadge ────────────────────────────────────────────────────────────────
-
 interface NodeBadgeProps {
   type: NodeType;
   size?: 'sm' | 'md';
@@ -112,8 +106,6 @@ export const NodeBadge: React.FC<NodeBadgeProps> = ({ type, size = 'md' }) => {
   );
 };
 
-// ─── NodeStatusPill ───────────────────────────────────────────────────────────
-
 const STATUS_TOKENS: Record<NodeStatus, { bg: string; text: string }> = {
   VALIDATED:   { bg: COLORS.cyanBg,   text: COLORS.cyan },
   UNVALIDATED: { bg: COLORS.orangeBg, text: COLORS.orange },
@@ -152,8 +144,6 @@ export const NodeStatusPill: React.FC<NodeStatusPillProps> = ({ status }) => {
     </span>
   );
 };
-
-// ─── NodeCard ─────────────────────────────────────────────────────────────────
 
 export interface NodeCardData {
   id: string;

@@ -1,11 +1,3 @@
-// AI service entry (S1-T03-B).
-// Selects a provider from env and exposes:
-//   - complete(messages) : low-level chat completion
-//   - firstCall()        : sends a HARDCODED test prompt, logs the raw response,
-//                          and confirms the API integration works.
-//
-// Scope note: turning responses into validated JSON blocks is S1-T03-C; this
-// task only proves we can reach a model and get a response back.
 import { env } from "../../backend/src/config/env";
 import type {
   AIProvider,
@@ -56,9 +48,6 @@ export type {
   DecisionExtractParseResult,
 } from "./schema";
 
-/** Pick the active provider. Providers with no key fall back to mock so the call
- * always confirms — but the downgrade must be LOUD: silently serving mock
- * cards/summaries in a real meeting reads as "the product is broken". */
 let warnedMockFallback = false;
 function mockFallback(wanted: string, missingKey: string): AIProvider {
   if (!warnedMockFallback) {
@@ -86,7 +75,7 @@ export function selectProvider(): AIProvider {
     case "gemini":
       return env.ai.gemini.apiKey
         ? geminiProvider
-        : mockFallback("gemini", "GEMINI_API_KEY"); // 2. Add switch case
+        : mockFallback("gemini", "GEMINI_API_KEY");
     case "groq":
     default:
       return env.ai.groq.apiKey
@@ -102,7 +91,6 @@ export async function complete(
   return provider.complete(messages);
 }
 
-/** S1-T03-B: hardcoded test prompt → confirm response → log raw output. */
 export async function firstCall(): Promise<CompletionResult> {
   const provider = selectProvider();
   const messages: ChatMessage[] = [
@@ -118,17 +106,11 @@ export async function firstCall(): Promise<CompletionResult> {
 
   console.log(`[ai] first call via provider="${provider.name}" model-check…`);
   const result = await provider.complete(messages);
-  // Log the RAW provider response, as the task requires.
   console.log("[ai] raw response:", JSON.stringify(result.raw, null, 2));
   console.log(`[ai] text: ${result.text}`);
   return result;
 }
 
-/**
- * S1-T03-C: ask the model for JSON-only output, then validate it against the
- * locked schema BEFORE returning. Callers receive a discriminated result and
- * must never pass an unvalidated payload downstream.
- */
 export async function structuredCall(
   input: string,
 ): Promise<
@@ -168,18 +150,13 @@ export async function structuredCall(
   };
 }
 
-/** Context the live meeting AI receives each chunk (schema spec §6.4). */
 export interface LiveContext {
   sessionId: string;
   goal?: string | null;
   brief?: string | null;
   rollingSummary?: string | null;
-  // Every question already surfaced to the facilitator this session — open AND
-  // answered — so the model never re-raises a gap it has already flagged.
   surfacedQuestions?: string[];
   recentTranscript: string;
-  // Rendered PM document from a prior meeting on this project, when this
-  // meeting continues an existing project rather than starting fresh.
   projectDocument?: string | null;
 }
 
@@ -207,10 +184,6 @@ function liveContextPrompt(ctx: LiveContext): string {
   return sections.join("\n\n");
 }
 
-/**
- * Live meeting gateway: classify the latest transcript window and surface
- * facilitator cards. Returns a validated `live_card_output` (session_id injected).
- */
 export async function liveCardCall(
   ctx: LiveContext,
 ): Promise<
@@ -250,12 +223,11 @@ export async function liveCardCall(
   };
 }
 
-/** Context the post-meeting document AI receives (schema spec §7). */
 export interface DocPatchContext {
   sessionId: string;
   projectId: string;
   baseVersion: number;
-  currentDocument: string; // rendered current sections, or "(empty)"
+  currentDocument: string;
   transcript: string;
   rollingSummary?: string | null;
 }
@@ -269,11 +241,6 @@ function docPatchPrompt(ctx: DocPatchContext): string {
   ].join("\n\n");
 }
 
-/**
- * Post-meeting gateway: propose section patches to the PM document. Returns a
- * validated `document_patch_output` (backend injects ids/version). Patches may
- * be empty when the meeting changed nothing about project state.
- */
 export async function documentPatchCall(
   ctx: DocPatchContext,
 ): Promise<
@@ -319,26 +286,17 @@ export async function documentPatchCall(
   };
 }
 
-// Whole-transcript extraction is not latency-sensitive (runs at meeting end) but
-// is a heavy call — give it a generous budget so a slow/thinking model doesn't
-// abort mid-extract. Independent of the live-card AI_TIMEOUT_MS.
 const EXTRACT_TIMEOUT_MS = 90_000;
 
-/** Context the decision-extraction AI receives (alignment checkpoint). */
 export interface DecisionExtractContext {
   sessionId: string;
   goal?: string | null;
   transcript: string;
   rollingSummary?: string | null;
-  // Decisions the facilitator already confirmed at the checkpoint — the model
-  // must not re-list them (a re-extract otherwise duplicates them, reworded,
-  // next to their confirmed copy).
   confirmedDecisions?: string[];
 }
 
 function decisionExtractPrompt(ctx: DecisionExtractContext): string {
-  // Anchor "today" so a spoken date like "30 กรกฎาคม" resolves to the right year
-  // instead of the model guessing (it defaulted to a past year without this).
   const today = new Date().toISOString().slice(0, 10);
   const confirmed = ctx.confirmedDecisions?.length
     ? ctx.confirmedDecisions.map((d) => `- ${d}`).join("\n")
@@ -356,11 +314,6 @@ function decisionExtractPrompt(ctx: DecisionExtractContext): string {
   ].join("\n\n");
 }
 
-/**
- * Wrap-up gateway: extract the concrete decisions the room made, each tagged
- * complete / incomplete / open. Returns a validated `decision_extract_output`
- * (backend injects session_id). Decisions may be empty if nothing was settled.
- */
 export async function extractDecisionsCall(
   ctx: DecisionExtractContext,
 ): Promise<
@@ -379,9 +332,6 @@ export async function extractDecisionsCall(
     { role: "user", content: decisionExtractPrompt(ctx) },
   ];
 
-  // Extraction reads the whole transcript and runs at wrap-up / session end —
-  // off the live path — so it gets a far longer budget than a live-card call,
-  // independent of the meeting-time AI_TIMEOUT_MS.
   const result = await provider.complete(messages, { timeoutMs: EXTRACT_TIMEOUT_MS });
   const parsed: DecisionExtractParseResult = parseDecisionExtract(result.text);
 

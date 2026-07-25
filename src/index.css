@@ -18,13 +18,22 @@ body {
   margin: 0;
 }
 
+body[data-theme="light"] {
+  background: #f6f4ee;
+  color: #1b1b16;
+}
+
 /* ── Interaction defaults ─────────────────────────────────────────────────── */
 
+/* Buttons animate colour and a brief press-dim only. `transform` and `filter`
+   were dropped from this list along with the per-button scale-squish: moving or
+   filtering the control under the pointer is motion the user did not ask for on
+   a work surface, and both forced extra compositing on every hover. */
 button {
   font-family: inherit;
   cursor: pointer;
   transition: background 0.18s ease, border-color 0.18s ease,
-    color 0.18s ease, box-shadow 0.18s ease, transform 0.12s ease, filter 0.18s ease;
+    color 0.18s ease, opacity 0.1s ease;
 }
 
 button:disabled {
@@ -217,17 +226,33 @@ input:focus-visible, textarea:focus-visible {
   }
 }
 
-/* ── Dashboard (collapses to one column on narrow screens) ────────────────── */
 
-.dashboard-grid {
-  grid-template-columns: 1fr 1fr;
-}
+/* ── Dashboard reminder expanded panel (collapses to one column) ──────────── */
 
-@media (max-width: 860px) {
-  .dashboard-grid {
-    grid-template-columns: 1fr;
+@media (max-width: 1280px) {
+  .dashboard-expand-grid {
+    grid-template-columns: minmax(300px, 440px) minmax(300px, 440px) !important;
+  }
+  .dashboard-expand-grid > :last-child {
+    grid-column: 1 / -1;
   }
 }
+
+@media (max-width: 900px) {
+  .dashboard-expand-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .dashboard-expand-grid > :last-child {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 560px) {
+  .dashboard-summary-cards {
+    grid-template-columns: 1fr !important;
+  }
+}
+
 
 /* ── DocumentView (fixed ToC sidebar collapses above the article) ─────────── */
 
@@ -256,55 +281,21 @@ input:focus-visible, textarea:focus-visible {
   position: relative;
   min-height: 100vh;
   overflow: hidden;
-  background: #09090b;
 }
 
-.landing-grid {
-  position: absolute;
-  inset: -2px;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
-  background-size: 46px 46px;
-  animation: gridDrift 7s linear infinite;
-}
-
-@keyframes gridDrift {
+@keyframes ambGridDrift {
   from { background-position: 0 0, 0 0; }
-  to   { background-position: 46px 46px, 46px 46px; }
+  to   { background-position: 52px 52px, 52px 52px; }
 }
 
-.landing-glow {
-  position: absolute;
-  top: 28%;
-  left: 50%;
-  width: 920px;
-  height: 920px;
-  max-width: 130vw;
-  background: radial-gradient(circle,
-    rgba(245, 166, 35, 0.20) 0%,
-    rgba(245, 166, 35, 0.07) 32%,
-    transparent 62%);
-  filter: blur(14px);
-  pointer-events: none;
-  animation: glowDrift 16s ease-in-out infinite alternate;
+@keyframes ambA {
+  0%   { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(-8%, 8%) scale(1.18); }
 }
 
-@keyframes glowDrift {
-  0%   { transform: translate(-60%, -55%) scale(1); }
-  50%  { transform: translate(-42%, -46%) scale(1.16); }
-  100% { transform: translate(-56%, -50%) scale(1.04); }
-}
-
-/* Vignette so the grid fades toward the edges and the headline stays legible */
-.landing-fade {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: radial-gradient(ellipse at 50% 34%,
-    transparent 28%,
-    rgba(9, 9, 11, 0.62) 72%,
-    #09090b 100%);
+@keyframes ambB {
+  0%   { transform: translate(0, 0) scale(1); }
+  100% { transform: translate(8%, -8%) scale(1.18); }
 }
 
 .scroll-cue {
@@ -314,6 +305,41 @@ input:focus-visible, textarea:focus-visible {
 @keyframes scrollBounce {
   0%, 100% { transform: translateY(0); opacity: 0.55; }
   50%      { transform: translateY(7px); opacity: 1; }
+}
+
+/* ── Landing marquee strip (seamless loop — content tripled in markup) ──
+   Two copies aren't enough: on wide viewports the visible track can be
+   nearly as wide as two copies combined, leaving a blank gap right before
+   the loop resets. Three copies + a -33.33% translate keeps at least one
+   full extra copy off-screen at all times. */
+.landing-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marqueeScroll 22s linear infinite;
+}
+
+@keyframes marqueeScroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-33.3333%); }
+}
+
+@keyframes wordReveal {
+  from { opacity: 0; filter: blur(8px); transform: translateY(6px); }
+  to   { opacity: 1; filter: blur(0); transform: translateY(0); }
+}
+
+@keyframes itselfPulse {
+  0%, 100% { text-shadow: none; }
+  50% { text-shadow: 0 0 18px currentColor; }
+}
+
+/* constellationBreathe / constellationGlow removed — line-breathe and point-
+   glow are now computed inside the Constellation rAF loop (one animation
+   system, not CSS keyframes stacked on per-frame attribute writes). */
+
+@keyframes constellationSnap {
+  0%, 45% { transform: translate(0, 0); }
+  55%, 100% { transform: translate(1.3px, -1.1px); }
 }
 
 @media (prefers-reduced-motion: reduce) {

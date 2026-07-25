@@ -1,5 +1,3 @@
-// Ollama provider (S1-T03-B) — fully local, free, and the model you can
-// fine-tune yourself later. Talks to a local Ollama server's /api/chat.
 import { env } from "../../../backend/src/config/env";
 import { fetchWithTimeout, type AIProvider, type ChatMessage, type CompletionResult } from "./types";
 

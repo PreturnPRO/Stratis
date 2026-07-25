@@ -1,30 +1,111 @@
-// Suggestion store (S1-T03-E). Holds the open/answered suggestion cards per
-// session in memory — the source of truth for what the facilitator's stack
-// shows during a live meeting. A QuestionSuggestion block from the AI becomes
-// a card here; auto-detect or a manual tap marks it answered.
-//
-// In-memory by design: a meeting's stack is ephemeral. Persistence to the
-// `nodes`/`notifications` tables is a later task — this owns live state only.
 import type { AIBlock, AnsweredSource, LiveCardDTO, SuggestionCard } from "@shared/types";
 import { newId, now } from "../lib/ids";
+import { isNearDuplicate } from "../lib/textSimilarity";
+import { db } from "../db/database";
 
-// sessionId -> (cardId -> card)
 const bySession = new Map<string, Map<string, SuggestionCard>>();
 
-// Ceiling on unanswered cards per session — once reached, new live_card
-// suggestions are dropped rather than piling into the stack. Kept close to
-// the UI's VISIBLE_ACTIVE_CAP (SuggestionCardStack.tsx) so the "+N more
-// open" queue stays short instead of growing unbounded.
+const hydrated = new Set<string>();
+
+interface LiveCardRow {
+  id: string;
+  session_id: string;
+  title: string;
+  brief_description: string;
+  suggested_question: string | null;
+  card_type: SuggestionCard["cardType"];
+  urgency: SuggestionCard["urgency"];
+  confidence: number | null;
+  answered: boolean;
+  answered_by: AnsweredSource | null;
+  created_at: string;
+}
+
+function rowToCard(row: LiveCardRow): SuggestionCard {
+  const card: SuggestionCard = {
+    id: row.id,
+    sessionId: row.session_id,
+    question: row.suggested_question?.trim() || row.title,
+    reason: row.brief_description,
+    answered: row.answered,
+    createdAt: new Date(row.created_at).toISOString(),
+  };
+  if (row.answered_by) card.answeredBy = row.answered_by;
+  if (row.card_type) card.cardType = row.card_type;
+  if (row.urgency) card.urgency = row.urgency;
+  if (typeof row.confidence === "number") card.confidence = row.confidence;
+  return card;
+}
+
+// Write-through to `live_cards`. The stack used to live only in process memory,
+// so a backend restart or deploy mid-meeting silently erased every open card —
+// the facilitator's pending questions vanished with no message, which reads as
+// "the AI gave up". hydrate() restores a session when this process has no memory
+// of it. Never throws: a DB blip must not take down the live meeting.
+export async function hydrate(sessionId: string): Promise<void> {
+  if (hydrated.has(sessionId)) return;
+  hydrated.add(sessionId);
+  try {
+    const result = await db.query<LiveCardRow>(
+      `SELECT id, session_id, title, brief_description, suggested_question,
+              card_type, urgency, confidence, answered, answered_by, created_at
+       FROM live_cards
+       WHERE session_id = $1 AND state <> 'DISMISSED'
+       ORDER BY created_at ASC`,
+      [sessionId],
+    );
+    if (result.rows.length === 0) return;
+    const m = sessionMap(sessionId);
+    for (const row of result.rows) {
+      if (!m.has(row.id)) m.set(row.id, rowToCard(row));
+    }
+    console.log(
+      `[suggestions] restored ${result.rows.length} card(s) for session ${sessionId} from live_cards`,
+    );
+  } catch (err) {
+    console.error(`[suggestions] hydrate failed for ${sessionId}:`, err);
+  }
+}
+
+function persistCard(card: SuggestionCard): void {
+  void db
+    .query(
+      `INSERT INTO live_cards
+         (id, session_id, card_type, title, brief_description, suggested_question,
+          urgency, state, confidence, answered, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        card.id,
+        card.sessionId,
+        card.cardType ?? "QUESTION_SUGGESTION",
+        card.question,
+        card.reason,
+        card.question,
+        card.urgency ?? "MEDIUM",
+        "NEW",
+        card.confidence ?? null,
+        false,
+        card.createdAt,
+      ],
+    )
+    .catch((err) => console.error(`[suggestions] persist failed for ${card.id}:`, err));
+}
+
+function persistAnswered(cardId: string, source: AnsweredSource, at: string): void {
+  void db
+    .query(
+      `UPDATE live_cards
+       SET answered = TRUE, answered_by = $1, answered_at = $2, state = 'ANSWERED'
+       WHERE id = $3`,
+      [source, at, cardId],
+    )
+    .catch((err) => console.error(`[suggestions] persist answered failed for ${cardId}:`, err));
+}
+
 const MAX_OPEN_CARDS_PER_SESSION = 4;
 
-// Below this confidence, a suggested card is too speculative to surface.
-// Only applies when the model actually supplied a confidence — cards that
-// omit it are trusted as-is.
 const MIN_CARD_CONFIDENCE = 0.5;
-
-function normalizeQuestion(text: string): string {
-  return text.trim().toLowerCase().replace(/\s+/g, " ").replace(/[?.!]+$/g, "");
-}
 
 function sessionMap(sessionId: string): Map<string, SuggestionCard> {
   let m = bySession.get(sessionId);
@@ -35,7 +116,6 @@ function sessionMap(sessionId: string): Map<string, SuggestionCard> {
   return m;
 }
 
-/** Turn the QuestionSuggestion blocks of an AI response into stored cards. */
 export function createFromBlocks(sessionId: string, blocks: AIBlock[]): SuggestionCard[] {
   const m = sessionMap(sessionId);
   const created: SuggestionCard[] = [];
@@ -50,32 +130,25 @@ export function createFromBlocks(sessionId: string, blocks: AIBlock[]): Suggesti
       createdAt: now(),
     };
     m.set(card.id, card);
+    persistCard(card);
     created.push(card);
   }
   return created;
 }
 
-/** Turn a live_card_output's cards (schema spec §6) into stored cards.
- *  Filters out low-confidence, duplicate, and over-cap suggestions so the
- *  stack can't be flooded even if the model over-suggests. */
 export function createFromLiveCards(sessionId: string, cards: LiveCardDTO[]): SuggestionCard[] {
   const m = sessionMap(sessionId);
   const created: SuggestionCard[] = [];
 
   let openCount = openCards(sessionId).length;
-  // Dedup against EVERY card this session — including answered ones. A struck
-  // card means the room already covered it; re-suggesting it reads as broken.
-  const seenQuestions = new Set(
-    allCards(sessionId).map((c) => normalizeQuestion(c.question))
-  );
+  const seenQuestions = allCards(sessionId).map((c) => c.question);
 
   for (const c of cards) {
     if (c.confidence !== undefined && c.confidence < MIN_CARD_CONFIDENCE) continue;
     if (openCount >= MAX_OPEN_CARDS_PER_SESSION) continue;
 
     const question = c.suggested_question?.trim() || c.title;
-    const normalized = normalizeQuestion(question);
-    if (seenQuestions.has(normalized)) continue;
+    if (seenQuestions.some((seen) => isNearDuplicate(question, seen))) continue;
 
     const card: SuggestionCard = {
       id: newId("sug"),
@@ -89,29 +162,24 @@ export function createFromLiveCards(sessionId: string, cards: LiveCardDTO[]): Su
       confidence: c.confidence,
     };
     m.set(card.id, card);
+    persistCard(card);
     created.push(card);
-    seenQuestions.add(normalized);
+    seenQuestions.push(question);
     openCount++;
   }
   return created;
 }
 
-/** Cards still awaiting an answer — what auto-detect scans against. */
 export function openCards(sessionId: string): SuggestionCard[] {
   return [...sessionMap(sessionId).values()].filter((c) => !c.answered);
 }
 
-/** All cards for a session, newest first (stack order). */
 export function allCards(sessionId: string): SuggestionCard[] {
   return [...sessionMap(sessionId).values()].sort((a, b) =>
     b.createdAt.localeCompare(a.createdAt)
   );
 }
 
-/**
- * Mark a card answered. Returns the updated card, or null if unknown / already
- * answered (so callers don't emit a duplicate strikethrough event).
- */
 export function markAnswered(
   sessionId: string,
   cardId: string,
@@ -121,10 +189,10 @@ export function markAnswered(
   if (!card || card.answered) return null;
   card.answered = true;
   card.answeredBy = source;
+  persistAnswered(cardId, source, now());
   return card;
 }
 
-/** Test/teardown helper — drop a session's cards. */
 export function clearSession(sessionId: string): void {
   bySession.delete(sessionId);
 }

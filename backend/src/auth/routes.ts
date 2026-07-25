@@ -1,4 +1,3 @@
-// Auth routes (S1-T00-B): POST /api/auth/signup, /login, GET /api/auth/me.
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import type { AuthResponse, Role, SignupRequest, LoginRequest, User } from "@shared/types";
@@ -29,7 +28,6 @@ authRouter.post("/signup", async (req, res) => {
     }
     const chosenRole: Role = role && VALID_ROLES.includes(role) ? role : "facilitator";
 
-    // Replaced .get() with await db.query() and checking .rows[0]
     const existingResult = await db.query(`SELECT id FROM users WHERE email = $1`, [email]);
     const existing = existingResult.rows[0];
     
@@ -38,7 +36,6 @@ authRouter.post("/signup", async (req, res) => {
     const ts = now();
     const orgId = newId("org");
     
-    // Replaced .run() with await db.query()
     await db.query(
       `INSERT INTO organizations (id,name,created_at) VALUES ($1,$2,$3)`, 
       [orgId, orgName?.trim() || `${name}'s workspace`, ts]
@@ -47,7 +44,6 @@ authRouter.post("/signup", async (req, res) => {
     const id = newId("usr");
     const hash = bcrypt.hashSync(password, 10);
     
-    // Replaced .run() with await db.query()
     await db.query(
       `INSERT INTO users (id,org_id,email,name,password_hash,role,created_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7)`,
@@ -74,7 +70,6 @@ authRouter.post("/login", async (req, res) => {
       return res.status(400).json({ ok: false, error: "email and password are required" });
     }
     
-    // Replaced .get() with await db.query() and checking .rows[0]
     const queryResult = await db.query(`SELECT * FROM users WHERE email = $1`, [email]);
     const row = queryResult.rows[0] as UserRow | undefined;
     
@@ -94,7 +89,6 @@ authRouter.post("/login", async (req, res) => {
 
 authRouter.get("/me", requireAuth, async (req, res) => {
   try {
-    // Replaced .get() with await db.query() and checking .rows[0]
     const queryResult = await db.query(`SELECT * FROM users WHERE id = $1`, [req.auth!.sub]);
     const row = queryResult.rows[0] as UserRow | undefined;
     

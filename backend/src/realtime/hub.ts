@@ -16,18 +16,9 @@ interface Client {
   socket: WebSocket;
   sessionId: string;
   claims: JwtClaims;
-  /** Active streaming-STT session, if the client sent "stt:start". */
   stt?: SttStreamHandle | null;
-  /** Heartbeat liveness — set false before each ping, true on pong. A client
-   * still false at the next tick is a dead/half-open socket and is terminated. */
   isAlive: boolean;
 }
-
-// ── Streaming STT ingest (S-EXP) ─────────────────────────────────────────────
-// Final streamed text is persisted through the same path REST audio chunks use
-// (save row → schedule live-AI routing). routes/transcript.ts owns that logic
-// and already imports this module, so it registers its ingest function here at
-// module init instead of the hub importing it back (which would be a cycle).
 
 export type StreamIngestFn = (input: {
   sessionId: string;
@@ -47,7 +38,6 @@ const facilitators = new Map<string, Set<Client>>();
 let wss: WebSocketServer | null = null;
 
 function subscribe(client: Client): void {
-  // Session subscription
   let sessionSet = facilitators.get(client.sessionId);
   if (!sessionSet) {
     sessionSet = new Set();
@@ -55,7 +45,6 @@ function subscribe(client: Client): void {
   }
   sessionSet.add(client);
 
-  // User subscription
   let userSet = userConnections.get(client.claims.sub);
   if (!userSet) {
     userSet = new Set();
@@ -65,14 +54,12 @@ function subscribe(client: Client): void {
 }
 
 function unsubscribe(client: Client): void {
-  // Session cleanup
   const sessionSet = facilitators.get(client.sessionId);
   if (sessionSet) {
     sessionSet.delete(client);
     if (sessionSet.size === 0) facilitators.delete(client.sessionId);
   }
 
-  // User cleanup
   const userSet = userConnections.get(client.claims.sub);
   if (userSet) {
     userSet.delete(client.socket);
@@ -92,8 +79,6 @@ function broadcast(sessionId: string, event: WsServerEvent): void {
   for (const c of set) send(c.socket, event);
 }
 
-/** Live facilitator WebSocket connections for a session — read by the session
- * sweeper to decide whether an idle session has truly been abandoned. */
 export function facilitatorCount(sessionId: string): number {
   return facilitators.get(sessionId)?.size ?? 0;
 }
@@ -158,19 +143,11 @@ export function attachHub(server: Server): WebSocketServer {
 
       const client: Client = { socket, sessionId, claims, stt: null, isAlive: true };
 
-      // Listeners must attach synchronously with the connection event — the
-      // ownership check below awaits a DB round-trip, and ws drops (not
-      // buffers) messages that arrive with no listener. A client that sends
-      // stt:start immediately after the handshake would otherwise lose it.
-      // Until authorization resolves, messages queue here (bounded; ~4s of
-      // audio) and are replayed after the check passes.
       let authorized = false;
       const preAuthQueue: Array<{ data: Buffer; isBinary: boolean }> = [];
       const MAX_PREAUTH_MESSAGES = 32;
 
       const handleMessage = (data: Buffer, isBinary: boolean): void => {
-        // Binary frames carry PCM16 audio for the active STT stream; text
-        // frames are JSON control messages (WsClientEvent).
         if (isBinary) {
           markAudio(client.sessionId);
           client.stt?.write(data);
@@ -192,7 +169,7 @@ export function attachHub(server: Server): WebSocketServer {
           return;
         }
         if (preAuthQueue.length >= MAX_PREAUTH_MESSAGES) {
-          preAuthQueue.shift(); // keep newest; oldest audio is the least useful
+          preAuthQueue.shift();
         }
         preAuthQueue.push({ data: data as Buffer, isBinary });
       });
@@ -230,10 +207,6 @@ export function attachHub(server: Server): WebSocketServer {
     }
   });
 
-  // Heartbeat: ping every client each interval; a client that hasn't ponged
-  // since the last tick is a dead/half-open socket (laptop sleep, NAT/proxy
-  // idle timeout) and is terminated so its Client entry leaves the maps and we
-  // stop broadcasting into a void. terminate() fires "close", which unsubscribes.
   const HEARTBEAT_MS = 30_000;
   const heartbeat = setInterval(() => {
     const clients: Client[] = [];
@@ -247,7 +220,6 @@ export function attachHub(server: Server): WebSocketServer {
       try {
         client.socket.ping();
       } catch {
-        /* socket already tearing down */
       }
     }
   }, HEARTBEAT_MS);
@@ -261,7 +233,6 @@ function startSttStream(
   client: Client,
   msg: Extract<WsClientEvent, { type: "stt:start" }>,
 ): void {
-  // Restarting replaces any previous stream (e.g. after a mic toggle).
   stopSttStream(client);
 
   const { sessionId } = client;
@@ -313,8 +284,6 @@ export function pushSuggestion(card: SuggestionCard): void {
   broadcast(card.sessionId, { type: "suggestion:new", card });
 }
 
-/** Live "Strategic Meeting Notes": broadcast the fresh rolling memory to the
- *  session's clients whenever the AI rewrites it (IMPORTANT chunks only). */
 export function pushNotes(sessionId: string, text: string): void {
   broadcast(sessionId, { type: "notes:update", sessionId, text });
 }
