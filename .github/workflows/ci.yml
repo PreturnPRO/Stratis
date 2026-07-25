@@ -29,5 +29,13 @@ jobs:
       - name: Typecheck backend (lint gate — must not crash)
         run: npm --prefix backend run typecheck
 
+      # These cover logic no reviewer can eyeball: recovering JSON from
+      # prose-wrapped model output, Thai/English near-duplicate matching,
+      # Retry-After parsing and backoff caps. Break one and nothing crashes —
+      # the transcript just quietly gets worse. Previously the suite existed but
+      # CI never ran it, so it only protected whoever remembered `npm test`.
+      - name: Test backend + ai-service
+        run: npm --prefix backend test
+
       - name: Build frontend (root)
         run: npm run build

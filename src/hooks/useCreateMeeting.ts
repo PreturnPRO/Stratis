@@ -125,6 +125,9 @@ export function useCreateMeeting(onNav?: (id: string, params?: Record<string, st
         throw new Error("Meeting id missing from backend response");
       }
 
+      // Booked for later: do NOT start a session. Starting one here would
+      // begin recording an empty room. It waits on the Docket until someone
+      // presses Start.
       if (scheduledAt) return meetingId;
 
       return await startSessionForMeeting(meetingId, input.durationMinutes);

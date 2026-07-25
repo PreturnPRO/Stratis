@@ -12,6 +12,11 @@ export function normalizeText(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, " ").replace(/[?.!]+$/g, "");
 }
 
+// Thai has no spaces between words, so the whitespace tokenizer below produced
+// ZERO tokens for a Thai string — meaning the entire near-duplicate defence
+// silently did nothing in the product's primary market. Character n-grams are
+// the standard similarity primitive for unsegmented scripts: two Thai questions
+// on the same topic share most of their n-grams even when phrasing differs.
 const THAI_RANGE = /[฀-๿]/;
 const THAI_NGRAM = 3;
 

@@ -17,6 +17,9 @@ import { NAV_ITEMS, FONT, RADIUS, SPACE } from "../constants";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
 
+// The rail keeps a CONSTANT layout width and expansion is a deliberate,
+// persisted click. Hover-expand animated the flex width, which relaid out the
+// entire main column — transcript, panels, header — on every accidental graze.
 const COLLAPSED_WIDTH = 64;
 const EXPANDED_WIDTH = 200;
 const STORAGE_KEY = "stratis-sidebar-expanded";

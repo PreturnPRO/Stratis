@@ -56,6 +56,13 @@ function stripFences(raw: string): string {
   return raw.replace(/```(?:json)?/gi, "").trim();
 }
 
+// Models routinely wrap valid JSON in a sentence ("Here are the decisions: {...}")
+// or a code fence, which made JSON.parse throw on the WHOLE response — and the
+// callers then dropped the result silently, so the alignment checkpoint could
+// show zero decisions from one stray sentence. This scans for the outermost
+// balanced {...}, string-literal aware so a brace inside decision text or
+// markdown can never unbalance it. It must not weaken validation: the recovered
+// substring still goes through the same strict field checks.
 export function extractJsonObject(raw: string): string {
   const cleaned = stripFences(raw);
   if (cleaned.startsWith("[")) return cleaned;

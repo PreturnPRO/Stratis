@@ -8,6 +8,13 @@ import { EmptyState, LoadingState } from "../components/states";
 import { NewMeetingModal, type MeetingSeed, type NewMeetingFormValues } from "../components/NewMeetingModal";
 import { useCreateMeeting, projectIdFromTitle } from "../hooks/useCreateMeeting";
 
+// The Docket is deliberately NOT a calendar. A month grid answers "when am I
+// busy?" — a question every team already has Google Calendar for, and which
+// Stratis would only ever answer worse. This page answers the one only Stratis
+// can: "what needs deciding next, and when will we decide it?" So the unit is a
+// DECISION, not a time block: the goal leads each card, time is a stamp, and
+// "Awaiting a date" turns unresolved checkpoint items into future meetings.
+// Busy-time stays with the real calendar via the per-meeting .ics link.
 interface DocketMeeting {
   id: string;
   title: string;

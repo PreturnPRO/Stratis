@@ -37,6 +37,11 @@ function rowToCard(row: LiveCardRow): SuggestionCard {
   return card;
 }
 
+// Write-through to `live_cards`. The stack used to live only in process memory,
+// so a backend restart or deploy mid-meeting silently erased every open card —
+// the facilitator's pending questions vanished with no message, which reads as
+// "the AI gave up". hydrate() restores a session when this process has no memory
+// of it. Never throws: a DB blip must not take down the live meeting.
 export async function hydrate(sessionId: string): Promise<void> {
   if (hydrated.has(sessionId)) return;
   hydrated.add(sessionId);

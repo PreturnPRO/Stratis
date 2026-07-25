@@ -53,6 +53,12 @@ export function createPacer(minIntervalMs: number, deps: PacerDeps = {}): Pacer 
   let lastAt = 0;
 
   return {
+    // Serialised promise chain. It cannot stall the whole process because the
+    // only await inside the gate is a BOUNDED sleep (<= minIntervalMs): the
+    // network fetch and any 429 backoff happen OUTSIDE this chain, and errors
+    // are swallowed so one rejection can't wedge every later caller.
+    // Keep it that way — awaiting a fetch in here would let one slow request
+    // block every session's AI calls.
     acquire(): Promise<void> {
       const mine = gate.then(async () => {
         if (minIntervalMs > 0) {
