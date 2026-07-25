@@ -1,8 +1,14 @@
 import React, { useState, type CSSProperties } from 'react'
-import { COLORS, FONT, LETTER_SPACING, RADIUS, SPACE } from '../constants'
+import { FONT, LETTER_SPACING, RADIUS, SPACE } from '../constants'
 import { Button } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { API_BASE } from '../lib/api'
+import { useTheme } from '../hooks/useTheme'
+import AmbientBackground from '../components/AmbientBackground'
+import { Zap } from 'lucide-react'
+
+type Colors = ReturnType<typeof useTheme>['colors']
+type Shadow = ReturnType<typeof useTheme>['shadow']
 
 interface Props {
   onNavigate: (page: 'landing' | 'register' | 'app') => void
@@ -22,6 +28,7 @@ function validateLogin(email: string, password: string): string | null {
 
 export default function Login({ onNavigate }: Props) {
   const { login } = useAuth()
+  const { theme, colors, shadow } = useTheme()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -73,16 +80,21 @@ export default function Login({ onNavigate }: Props) {
   const canSubmit = email.trim() && password && !loading
 
   return (
-    <div style={containerStyle}>
-      <div style={cardStyle}>
-        <div style={wordmarkStyle}>STRATIS</div>
-        <div style={subtitleStyle}>Access the Control Room</div>
+    <div style={containerStyle(colors)}>
+      <AmbientBackground theme={theme} />
+      <div style={cardStyle(colors, shadow)}>
+        <div style={wordmarkStyle(colors)}>
+          <Zap size={14} strokeWidth={2} />
+          STRATIS
+        </div>
+        <div style={headingStyle(colors)}>Sign in to Stratis</div>
+        <div style={subtitleStyle(colors)}>Access the Control Room</div>
 
-        {error && <div style={errorStyle}>{error}</div>}
+        {error && <div style={errorStyle(colors)}>{error}</div>}
 
         <form onSubmit={handleSubmit} style={formStyle}>
           <div style={fieldStyle}>
-            <label htmlFor="email" style={labelStyle}>
+            <label htmlFor="email" style={labelStyle(colors)}>
               Email Address
             </label>
             <input
@@ -92,13 +104,13 @@ export default function Login({ onNavigate }: Props) {
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@organization.com"
               disabled={loading}
-              style={inputStyle()}
+              style={inputStyle(colors)}
               required
             />
           </div>
 
           <div style={fieldStyle}>
-            <label htmlFor="password" style={labelStyle}>
+            <label htmlFor="password" style={labelStyle(colors)}>
               Password
             </label>
             <input
@@ -108,7 +120,7 @@ export default function Login({ onNavigate }: Props) {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               disabled={loading}
-              style={inputStyle()}
+              style={inputStyle(colors)}
               required
             />
           </div>
@@ -125,12 +137,12 @@ export default function Login({ onNavigate }: Props) {
         </form>
 
         <div style={switchFooterStyle}>
-          <span style={{ color: COLORS.textMuted }}>Don't have an account? </span>
+          <span style={{ color: colors.textMuted }}>Don't have an account? </span>
           <button
             type="button"
             onClick={() => onNavigate('register')}
             disabled={loading}
-            style={linkStyle}
+            style={linkStyle(colors)}
           >
             Create one
           </button>
@@ -142,48 +154,61 @@ export default function Login({ onNavigate }: Props) {
 
 // ─── Style Blocks ────────────────────────────────────────────────────────────
 
-const containerStyle: CSSProperties = {
+const containerStyle = (colors: Colors): CSSProperties => ({
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
   height: '100%',
-  background: COLORS.bg,
-}
+  background: colors.bg,
+  position: 'relative',
+})
 
-const cardStyle: CSSProperties = {
-  background: COLORS.surface,
-  border: `1px solid ${COLORS.border}`,
-  borderRadius: RADIUS.lg,
+const cardStyle = (colors: Colors, shadow: Shadow): CSSProperties => ({
+  background: colors.surfaceElevated,
+  border: `1px solid ${colors.border}`,
+  borderRadius: 14,
+  boxShadow: shadow.shadModal,
   padding: '40px 36px',
-  width: 360,
+  width: 380,
   display: 'flex',
   flexDirection: 'column',
-}
+  position: 'relative',
+})
 
-const wordmarkStyle: CSSProperties = {
+const wordmarkStyle = (colors: Colors): CSSProperties => ({
+  display: 'flex',
+  alignItems: 'center',
+  gap: 7,
   fontSize: FONT.size.caption,
-  color: COLORS.accent,
+  color: colors.accent,
   letterSpacing: LETTER_SPACING.eyebrow,
   fontWeight: FONT.weight.bold,
   marginBottom: 4,
-}
+})
 
-const subtitleStyle: CSSProperties = {
+const headingStyle = (colors: Colors): CSSProperties => ({
+  fontSize: FONT.size.title,
+  color: colors.text,
+  fontWeight: FONT.weight.semibold,
+  marginBottom: 4,
+})
+
+const subtitleStyle = (colors: Colors): CSSProperties => ({
   fontSize: FONT.size.body,
-  color: COLORS.textMuted,
+  color: colors.textMuted,
   marginBottom: 24,
-}
+})
 
-const errorStyle: CSSProperties = {
-  background: COLORS.redBg,
-  border: `1px solid ${COLORS.red}`,
-  color: COLORS.red,
+const errorStyle = (colors: Colors): CSSProperties => ({
+  background: colors.redBg,
+  border: `1px solid ${colors.red}`,
+  color: colors.red,
   borderRadius: RADIUS.sm,
   padding: '10px 12px',
   fontSize: FONT.size.label,
   marginBottom: 16,
   lineHeight: 1.4,
-}
+})
 
 const formStyle: CSSProperties = {
   display: 'flex',
@@ -197,20 +222,20 @@ const fieldStyle: CSSProperties = {
   gap: SPACE[1.5],
 }
 
-const labelStyle: CSSProperties = {
-  color: COLORS.textMuted,
+const labelStyle = (colors: Colors): CSSProperties => ({
+  color: colors.textMuted,
   fontSize: FONT.size.label,
   fontWeight: FONT.weight.medium,
   letterSpacing: LETTER_SPACING.wide,
-}
+})
 
-const inputStyle = (): CSSProperties => ({
-  background: COLORS.bg,
-  border: `1px solid ${COLORS.border}`,
+const inputStyle = (colors: Colors): CSSProperties => ({
+  background: colors.bg,
+  border: `1px solid ${colors.border}`,
   borderRadius: RADIUS.sm,
   padding: '10px 12px',
   fontSize: FONT.size.body,
-  color: COLORS.text,
+  color: colors.text,
   outline: 'none',
   width: '100%',
   boxSizing: 'border-box',
@@ -222,12 +247,12 @@ const switchFooterStyle: CSSProperties = {
   fontSize: FONT.size.label,
 }
 
-const linkStyle: CSSProperties = {
+const linkStyle = (colors: Colors): CSSProperties => ({
   background: 'transparent',
   border: 'none',
   padding: 0,
   font: 'inherit',
-  color: COLORS.accent,
+  color: colors.accent,
   cursor: 'pointer',
   textDecoration: 'underline',
-}
+})

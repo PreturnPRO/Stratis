@@ -1,9 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { COLORS, FONT, RADIUS, SPACE } from "./constants";
+import { COLORS, FONT, LETTER_SPACING, RADIUS, SPACE } from "./constants";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Sidebar from "./components/Sidebar";
-import MeetingTransition from "./components/MeetingTransition";
+import CurtainTransition, { type CurtainState } from "./components/CurtainTransition";
+import CustomCursor from "./components/CustomCursor";
+import Preloader from "./components/Preloader";
+import { useTheme, ThemeProvider } from "./hooks/useTheme";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -23,6 +26,36 @@ const PAGE_LABELS: Record<string, string> = {
   summary: "Summary",
   document: "Document",
 };
+
+// Per-route SYS codes per the handoff's route table (00 auth / 02 dashboard /
+// 03 meeting / 04 projects / 05 summary / 06 document).
+const PAGE_SYS: Record<string, string> = {
+  dashboard: "SYS.02",
+  meeting: "SYS.03",
+  projects: "SYS.04",
+  summary: "SYS.05",
+  document: "SYS.06",
+};
+
+function LiveClock({ colors }: { colors: { accent: string } }) {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const time = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(now);
+  const tz = new Intl.DateTimeFormat(undefined, { timeZoneName: "short" })
+    .formatToParts(now)
+    .find((p) => p.type === "timeZoneName")?.value ?? "";
+
+  return (
+    <span>
+      {tz} <span style={{ color: colors.accent }}>→</span> {time}
+    </span>
+  );
+}
 
 function renderPage(
   active: string,
@@ -72,23 +105,41 @@ function AppShell() {
   const initialEntry = hashToEntry();
   const [active, setActive] = useState<AppPage>(initialEntry.page);
   const [navParams, setNavParams] = useState<Record<string, string>>(initialEntry.params);
-  const [showTransition, setShowTransition] = useState(false);
+  const { theme, toggleTheme, colors } = useTheme();
+
+  // Curtain for the auth -> app transition (login/register success), reusing
+  // the same sweep used for in-app page nav. isAuthed flips synchronously
+  // when login() sets the token, so this just detects that flip and plays
+  // the curtain in/hold/out over the top of whichever branch is mounted.
+  const [authCurtain, setAuthCurtain] = useState<CurtainState>("idle");
+  const prevAuthedRef = useRef(isAuthed);
+  useEffect(() => {
+    if (!prevAuthedRef.current && isAuthed) setAuthCurtain("in");
+    prevAuthedRef.current = isAuthed;
+  }, [isAuthed]);
+
+  useEffect(() => {
+    if (authCurtain === "in") {
+      const t = setTimeout(() => setAuthCurtain("hold"), 480);
+      return () => clearTimeout(t);
+    }
+    if (authCurtain === "hold") {
+      const t = setTimeout(() => setAuthCurtain("out"), 240);
+      return () => clearTimeout(t);
+    }
+    if (authCurtain === "out") {
+      const t = setTimeout(() => setAuthCurtain("idle"), 600);
+      return () => clearTimeout(t);
+    }
+  }, [authCurtain]);
 
   type HistoryEntry = { page: AppPage; params: Record<string, string> };
   const [history, setHistory] = useState<HistoryEntry[]>([initialEntry]);
   const [historyIndex, setHistoryIndex] = useState(0);
 
-  const handleNav = (id: string, params?: Record<string, string>) => {
+  const commitNav = (id: string, params?: Record<string, string>) => {
     const page = id as AppPage;
     const resolvedParams = params ?? {};
-
-    const current = history[historyIndex];
-    const isSamePage = current?.page === page;
-    const isSameParams =
-      JSON.stringify(current?.params) === JSON.stringify(resolvedParams);
-    if (isSamePage && isSameParams) return;
-
-    if (page === "meeting" && active !== "meeting") setShowTransition(true);
 
     const visibleHistory = history.slice(0, historyIndex + 1);
     const existingIndex = visibleHistory.findIndex(
@@ -110,6 +161,19 @@ function AppShell() {
     setHistoryIndex(newHistory.length - 1);
     setActive(page);
     setNavParams(resolvedParams);
+  };
+
+  const handleNav = (id: string, params?: Record<string, string>) => {
+    const page = id as AppPage;
+    const resolvedParams = params ?? {};
+
+    const current = history[historyIndex];
+    const isSamePage = current?.page === page;
+    const isSameParams =
+      JSON.stringify(current?.params) === JSON.stringify(resolvedParams);
+    if (isSamePage && isSameParams) return;
+
+    commitNav(id, params);
   };
 
   useEffect(() => {
@@ -153,27 +217,32 @@ function AppShell() {
     return (
       <div
         style={{
-          height: "100vh",
+          height: "100dvh",
           background: COLORS.bg,
           color: COLORS.text,
           fontFamily: "'Helvetica Neue', Arial, sans-serif",
         }}
       >
-        {authPage === "landing" && <Landing onNavigate={setAuthPage} />}
-        {authPage === "login" && (
-          <Login
-            onNavigate={(p) =>
-              p === "app" ? setAuthPage("app") : setAuthPage(p)
-            }
-          />
-        )}
-        {authPage === "register" && (
-          <Register
-            onNavigate={(p) =>
-              p === "app" ? setAuthPage("app") : setAuthPage(p)
-            }
-          />
-        )}
+        <Preloader onDone={() => {}} theme={theme} />
+        <CustomCursor calmZone={false} theme={theme} />
+        <CurtainTransition state={authCurtain} routeLabel="DASHBOARD" onMidpoint={() => {}} theme={theme} />
+        <main style={{ height: "100%" }}>
+          {authPage === "landing" && <Landing onNavigate={setAuthPage} />}
+          {authPage === "login" && (
+            <Login
+              onNavigate={(p) =>
+                p === "app" ? setAuthPage("app") : setAuthPage(p)
+              }
+            />
+          )}
+          {authPage === "register" && (
+            <Register
+              onNavigate={(p) =>
+                p === "app" ? setAuthPage("app") : setAuthPage(p)
+              }
+            />
+          )}
+        </main>
       </div>
     );
   }
@@ -182,18 +251,31 @@ function AppShell() {
     <div
       style={{
         display: "flex",
-        height: "100vh",
-        background: COLORS.bg,
+        height: "100dvh",
+        background: colors.bg,
         fontFamily: "'Helvetica Neue', Arial, sans-serif",
         overflow: "hidden",
-        color: COLORS.text,
+        color: colors.text,
       }}
     >
-      {showTransition && (
-        <MeetingTransition onDone={() => setShowTransition(false)} />
-      )}
+      <CurtainTransition
+        state={authCurtain}
+        routeLabel="DASHBOARD"
+        onMidpoint={() => {}}
+        theme={theme}
+      />
+      <CustomCursor calmZone={active === "meeting"} theme={theme} />
 
-      <Sidebar active={active} onNav={handleSidebarNav} onLogout={logout} />
+      <Sidebar
+        active={active}
+        onNav={handleSidebarNav}
+        onLogout={() => {
+          logout();
+          setAuthPage("landing");
+        }}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+      />
 
       <div
         style={{
@@ -213,6 +295,7 @@ function AppShell() {
             padding: "0 12px",
             gap: SPACE[1.5],
             flexShrink: 0,
+            overflow: "hidden",
           }}
         >
           <button
@@ -265,6 +348,8 @@ function AppShell() {
               alignItems: "center",
               gap: 4,
               marginLeft: 4,
+              minWidth: 0,
+              overflow: "hidden",
             }}
           >
             {history.slice(0, historyIndex + 1).map((entry, i) => {
@@ -311,12 +396,36 @@ function AppShell() {
               );
             })}
           </div>
+
+          <span
+            style={{
+              marginLeft: "auto",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 10,
+              color: colors.textDim,
+              fontFamily: FONT.mono,
+              fontSize: FONT.size.caption,
+              letterSpacing: LETTER_SPACING.wide,
+              flexShrink: 0,
+            }}
+          >
+            <LiveClock colors={colors} />
+            {PAGE_SYS[active] ?? ""}
+          </span>
         </header>
 
         <main
           style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}
         >
-          <div style={{ flex: 1, overflow: "hidden", height: "100%" }}>
+          <div
+            key={active}
+            style={{
+              flex: 1,
+              overflow: "hidden",
+              height: "100%",
+            }}
+          >
             {renderPage(active, navParams, handleNav)}
           </div>
         </main>
@@ -327,8 +436,10 @@ function AppShell() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppShell />
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <AppShell />
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

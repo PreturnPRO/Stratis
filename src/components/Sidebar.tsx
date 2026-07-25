@@ -5,10 +5,18 @@ import {
   FileText,
   LogOut,
   Zap,
+  Sun,
+  Moon,
   type LucideIcon,
 } from "lucide-react";
-import { COLORS, NAV_ITEMS, FONT, RADIUS, SPACE } from "../constants";
+import { useState } from "react";
+import { NAV_ITEMS, FONT, RADIUS, SPACE } from "../constants";
 import { useAuth } from "../context/AuthContext";
+import { useTheme } from "../hooks/useTheme";
+import LetterStagger from "./LetterStagger";
+
+const COLLAPSED_WIDTH = 64;
+const EXPANDED_WIDTH = 200;
 
 // ─── Icon registry ─────────────────────────────────────────────────────────────
 
@@ -23,7 +31,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
 
 // Kept independent from the semantic COLORS palette (name-hash lookup, not
 // status meaning), but must not visually collide with it — avoid shades near
-// COLORS.danger and COLORS.teal.
+// colors.danger and colors.teal.
 const AVATAR_COLORS = [
   "#a8556c", "#2e86c1", "#1a7a4a", "#8e44ad",
   "#d35400", "#5c7a89", "#2c3e50", "#7f8c8d",
@@ -47,38 +55,58 @@ export default function Sidebar({
   active,
   onNav,
   onLogout,
+  theme,
+  onToggleTheme,
 }: {
   active: string;
   onNav: (id: string) => void;
   onLogout?: () => void;
+  theme: "dark" | "light";
+  onToggleTheme: () => void;
 }) {
   const { user } = useAuth();
+  const { colors } = useTheme();
+  const [expanded, setExpanded] = useState(false);
+  const [hoveredNav, setHoveredNav] = useState<string | null>(null);
+  const [themeHovered, setThemeHovered] = useState(false);
+  const [logoutHovered, setLogoutHovered] = useState(false);
+  const [pressedNav, setPressedNav] = useState<string | null>(null);
+  const [themePressed, setThemePressed] = useState(false);
+  const [logoutPressed, setLogoutPressed] = useState(false);
 
   const displayName = user?.name ?? "Guest";
   const initials    = nameToInitials(displayName);
-  const avatarColor = user ? nameToColor(user.name) : COLORS.textDim;
+  const avatarColor = user ? nameToColor(user.name) : colors.textDim;
 
   return (
-    <nav aria-label="Primary" style={{
-      width: 64,
-      background: COLORS.bg,
-      borderRight: `1px solid ${COLORS.border}`,
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      paddingTop: SPACE[2.5],
-      paddingBottom: 12,
-      flexShrink: 0,
-    }}>
+    <nav
+      aria-label="Primary"
+      onMouseEnter={() => setExpanded(true)}
+      onMouseLeave={() => setExpanded(false)}
+      style={{
+        width: expanded ? EXPANDED_WIDTH : COLLAPSED_WIDTH,
+        background: colors.bg,
+        borderRight: `1px solid ${colors.border}`,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "stretch",
+        paddingTop: SPACE[2.5],
+        paddingBottom: 12,
+        flexShrink: 0,
+        overflow: "hidden",
+        transition: "width 0.25s cubic-bezier(.4,0,.2,1)",
+      }}
+    >
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column" }}>
       {/* Logo */}
       <button
         title="Dashboard"
         aria-label="Dashboard"
         onClick={() => onNav("dashboard")}
         style={{
-          width: 44, height: 44, marginBottom: 16,
+          width: 44, height: 44, marginBottom: 16, marginLeft: 10,
           display: "flex", alignItems: "center", justifyContent: "center",
-          color: COLORS.accent, background: "transparent", border: "none",
+          color: colors.accent, background: "transparent", border: "none",
           cursor: "pointer", flexShrink: 0,
         }}
       >
@@ -98,26 +126,43 @@ export default function Sidebar({
               aria-label={item.label}
               aria-current={isActive ? "page" : undefined}
               onClick={() => onNav(item.id)}
+              onMouseEnter={() => setHoveredNav(item.id)}
+              onMouseLeave={() => { setHoveredNav(null); setPressedNav(null); }}
+              onMouseDown={() => setPressedNav(item.id)}
+              onMouseUp={() => setPressedNav(null)}
               style={{
-                width: 56, height: 56, borderRadius: RADIUS.lg,
-                background: isActive ? COLORS.surfaceHover : "transparent",
+                width: expanded ? EXPANDED_WIDTH - 8 : 56,
+                height: 56, marginLeft: 4, borderRadius: RADIUS.lg,
+                background: isActive ? colors.surfaceHover : "transparent",
                 border: "none", cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                color: isActive ? COLORS.accent : COLORS.textDim,
-                transition: "all 0.15s",
+                display: "flex", alignItems: "center", justifyContent: "flex-start",
+                gap: 14, paddingLeft: 17,
+                color: isActive ? colors.accent : colors.textDim,
+                transform: pressedNav === item.id ? "scale(0.96)" : "scale(1)",
+                transition: "transform 0.12s cubic-bezier(.4,0,.2,1), background 0.15s, color 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
               }}
             >
-              {IconComp
-                ? <IconComp size={22} strokeWidth={1.75} />
-                : <span style={{ fontSize: FONT.size.heading }}>{item.icon}</span>
-              }
+              <span style={{ display: "flex", flexShrink: 0 }}>
+                {IconComp
+                  ? <IconComp size={22} strokeWidth={1.75} />
+                  : <span style={{ fontSize: FONT.size.heading }}>{item.icon}</span>
+                }
+              </span>
+              <span style={{
+                display: "inline-block", overflow: "hidden",
+                width: expanded ? "auto" : 0,
+                fontSize: FONT.size.body, fontWeight: 500, whiteSpace: "nowrap",
+                opacity: expanded ? 1 : 0, transition: "opacity 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
+              }}>
+                <LetterStagger text={item.label} accentColor={colors.accent} revealed={hoveredNav === item.id} />
+              </span>
             </button>
 
             {badge && (
               <div style={{
-                position: "absolute", top: 8, right: 8,
+                position: "absolute", top: 8, left: 35,
                 width: 14, height: 14, borderRadius: "50%",
-                background: COLORS.red, fontSize: FONT.size.micro, fontWeight: 700,
+                background: colors.red, fontSize: FONT.size.micro, fontWeight: 700,
                 color: "#fff", display: "flex", alignItems: "center", justifyContent: "center",
                 pointerEvents: "none",
               }}>
@@ -128,18 +173,66 @@ export default function Sidebar({
         );
       })}
 
+      </div>
+
       {/* Avatar + logout */}
-      <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+      <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+        <button
+          title="Toggle theme"
+          aria-label="Toggle theme"
+          onClick={onToggleTheme}
+          onMouseEnter={() => setThemeHovered(true)}
+          onMouseLeave={() => { setThemeHovered(false); setThemePressed(false); }}
+          onMouseDown={() => setThemePressed(true)}
+          onMouseUp={() => setThemePressed(false)}
+          style={{
+            width: expanded ? EXPANDED_WIDTH - 8 : 56, height: 44, marginLeft: 4,
+            borderRadius: 8, background: "transparent", border: "none",
+            color: colors.textDim, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "flex-start",
+            gap: 14, paddingLeft: 17,
+            transform: themePressed ? "scale(0.96)" : "scale(1)",
+            transition: "transform 0.12s cubic-bezier(.4,0,.2,1), width 0.25s cubic-bezier(.4,0,.2,1)",
+          }}
+        >
+          <span style={{ display: "flex", flexShrink: 0 }}>
+            {theme === "dark" ? <Sun size={16} strokeWidth={1.75} /> : <Moon size={16} strokeWidth={1.75} />}
+          </span>
+          <span style={{
+            display: "inline-block", overflow: "hidden",
+            width: expanded ? "auto" : 0,
+            fontSize: FONT.size.body, fontWeight: 500, whiteSpace: "nowrap",
+            opacity: expanded ? 1 : 0, transition: "opacity 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
+          }}>
+            <LetterStagger text={theme === "dark" ? "Light mode" : "Dark mode"} accentColor={colors.accent} revealed={themeHovered} />
+          </span>
+        </button>
+
         <div
           title={displayName}
           style={{
-            width: 34, height: 34, borderRadius: "50%",
-            background: avatarColor,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: FONT.size.label, fontWeight: 600, color: "#fff", cursor: "default",
+            width: expanded ? EXPANDED_WIDTH - 8 : 56, height: 44, marginLeft: 4,
+            display: "flex", alignItems: "center", justifyContent: "flex-start",
+            gap: 14, paddingLeft: 11, cursor: "default",
+            transition: "width 0.25s cubic-bezier(.4,0,.2,1)",
           }}
         >
-          {initials}
+          <span style={{
+            width: 34, height: 34, borderRadius: "50%", flexShrink: 0,
+            background: avatarColor,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: FONT.size.label, fontWeight: 600, color: "#fff",
+          }}>
+            {initials}
+          </span>
+          <span style={{
+            display: "inline-block", overflow: "hidden",
+            width: expanded ? "auto" : 0,
+            fontSize: FONT.size.body, fontWeight: 500, whiteSpace: "nowrap", color: colors.text,
+            opacity: expanded ? 1 : 0, transition: "opacity 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
+          }}>
+            {displayName}
+          </span>
         </div>
 
         {onLogout && (
@@ -147,15 +240,31 @@ export default function Sidebar({
             title="Sign out"
             aria-label="Sign out"
             onClick={onLogout}
+            onMouseEnter={() => setLogoutHovered(true)}
+            onMouseLeave={() => { setLogoutHovered(false); setLogoutPressed(false); }}
+            onMouseDown={() => setLogoutPressed(true)}
+            onMouseUp={() => setLogoutPressed(false)}
             style={{
-              width: 44, height: 44, borderRadius: 8,
-              background: "transparent", border: "none",
-              color: COLORS.textDim, cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              transition: "color 0.15s",
+              width: expanded ? EXPANDED_WIDTH - 8 : 56, height: 44, marginLeft: 4,
+              borderRadius: 8, background: "transparent", border: "none",
+              color: colors.textDim, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "flex-start",
+              gap: 14, paddingLeft: 17,
+              transform: logoutPressed ? "scale(0.96)" : "scale(1)",
+              transition: "transform 0.12s cubic-bezier(.4,0,.2,1), color 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
             }}
           >
-            <LogOut size={16} strokeWidth={1.75} />
+            <span style={{ display: "flex", flexShrink: 0 }}>
+              <LogOut size={16} strokeWidth={1.75} />
+            </span>
+            <span style={{
+              display: "inline-block", overflow: "hidden",
+              width: expanded ? "auto" : 0,
+              fontSize: FONT.size.body, fontWeight: 500, whiteSpace: "nowrap",
+              opacity: expanded ? 1 : 0, transition: "opacity 0.15s, width 0.25s cubic-bezier(.4,0,.2,1)",
+            }}>
+              <LetterStagger text="Sign out" accentColor={colors.accent} revealed={logoutHovered} />
+            </span>
           </button>
         )}
       </div>

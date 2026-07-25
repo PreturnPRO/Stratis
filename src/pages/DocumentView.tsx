@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { COLORS, RADIUS, FONT, LETTER_SPACING, SHADOW, GRADIENT, SPACE } from '../tokens/colors'
+import { Pencil } from 'lucide-react'
+import { RADIUS, FONT, LETTER_SPACING, SHADOW, GRADIENT, SPACE } from '../tokens/colors'
+import { useTheme } from '../hooks/useTheme'
 import { useAuth } from '../context/AuthContext'
 import { Button, Modal } from '../components/ui'
 import { Markdown } from '../components/Markdown'
@@ -27,10 +29,12 @@ interface Props {
   onNav?: (id: string, params?: Record<string, string>) => void
 }
 
-const PRIORITY_COLOR: Record<string, string> = {
-  HIGH: COLORS.red,
-  MEDIUM: COLORS.amber,
-  LOW: COLORS.textMuted,
+function priorityColor(colors: Record<string, string>): Record<string, string> {
+  return {
+    HIGH: colors.red,
+    MEDIUM: colors.amber,
+    LOW: colors.textMuted,
+  }
 }
 
 function humanizeProjectId(id?: string | null): string {
@@ -39,6 +43,8 @@ function humanizeProjectId(id?: string | null): string {
 }
 
 export default function DocumentView({ sessionId, projectId, onNav }: Props) {
+  const { colors } = useTheme()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   const { token, user } = useAuth()
   const isFacilitator = user?.role === 'facilitator' || user?.role === 'admin'
 
@@ -377,7 +383,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
           </button>
         )}
 
-        <div style={styles.tocLabel}>On this page</div>
+        <div style={styles.tocLabel}>Contents</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {PM_SECTIONS.map((s) => {
             const hasProposed = (reviewsBySection[s.key]?.length ?? 0) > 0
@@ -392,7 +398,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
 
         {versions.length > 0 && (
           <div style={{ marginTop: SPACE[8] }}>
-            <div style={styles.tocLabel}>Version history</div>
+            <div style={styles.tocLabel}>Versions</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {versions.slice(0, 8).map((v) => {
                 const active = viewingVersion === v.version
@@ -400,7 +406,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
                 return (
                   <button
                     key={v.id}
-                    style={{ ...styles.historyRow, ...(active ? styles.historyRowActive : {}) }}
+                    style={{ ...styles.historyRow, ...(isLatest ? styles.historyRowActive : {}), ...(active && !isLatest ? styles.historyRowViewing : {}) }}
                     onClick={() => (isLatest ? exitVersionView() : void loadVersion(v.version))}
                     title={isLatest ? 'Current version' : 'View this version'}
                   >
@@ -415,6 +421,12 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
             </div>
           </div>
         )}
+
+        {isFacilitator && docState && !isHistorical && (
+          <button style={styles.removeDocBtn} onClick={() => setShowRemoveDoc(true)}>
+            Remove document…
+          </button>
+        )}
       </nav>
 
       {/* ── Article ──────────────────────────────────────────────────────── */}
@@ -422,7 +434,12 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
         <article style={styles.article}>
           <header style={styles.articleHeader}>
             <div style={{ minWidth: 0 }}>
-              <div style={styles.kicker}>PM DOCUMENT · SOURCE OF TRUTH</div>
+              <div style={styles.kicker}>
+                PM DOCUMENT · SOURCE OF TRUTH
+                <span style={styles.kickerVersion}>
+                  {isHistorical ? ` · v${viewingVersion} — SNAPSHOT` : ` · v${version} — CURRENT`}
+                </span>
+              </div>
               <h1 style={styles.bigTitle}>{title}</h1>
               <p style={styles.subtitle}>
                 {isHistorical
@@ -430,11 +447,6 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
                   : `Version ${version}${proposed ? ` · reviewing ${proposedCount} change${proposedCount === 1 ? '' : 's'} for v${version + 1}` : ''}`}
               </p>
             </div>
-            {isFacilitator && docState && !isHistorical && (
-              <Button variant="danger" size="sm" onClick={() => setShowRemoveDoc(true)}>
-                Remove document
-              </Button>
-            )}
           </header>
 
           {error && <div style={styles.errorBox}>{error}</div>}
@@ -442,7 +454,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
           {/* Viewing a past version */}
           {isHistorical && (
             <div style={styles.historyBanner}>
-              <div style={{ flex: 1, minWidth: 0, fontSize: FONT.size.body, fontWeight: 600, color: COLORS.cyan }}>
+              <div style={{ flex: 1, minWidth: 0, fontSize: FONT.size.body, fontWeight: 600, color: colors.cyan }}>
                 You're viewing version {viewingVersion} — the current document is v{version}.
               </div>
               <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
@@ -488,12 +500,13 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
           )}
 
           {/* Sections */}
-          {displayState && PM_SECTIONS.map((s) => {
+          {displayState && PM_SECTIONS.map((s, i) => {
             const sec = displayState.sections[s.key]
             const secReviews = isHistorical ? [] : (reviewsBySection[s.key] ?? [])
             return (
               <section key={s.key} id={`sec-${s.key}`} style={styles.section}>
                 <div style={styles.sectionHead}>
+                  <span style={styles.sectionNumber}>{String(i + 1).padStart(2, '0')}</span>
                   <h2 style={styles.sectionTitle}>{sec?.title ?? s.title}</h2>
                   {isFacilitator && !isHistorical && !secReviews.length && (
                     <button
@@ -501,7 +514,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
                       aria-label={`Edit ${sec?.title ?? s.title}`}
                       onClick={() => openEditSection(s.key, sec?.content ?? '')}
                     >
-                      Edit
+                      <Pencil size={13} strokeWidth={1.75} />
                     </button>
                   )}
                 </div>
@@ -569,7 +582,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
             </>
           }
         >
-          <p style={{ color: COLORS.textMuted, fontSize: FONT.size.body, margin: 0, lineHeight: 1.6 }}>
+          <p style={{ color: colors.textMuted, fontSize: FONT.size.body, margin: 0, lineHeight: 1.6 }}>
             This permanently deletes the PM document and its entire version history. This can't be undone.
           </p>
         </Modal>
@@ -590,7 +603,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
             </>
           }
         >
-          <p style={{ color: COLORS.textMuted, fontSize: FONT.size.body, margin: 0, lineHeight: 1.6 }}>
+          <p style={{ color: colors.textMuted, fontSize: FONT.size.body, margin: 0, lineHeight: 1.6 }}>
             This makes version {showRestore}'s content the current document, saved as a new
             version (v{version + 1}). Nothing is lost — the present version stays in history.
           </p>
@@ -611,10 +624,13 @@ function ProposedChange({
   onToggleEdit: () => void
   onContent: (c: string) => void
 }) {
+  const { colors } = useTheme()
+  const styles = useMemo(() => makeStyles(colors), [colors])
   const { patch, decision, content, editing } = review
-  const priorityColor = PRIORITY_COLOR[patch.review_priority ?? 'LOW'] ?? COLORS.textMuted
-  const accent =
-    decision === 'approved' ? COLORS.teal : decision === 'rejected' ? COLORS.red : COLORS.amber
+  const priority = priorityColor(colors)[patch.review_priority ?? 'LOW'] ?? colors.textMuted
+  const stateAccent =
+    decision === 'approved' ? colors.teal : decision === 'rejected' ? colors.red : colors.accent
+  const isPending = decision === 'pending'
   const [hovered, setHovered] = useState(false)
 
   return (
@@ -623,21 +639,22 @@ function ProposedChange({
       onMouseLeave={() => setHovered(false)}
       style={{
         ...styles.proposed,
-        borderColor: `${accent}66`,
+        background: isPending ? colors.amberSubtle : styles.proposed.background,
+        borderColor: isPending ? colors.accentDim : `${stateAccent}66`,
         opacity: decision === 'rejected' ? 0.6 : 1,
-        backgroundImage: `linear-gradient(${accent}0d, ${accent}0d)`,
-        boxShadow: hovered ? SHADOW.xs : 'none',
+        backgroundImage: isPending ? 'none' : `linear-gradient(${stateAccent}0d, ${stateAccent}0d)`,
+        boxShadow: isPending ? SHADOW.glow(colors.accent) : hovered ? SHADOW.xs : 'none',
         transition: 'box-shadow 0.18s ease',
       }}
     >
       <div style={styles.proposedHead}>
-        <span style={{ ...styles.proposedTag, color: accent, background: `${accent}1f` }}>
+        <span style={{ ...styles.proposedTag, color: stateAccent, background: `${stateAccent}1f` }}>
           {decision === 'approved' ? 'Approved' : decision === 'rejected' ? 'Rejected' : 'Proposed change'}
           {' · '}
           {patch.operation.replace(/_/g, ' ')}
         </span>
         {patch.review_priority && (
-          <span style={{ ...styles.proposedPriority, color: priorityColor }}>{patch.review_priority}</span>
+          <span style={{ ...styles.proposedPriority, color: priority }}>{patch.review_priority}</span>
         )}
       </div>
 
@@ -656,14 +673,20 @@ function ProposedChange({
 
       <div style={styles.proposedActions}>
         <button
-          style={{ ...styles.reviewBtn, color: COLORS.teal, borderColor: `${COLORS.teal}66` }}
+          style={{
+            ...styles.reviewBtn,
+            color: decision === 'approved' ? colors.onAccent : colors.accent,
+            background: decision === 'approved' ? colors.accent : 'transparent',
+            borderColor: colors.accentDim,
+            boxShadow: decision === 'approved' ? SHADOW.glow(colors.accent) : 'none',
+          }}
           onClick={onApprove}
         >
           {decision === 'approved' ? '✓ Approved' : 'Approve'}
         </button>
         <button style={styles.reviewBtn} onClick={onToggleEdit}>{editing ? 'Done' : 'Edit'}</button>
         <button
-          style={{ ...styles.reviewBtn, color: COLORS.red, borderColor: `${COLORS.red}66` }}
+          style={{ ...styles.reviewBtn, color: colors.red, borderColor: `${colors.red}66` }}
           onClick={onReject}
         >
           {decision === 'rejected' ? '✕ Rejected' : 'Reject'}
@@ -678,137 +701,156 @@ function formatDate(value: string): string {
   return Number.isNaN(d.getTime()) ? value : d.toLocaleString()
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  page: { padding: '40px 60px', overflowY: 'auto', flex: 1, color: COLORS.textPrimary },
-  shell: { display: 'flex', flex: 1, height: '100%', minHeight: 0, background: COLORS.bg },
+function makeStyles(colors: Record<string, string>): Record<string, React.CSSProperties> {
+  return {
+    page: { padding: '40px 60px', overflowY: 'auto', flex: 1, color: colors.textPrimary },
+    shell: { display: 'flex', flex: 1, height: '100%', minHeight: 0, background: colors.bg },
 
-  // ToC
-  toc: {
-    width: 248,
-    flexShrink: 0,
-    borderRight: `1px solid ${COLORS.border}`,
-    padding: '40px 20px',
-    overflowY: 'auto',
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  tocLabel: {
-    fontSize: FONT.size.label, fontWeight: 700, letterSpacing: LETTER_SPACING.label, color: COLORS.textMuted,
-    textTransform: 'uppercase', marginBottom: 12,
-  },
-  tocLink: {
-    display: 'flex', alignItems: 'center', gap: 8,
-    background: 'transparent', border: 'none', borderRadius: RADIUS.sm,
-    padding: '7px 10px', fontSize: FONT.size.body, color: COLORS.textMuted, cursor: 'pointer',
-  },
-  tocDot: {
-    width: 6, height: 6, borderRadius: '50%', background: COLORS.amber, flexShrink: 0,
-    animation: 'pulse 2.4s ease-in-out infinite',
-  },
-  backBtn: {
-    background: 'transparent', border: 'none', color: COLORS.accent,
-    cursor: 'pointer', fontSize: FONT.size.label, padding: 0, marginBottom: SPACE[6], textAlign: 'left',
-  },
+    // ToC
+    toc: {
+      width: 220,
+      flexShrink: 0,
+      borderRight: `1px solid ${colors.border}`,
+      padding: '40px 20px',
+      overflowY: 'auto',
+      display: 'flex',
+      flexDirection: 'column',
+    },
+    tocLabel: {
+      fontFamily: FONT.mono, fontSize: FONT.size.label, fontWeight: 700, letterSpacing: LETTER_SPACING.label, color: colors.textMuted,
+      textTransform: 'uppercase', marginBottom: 12,
+    },
+    tocLink: {
+      display: 'flex', alignItems: 'center', gap: 8,
+      background: 'transparent', border: 'none', borderRadius: RADIUS.sm,
+      padding: '7px 10px', fontSize: FONT.size.body, color: colors.textMuted, cursor: 'pointer',
+    },
+    tocDot: {
+      width: 6, height: 6, borderRadius: '50%', background: colors.amber, flexShrink: 0,
+      animation: 'pulse 2.4s ease-in-out infinite',
+    },
+    backBtn: {
+      background: 'transparent', border: 'none', color: colors.accent,
+      cursor: 'pointer', fontSize: FONT.size.label, padding: 0, marginBottom: SPACE[6], textAlign: 'left',
+    },
+    removeDocBtn: {
+      marginTop: 'auto', background: 'transparent', border: `1px dashed ${colors.border}`,
+      borderRadius: RADIUS.sm, color: colors.textMuted, fontSize: FONT.size.label,
+      padding: '9px 10px', cursor: 'pointer', textAlign: 'left',
+    },
 
-  // Article
-  articleScroll: { flex: 1, overflowY: 'auto', minWidth: 0, minHeight: 0 },
-  article: { maxWidth: 760, margin: '0 auto', padding: '48px 40px 80px' },
-  articleHeader: {
-    display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
-    gap: 16, marginBottom: SPACE[8],
-  },
-  kicker: { fontSize: FONT.size.micro, fontWeight: 700, letterSpacing: LETTER_SPACING.eyebrow, color: COLORS.accent, marginBottom: SPACE[2.5] },
-  bigTitle: { fontSize: FONT.size.display, fontWeight: 700, margin: 0, color: COLORS.textPrimary, lineHeight: 1.15, letterSpacing: -0.5 },
-  subtitle: { fontSize: FONT.size.body, color: COLORS.textMuted, margin: '10px 0 0' },
-  dim: { color: COLORS.textMuted },
+    // Article
+    articleScroll: { flex: 1, overflowY: 'auto', minWidth: 0, minHeight: 0 },
+    article: { maxWidth: 1060, margin: '0 auto', padding: '44px 56px' },
+    articleHeader: {
+      display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+      gap: 16, marginBottom: SPACE[8],
+    },
+    kicker: {
+      fontFamily: FONT.mono, fontSize: FONT.size.micro, fontWeight: 700, letterSpacing: LETTER_SPACING.eyebrow,
+      color: colors.accent, marginBottom: SPACE[2.5],
+    },
+    kickerVersion: { color: colors.textMuted },
+    bigTitle: { fontSize: FONT.size.display, fontWeight: 700, margin: 0, color: colors.textPrimary, lineHeight: 1.15, letterSpacing: -0.5 },
+    subtitle: { fontSize: FONT.size.body, color: colors.textMuted, margin: '10px 0 0' },
+    dim: { color: colors.textMuted },
 
-  errorBox: {
-    background: COLORS.redBg, border: `1px solid ${COLORS.red}`, color: COLORS.textPrimary,
-    borderRadius: RADIUS.md, padding: '10px 14px', fontSize: FONT.size.body, marginBottom: 20,
-  },
+    errorBox: {
+      background: colors.redBg, border: `1px solid ${colors.red}`, color: colors.textPrimary,
+      borderRadius: RADIUS.md, padding: '10px 14px', fontSize: FONT.size.body, marginBottom: 20,
+    },
 
-  reviewBanner: {
-    display: 'flex', alignItems: 'center', gap: 16,
-    background: COLORS.amberSubtle,
-    backgroundImage: GRADIENT.surfaceSheen,
-    border: `1px solid ${COLORS.amber}55`,
-    borderRadius: RADIUS.lg, padding: '14px 16px', marginBottom: 32,
-    boxShadow: SHADOW.xs,
-  },
-  reviewBannerTitle: { fontSize: FONT.size.body, fontWeight: 600, color: COLORS.amber },
-  reviewBannerSummary: { fontSize: FONT.size.label, color: COLORS.textMuted, marginTop: 4, lineHeight: 1.5 },
-  noChanges: {
-    background: COLORS.surfaceMuted, border: `1px solid ${COLORS.border}`,
-    borderRadius: RADIUS.md, padding: '12px 16px', marginBottom: 32,
-    fontSize: FONT.size.body, color: COLORS.textMuted,
-  },
+    reviewBanner: {
+      display: 'flex', alignItems: 'center', gap: 16,
+      background: colors.amberSubtle,
+      backgroundImage: GRADIENT.surfaceSheen,
+      border: `1px solid ${colors.amber}55`,
+      borderRadius: RADIUS.lg, padding: '14px 16px', marginBottom: 32,
+      boxShadow: SHADOW.xs,
+    },
+    reviewBannerTitle: { fontSize: FONT.size.body, fontWeight: 600, color: colors.amber },
+    reviewBannerSummary: { fontSize: FONT.size.label, color: colors.textMuted, marginTop: 4, lineHeight: 1.5 },
+    noChanges: {
+      background: colors.surfaceMuted, border: `1px solid ${colors.border}`,
+      borderRadius: RADIUS.md, padding: '12px 16px', marginBottom: 32,
+      fontSize: FONT.size.body, color: colors.textMuted,
+    },
 
-  section: { marginBottom: 40, scrollMarginTop: 24 },
-  sectionHead: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    gap: 12, marginBottom: 12, paddingBottom: SPACE[2.5], borderBottom: `1px solid ${COLORS.border}`,
-  },
-  sectionTitle: { fontSize: FONT.size.heading, fontWeight: 600, margin: 0, color: COLORS.textPrimary, letterSpacing: -0.2 },
-  editLink: {
-    background: 'transparent', border: 'none', color: COLORS.textMuted,
-    fontSize: FONT.size.label, cursor: 'pointer', padding: '2px 6px', borderRadius: RADIUS.sm,
-  },
+    section: { marginBottom: 40, scrollMarginTop: 24 },
+    sectionHead: {
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      gap: 12, marginBottom: 12, paddingBottom: SPACE[2.5], borderBottom: `1px solid ${colors.border}`,
+    },
+    sectionNumber: {
+      fontFamily: FONT.mono, fontSize: FONT.size.caption, fontWeight: 700, color: colors.textMuted,
+      marginRight: -4,
+    },
+    sectionTitle: { flex: 1, fontSize: FONT.size.heading, fontWeight: 600, margin: 0, color: colors.textPrimary, letterSpacing: -0.2 },
+    editLink: {
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'transparent', border: 'none', color: colors.textMuted,
+      cursor: 'pointer', padding: '4px', borderRadius: RADIUS.sm,
+    },
 
-  // Proposed change card
-  proposed: {
-    background: COLORS.surface, border: '1px solid', borderRadius: RADIUS.md,
-    padding: '14px 16px', marginTop: SPACE[4], display: 'flex', flexDirection: 'column', gap: 8,
-  },
-  proposedHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  proposedTag: {
-    fontSize: FONT.size.micro, fontWeight: 700, letterSpacing: LETTER_SPACING.wide, textTransform: 'uppercase',
-    padding: '3px 9px', borderRadius: RADIUS.pill,
-  },
-  proposedPriority: { fontSize: FONT.size.micro, fontWeight: 700 },
-  proposedReason: { fontSize: FONT.size.label, color: COLORS.textMuted, margin: 0, fontStyle: 'italic' },
-  proposedEditor: {
-    width: '100%', minHeight: 120, background: COLORS.bg,
-    border: `1px solid ${COLORS.border}`, color: COLORS.textPrimary,
-    borderRadius: RADIUS.sm, padding: SPACE[2.5], fontSize: FONT.size.body, fontFamily: 'inherit',
-    resize: 'vertical', outline: 'none', lineHeight: 1.6,
-  },
-  proposedActions: { display: 'flex', gap: SPACE[1.5], justifyContent: 'flex-end', marginTop: 2 },
-  reviewBtn: {
-    padding: '4px 11px', fontSize: FONT.size.caption, fontWeight: 600, borderRadius: RADIUS.sm,
-    border: `1px solid ${COLORS.border}`, background: 'transparent',
-    color: COLORS.textMuted, cursor: 'pointer',
-  },
+    // Proposed change card
+    proposed: {
+      background: colors.surface, border: '1px solid', borderRadius: 10,
+      padding: '14px 16px', marginTop: SPACE[4], display: 'flex', flexDirection: 'column', gap: 8,
+    },
+    proposedHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+    proposedTag: {
+      fontFamily: FONT.mono, fontSize: FONT.size.micro, fontWeight: 700, letterSpacing: LETTER_SPACING.wide, textTransform: 'uppercase',
+      padding: '3px 9px', borderRadius: RADIUS.pill,
+    },
+    proposedPriority: { fontFamily: FONT.mono, fontSize: FONT.size.micro, fontWeight: 700 },
+    proposedReason: { fontSize: FONT.size.label, color: colors.textMuted, margin: 0, fontStyle: 'italic' },
+    proposedEditor: {
+      width: '100%', minHeight: 120, background: colors.bg,
+      border: `1px solid ${colors.border}`, color: colors.textPrimary,
+      borderRadius: RADIUS.sm, padding: SPACE[2.5], fontSize: FONT.size.body, fontFamily: 'inherit',
+      resize: 'vertical', outline: 'none', lineHeight: 1.6,
+    },
+    proposedActions: { display: 'flex', gap: SPACE[1.5], justifyContent: 'flex-end', marginTop: 2 },
+    reviewBtn: {
+      padding: '4px 11px', fontSize: FONT.size.caption, fontWeight: 600, borderRadius: RADIUS.sm,
+      border: `1px solid ${colors.border}`, background: 'transparent',
+      color: colors.textMuted, cursor: 'pointer',
+    },
 
-  // Picker
-  pickerList: { display: 'flex', flexDirection: 'column', gap: SPACE[2.5], maxWidth: 640 },
-  pickerRow: {
-    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-    background: COLORS.surface, border: `1px solid ${COLORS.border}`,
-    borderRadius: RADIUS.lg, padding: '16px 18px', cursor: 'pointer', textAlign: 'left',
-  },
-  pickerName: { fontSize: FONT.size.body, fontWeight: 600, color: COLORS.textPrimary },
+    // Picker
+    pickerList: { display: 'flex', flexDirection: 'column', gap: SPACE[2.5], maxWidth: 640 },
+    pickerRow: {
+      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      background: colors.surface, border: `1px solid ${colors.border}`,
+      borderRadius: RADIUS.lg, padding: '16px 18px', cursor: 'pointer', textAlign: 'left',
+    },
+    pickerName: { fontSize: FONT.size.body, fontWeight: 600, color: colors.textPrimary },
 
-  // History (ToC)
-  historyRow: {
-    display: 'flex', gap: 8, alignItems: 'flex-start', width: '100%',
-    background: 'transparent', border: '1px solid transparent', borderRadius: RADIUS.sm,
-    padding: '7px 8px', cursor: 'pointer', textAlign: 'left',
-  },
-  historyRowActive: {
-    background: COLORS.cyanBg, border: `1px solid ${COLORS.cyan}55`,
-  },
-  historyBanner: {
-    display: 'flex', alignItems: 'center', gap: 16,
-    background: COLORS.cyanBg, border: `1px solid ${COLORS.cyan}55`,
-    borderRadius: RADIUS.lg, padding: '14px 16px', marginBottom: 32,
-  },
-  historyVersion: { fontSize: FONT.size.caption, fontWeight: 700, color: COLORS.accent, minWidth: 24 },
-  historySummary: { fontSize: FONT.size.label, color: COLORS.textMuted, lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis' },
-  historyDate: { fontSize: FONT.size.micro, color: COLORS.textMuted, marginTop: 2 },
+    // History (ToC)
+    historyRow: {
+      display: 'flex', gap: 8, alignItems: 'flex-start', width: '100%',
+      background: 'transparent', border: '1px solid transparent', borderRadius: RADIUS.sm,
+      padding: '7px 8px', cursor: 'pointer', textAlign: 'left',
+    },
+    historyRowActive: {
+      background: colors.amberSubtle, border: `1px solid ${colors.accentDim}`,
+    },
+    historyRowViewing: {
+      background: colors.cyanBg, border: `1px solid ${colors.cyan}55`,
+    },
+    historyBanner: {
+      display: 'flex', alignItems: 'center', gap: 16,
+      background: colors.cyanBg, border: `1px solid ${colors.cyan}55`,
+      borderRadius: RADIUS.lg, padding: '14px 16px', marginBottom: 32,
+    },
+    historyVersion: { fontFamily: FONT.mono, fontSize: FONT.size.caption, fontWeight: 700, color: colors.accent, minWidth: 24 },
+    historySummary: { fontSize: FONT.size.label, color: colors.textMuted, lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis' },
+    historyDate: { fontFamily: FONT.mono, fontSize: FONT.size.micro, color: colors.textMuted, marginTop: 2 },
 
-  textarea: {
-    width: '100%', background: COLORS.bg, border: `1px solid ${COLORS.border}`,
-    color: COLORS.textPrimary, borderRadius: RADIUS.sm, padding: '10px 12px',
-    fontSize: FONT.size.body, fontFamily: 'inherit', resize: 'vertical', outline: 'none', lineHeight: 1.6,
-  },
+    textarea: {
+      width: '100%', background: colors.bg, border: `1px solid ${colors.border}`,
+      color: colors.textPrimary, borderRadius: RADIUS.sm, padding: '10px 12px',
+      fontSize: FONT.size.body, fontFamily: 'inherit', resize: 'vertical', outline: 'none', lineHeight: 1.6,
+    },
+  }
 }

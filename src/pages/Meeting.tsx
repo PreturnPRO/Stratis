@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Mic, Square, ChevronDown, ClipboardCheck } from "lucide-react";
-import { COLORS, FONT, SHADOW, LETTER_SPACING } from "../constants";
-import { RADIUS, SPACE } from "../tokens/colors";
+import { FONT, SHADOW, LETTER_SPACING, RADIUS, SPACE } from "../tokens/colors";
+import { useTheme } from "../hooks/useTheme";
 import { Button, Chip, Modal } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { SuggestionCardStack } from "../components/SuggestionCardStack";
@@ -116,6 +116,7 @@ function formatElapsed(totalSeconds: number): string {
 }
 
 function RecDot() {
+  const { colors } = useTheme();
   return (
     <span style={{ position: "relative", display: "inline-flex", width: 9, height: 9 }}>
       <span
@@ -123,7 +124,7 @@ function RecDot() {
           position: "absolute",
           inset: 0,
           borderRadius: "50%",
-          background: COLORS.red,
+          background: colors.red,
           animation: "recPulse 1.5s ease-out infinite",
         }}
       />
@@ -133,11 +134,38 @@ function RecDot() {
           width: 9,
           height: 9,
           borderRadius: "50%",
-          background: COLORS.red,
-          boxShadow: SHADOW.glow(COLORS.red),
+          background: colors.red,
+          boxShadow: SHADOW.glow(colors.red),
         }}
       />
     </span>
+  );
+}
+
+// Stable per-speaker color, reusing the name-hash idiom from Sidebar/Projects
+// so the same speaker always maps to the same one of the 3 speaker colors.
+function speakerColor(name: string, spkColors: readonly string[]): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return spkColors[Math.abs(hash) % spkColors.length];
+}
+
+// Small agenda ring beside the header's mono elapsed-time readout — additive
+// to the existing gutter AgendaPulse, per the handoff's 36px/r=15/stroke-3
+// header spec. Reuses the same elapsed/duration values driving the mm:ss text.
+function AgendaPulseRing({ elapsed, duration, phaseColor }: { elapsed: number; duration: number; phaseColor: string }) {
+  const circumference = 94.2;
+  const pct = duration > 0 ? Math.min(1, elapsed / duration) : 0;
+  return (
+    <svg width={36} height={36} viewBox="0 0 36 36" style={{ transform: "rotate(-90deg)" }} aria-hidden>
+      <circle cx={18} cy={18} r={15} fill="none" stroke={phaseColor} strokeOpacity={0.2} strokeWidth={3} />
+      <circle
+        cx={18} cy={18} r={15} fill="none" stroke={phaseColor} strokeWidth={3}
+        strokeDasharray={circumference} strokeDashoffset={circumference * (1 - pct)}
+        strokeLinecap="round"
+        style={{ transition: "stroke-dashoffset 1s linear, stroke 0.3s ease" }}
+      />
+    </svg>
   );
 }
 
@@ -156,6 +184,7 @@ function StatusDot({ color }: { color: string }) {
 }
 
 export default function Meeting({ onNav }: MeetingProps) {
+  const { colors } = useTheme();
   const { token, user } = useAuth();
   const recovery = useSessionRecovery({ token });
   const ai = useAiBlocks();
@@ -609,7 +638,7 @@ useEffect(() => {
   const remainingSec = durationMin != null && elapsed != null ? durationMin * 60 - elapsed : null;
   const inWrapUp = remainingSec != null && remainingSec <= WRAP_UP_SEC && remainingSec > 0;
   const overtime = remainingSec != null && remainingSec <= 0;
-  const timeColor = overtime ? COLORS.red : inWrapUp ? COLORS.orange : COLORS.textMuted;
+  const timeColor = overtime ? colors.red : inWrapUp ? colors.orange : colors.textMuted;
 
   const speechActive = lastSpeechMs != null && nowMs - lastSpeechMs < 6000;
   const presenceMode: PresenceMode = !isRecording
@@ -625,7 +654,7 @@ useEffect(() => {
 
   if (recovery.status === "loading" && !sessionId) {
     return (
-      <div style={{ padding: "40px 60px", overflowY: "auto", flex: 1, background: COLORS.bg }}>
+      <div style={{ padding: "40px 60px", overflowY: "auto", flex: 1, background: colors.bg }}>
         <LoadingState count={3} persist />
       </div>
     );
@@ -633,10 +662,10 @@ useEffect(() => {
 
   if (!sessionId) {
     return (
-      <div style={{ padding: "40px 60px", overflowY: "auto", flex: 1, background: COLORS.bg }}>
+      <div style={{ padding: "40px 60px", overflowY: "auto", flex: 1, background: colors.bg }}>
         <h1
           style={{
-            color: COLORS.text,
+            color: colors.text,
             fontSize: FONT.size.title,
             fontWeight: 600,
             margin: "0 0 24px",
@@ -650,13 +679,13 @@ useEffect(() => {
   }
 
   return (
-    <div style={{ display: "flex", flex: 1, height: "100%", minHeight: 0, background: COLORS.bg }}>
+    <div style={{ display: "flex", flex: 1, height: "100%", minHeight: 0, background: colors.bg }}>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0 }}>
         
         {/* Header */}
         <div
           style={{
-            borderBottom: `1px solid ${COLORS.border}`,
+            borderBottom: `1px solid ${colors.border}`,
             padding: "16px 24px",
             display: "flex",
             alignItems: "center",
@@ -668,7 +697,7 @@ useEffect(() => {
           <div style={{ minWidth: 0 }}>
             <h1
               style={{
-                color: COLORS.text,
+                color: colors.text,
                 fontSize: FONT.size.heading,
                 fontWeight: 600,
                 margin: "0 0 8px",
@@ -680,15 +709,15 @@ useEffect(() => {
               {meetingTitle}
             </h1>
             <div style={{ display: "flex", alignItems: "center", gap: SPACE[2.5] }}>
-              <Chip icon={isRecording ? <RecDot /> : <StatusDot color={COLORS.textDim} />} mono>
+              <Chip icon={isRecording ? <RecDot /> : <StatusDot color={colors.textDim} />} mono>
                 {isRecording ? "LIVE" : "STANDBY"}
               </Chip>
-              <span style={{ fontSize: FONT.size.caption, color: COLORS.textMuted }}>
+              <span style={{ fontSize: FONT.size.caption, color: colors.textMuted, fontFamily: FONT.mono }}>
                 Session {sessionShort}
               </span>
               {connected && (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: FONT.size.micro, color: COLORS.cyan }}>
-                  <span style={{ width: 4, height: 4, borderRadius: "50%", background: COLORS.cyan }} />
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: FONT.size.micro, color: colors.cyan, fontFamily: FONT.mono }}>
+                  <span style={{ width: 4, height: 4, borderRadius: "50%", background: colors.cyan }} />
                   WEBSOCKET SYNCED
                 </span>
               )}
@@ -703,15 +732,24 @@ useEffect(() => {
 
           <div style={{ display: "flex", alignItems: "center", gap: SPACE[4] }}>
             {elapsed != null && (
-              <div style={{ textAlign: "right" }}>
-                <div style={{ fontSize: FONT.size.subheading, fontWeight: 700, color: timeColor }}>
-                  {formatElapsed(elapsed)}
-                </div>
-                {durationMin && (
-                  <div style={{ fontSize: FONT.size.micro, color: COLORS.textMuted }}>
-                    TARGET: {durationMin}m {overtime && "(OVERTIME)"}
-                  </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {durationMin != null && (
+                  <AgendaPulseRing
+                    elapsed={elapsed}
+                    duration={durationMin * 60}
+                    phaseColor={overtime ? colors.red : inWrapUp ? colors.orange : colors.accent}
+                  />
                 )}
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontFamily: FONT.mono, fontSize: FONT.size.subheading, fontWeight: 700, color: timeColor }}>
+                    {formatElapsed(elapsed)}
+                  </div>
+                  {durationMin && (
+                    <div style={{ fontSize: FONT.size.micro, color: colors.textMuted }}>
+                      TARGET: {durationMin}m {overtime && "(OVERTIME)"}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -765,11 +803,11 @@ useEffect(() => {
         {error && (
           <div
             style={{
-              background: COLORS.dangerBg,
-              borderBottom: `1px solid ${COLORS.red}`,
+              background: colors.dangerBg,
+              borderBottom: `1px solid ${colors.red}`,
               padding: "10px 24px",
               fontSize: FONT.size.label,
-              color: COLORS.red,
+              color: colors.red,
             }}
           >
             {error}
@@ -782,8 +820,8 @@ useEffect(() => {
           {/* Column 1: Live Ingestion Feed */}
           <div
             style={{
-              background: COLORS.surface,
-              border: `1px solid ${COLORS.border}`,
+              background: colors.surface,
+              border: `1px solid ${colors.border}`,
               borderRadius: RADIUS.lg,
               display: "flex",
               flexDirection: "column",
@@ -791,12 +829,12 @@ useEffect(() => {
               position: "relative",
             }}
           >
-            <div style={{ borderBottom: `1px solid ${COLORS.border}`, padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: FONT.size.label, fontWeight: 700, color: COLORS.textMuted, letterSpacing: 0.5, textTransform: "uppercase" }}>
+            <div style={{ borderBottom: `1px solid ${colors.border}`, padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: FONT.size.label, fontWeight: 700, color: colors.textMuted, letterSpacing: 0.5, textTransform: "uppercase" }}>
                 Continuous STT Capture
               </span>
               {sendingChunk && (
-                <span style={{ fontSize: FONT.size.micro, color: COLORS.accent }}>
+                <span style={{ fontSize: FONT.size.micro, color: colors.accent }}>
                   Flushing chunk...
                 </span>
               )}
@@ -826,43 +864,48 @@ useEffect(() => {
                 </div>
               ) : (
                 <>
-                  {transcriptGroups.map((row) => (
-                    <div
-                      key={row.id}
-                      style={{
-                        borderBottom: `1px solid ${COLORS.border}`,
-                        paddingBottom: SPACE[2.5],
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                        <span style={{ fontWeight: 600, fontSize: FONT.size.body, color: COLORS.textPrimary }}>
-                          {row.speaker}
-                        </span>
-                        <span style={{ fontSize: FONT.size.micro, color: COLORS.textDim }}>
-                          {formatTime(row.timestamp)}
-                        </span>
+                  {transcriptGroups.map((row) => {
+                    const spkColor = speakerColor(row.speaker, [colors.spkA, colors.spkB, colors.spkC]);
+                    return (
+                      <div
+                        key={row.id}
+                        style={{
+                          borderLeft: `2px solid ${spkColor}`,
+                          borderBottom: `1px solid ${colors.border}`,
+                          paddingLeft: SPACE[2.5],
+                          paddingBottom: SPACE[2.5],
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                          <span style={{ fontWeight: 600, fontSize: FONT.size.body, color: spkColor }}>
+                            {row.speaker}
+                          </span>
+                          <span style={{ fontSize: FONT.size.micro, color: colors.textDim, fontFamily: FONT.mono }}>
+                            {formatTime(row.timestamp)}
+                          </span>
+                        </div>
+                        <p style={{ margin: 0, fontSize: FONT.size.body, color: colors.textMuted, lineHeight: 1.5 }}>
+                          {row.text}
+                        </p>
                       </div>
-                      <p style={{ margin: 0, fontSize: FONT.size.body, color: COLORS.textMuted, lineHeight: 1.5 }}>
-                        {row.text}
-                      </p>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   {(pendingText || liveText) && (
-                    <div style={{ paddingBottom: SPACE[2.5], opacity: 0.7 }}>
+                    <div style={{ borderLeft: "2px solid transparent", paddingLeft: SPACE[2.5], paddingBottom: SPACE[2.5], opacity: 0.7 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                        <span style={{ fontWeight: 600, fontSize: FONT.size.body, color: COLORS.textMuted }}>
+                        <span style={{ fontWeight: 600, fontSize: FONT.size.body, color: colors.textMuted }}>
                           {user?.name || "Facilitator"}
                         </span>
-                        <span style={{ fontSize: FONT.size.micro, color: COLORS.accent, letterSpacing: 0.5 }}>
+                        <span style={{ fontSize: FONT.size.micro, color: colors.accent, letterSpacing: 0.5 }}>
                           LIVE
                         </span>
                       </div>
-                      <p style={{ margin: 0, fontSize: FONT.size.body, color: COLORS.textDim, lineHeight: 1.5, fontStyle: "italic" }}>
+                      <p style={{ margin: 0, fontSize: FONT.size.body, color: colors.textDim, lineHeight: 1.5, fontStyle: "italic" }}>
                         {(pendingText + " " + liveText).trim()}{" "}
                         <span
                           aria-hidden
-                          style={{ color: COLORS.accent, animation: "pulse 1.2s ease-in-out infinite" }}
+                          style={{ color: colors.accent, animation: "pulse 1.2s ease-in-out infinite" }}
                         >
                           ▌
                         </span>
@@ -889,9 +932,9 @@ useEffect(() => {
                   gap: 6,
                   padding: "7px 12px 7px 14px",
                   borderRadius: RADIUS.pill,
-                  background: COLORS.surfaceElevated,
-                  border: `1px solid ${COLORS.borderLight}`,
-                  color: COLORS.accent,
+                  background: colors.surfaceElevated,
+                  border: `1px solid ${colors.borderLight}`,
+                  color: colors.accent,
                   fontSize: FONT.size.label,
                   fontWeight: 600,
                   letterSpacing: LETTER_SPACING.wide,
@@ -927,10 +970,10 @@ useEffect(() => {
             {/* Live Strategic Recommendations */}
             <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                <span style={{ color: COLORS.textMuted, fontSize: FONT.size.label, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase" }}>
-                  Active Suggestions
+                <span style={{ color: colors.textMuted, fontSize: FONT.size.label, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase" }}>
+                  Facilitator Only
                 </span>
-                {connected && <Chip color={COLORS.accent} mono>REALTIME SYNCED</Chip>}
+                {connected && <Chip color={colors.accent} mono>REALTIME SYNCED</Chip>}
               </div>
 
               <div style={{ flex: 1, overflowY: "auto" }} aria-live="polite" aria-label="Active suggestions">
@@ -963,7 +1006,7 @@ useEffect(() => {
             </>
           }
         >
-          <p style={{ fontSize: FONT.size.body, color: COLORS.textMuted, lineHeight: 1.5, margin: 0 }}>
+          <p style={{ fontSize: FONT.size.body, color: colors.textMuted, lineHeight: 1.5, margin: 0 }}>
             This action will disconnect the continuous recording feed and run post-meeting summary parsing. You will proceed to review individual PM document patches before final commit.
           </p>
         </Modal>
@@ -996,7 +1039,7 @@ useEffect(() => {
           style={{
             position: "fixed",
             inset: 0,
-            background: COLORS.bg,
+            background: colors.bg,
             zIndex: 300,
             padding: "48px 64px",
             display: "flex",
