@@ -143,6 +143,7 @@ function ReminderCard({
   onRefresh,
   onStartMeeting,
   onOpenSummary,
+  onNav,
 }: {
   colors: Colors;
   shadow: Shadow;
@@ -152,8 +153,29 @@ function ReminderCard({
   onRefresh: () => void;
   onStartMeeting: (m: DashboardMeeting) => void;
   onOpenSummary: (s: DashboardSummary) => void;
+  onNav?: (id: string, params?: Record<string, string>) => void;
 }) {
   const [open, setOpen] = useState(false);
+
+  const projectStats = useMemo(() => {
+    type Stat = { name: string; meetingCount: number; summaryCount: number; lastActivity: string | null };
+    const map = new Map<string, Stat>();
+    const bump = (key: string, name: string, when: string | null | undefined, kind: "meeting" | "summary") => {
+      const entry = map.get(key) ?? { name, meetingCount: 0, summaryCount: 0, lastActivity: null };
+      if (kind === "meeting") entry.meetingCount += 1; else entry.summaryCount += 1;
+      if (when && (!entry.lastActivity || new Date(when) > new Date(entry.lastActivity))) entry.lastActivity = when;
+      map.set(key, entry);
+    };
+    meetings.forEach((m) => {
+      const key = m.projectId ?? m.project ?? "unassigned";
+      bump(key, m.project ?? m.projectId ?? "Untitled project", m.scheduledAt ?? m.time, "meeting");
+    });
+    summaries.forEach((sm) => {
+      const key = sm.project ?? "unassigned";
+      bump(key, sm.project ?? "Untitled project", sm.date, "summary");
+    });
+    return [...map.values()].sort((a, b) => (b.lastActivity ?? "").localeCompare(a.lastActivity ?? ""));
+  }, [meetings, summaries]);
   const total = meetings.length + summaries.length;
   const nextMeeting = meetings[0];
   const latestSummary = summaries[0];
@@ -241,7 +263,7 @@ function ReminderCard({
           style={{
             marginTop: 24,
             display: "grid",
-            gridTemplateColumns: "minmax(320px, 480px) minmax(320px, 480px)",
+            gridTemplateColumns: "minmax(300px, 440px) minmax(300px, 440px) minmax(240px, 320px)",
             gap: 40,
           }}
         >
@@ -360,6 +382,53 @@ function ReminderCard({
                       <div style={{ fontSize: FONT.size.label, color: colors.textMuted }}>{s.project ?? "Project summary"}</div>
                       <div style={{ fontFamily: FONT.mono, color: colors.textDim, fontSize: FONT.size.caption }}>
                         {formatDate(s.date)}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Projects at a glance — client-derived from meetings + summaries,
+              no extra fetch. Fills the third column next to upcoming meetings
+              and recent summaries. */}
+          <div>
+            <SectionHeader colors={colors} label="Projects at a glance" count={projectStats.length} />
+            {loading ? (
+              <LoadingState count={2} />
+            ) : projectStats.length === 0 ? (
+              <EmptyState message="No projects yet." />
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {projectStats.map((proj) => {
+                  const total = proj.meetingCount + proj.summaryCount;
+                  return (
+                    <button
+                      key={proj.name}
+                      type="button"
+                      onClick={() => onNav?.("projects")}
+                      style={{
+                        textAlign: "left",
+                        background: colors.surface,
+                        border: `1px solid ${colors.border}`,
+                        borderRadius: RADIUS.md,
+                        padding: "10px 12px",
+                        cursor: "pointer",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 4,
+                        minWidth: 0,
+                      }}
+                    >
+                      <div style={{ color: colors.text, fontSize: FONT.size.body, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {proj.name}
+                      </div>
+                      <div style={{ fontSize: FONT.size.label, color: colors.textMuted }}>
+                        {total} item{total === 1 ? "" : "s"}
+                      </div>
+                      <div style={{ fontFamily: FONT.mono, color: colors.textDim, fontSize: FONT.size.caption }}>
+                        {proj.lastActivity ? formatDate(proj.lastActivity) : "No recent activity"}
                       </div>
                     </button>
                   );
@@ -552,6 +621,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
           onRefresh={loadDashboard}
           onStartMeeting={(m) => void handleStartExisting(m)}
           onOpenSummary={(s) => onNav?.("summary", { sessionId: s.sessionId ?? s.id })}
+          onNav={onNav}
         />
 
         <NewMeetingModal

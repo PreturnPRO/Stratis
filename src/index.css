@@ -232,9 +232,21 @@ input:focus-visible, textarea:focus-visible {
 
 /* ── Dashboard reminder expanded panel (collapses to one column) ──────────── */
 
+@media (max-width: 1280px) {
+  .dashboard-expand-grid {
+    grid-template-columns: minmax(300px, 440px) minmax(300px, 440px) !important;
+  }
+  .dashboard-expand-grid > :last-child {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 900px) {
   .dashboard-expand-grid {
     grid-template-columns: 1fr !important;
+  }
+  .dashboard-expand-grid > :last-child {
+    grid-column: auto;
   }
 }
 
