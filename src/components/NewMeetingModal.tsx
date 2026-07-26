@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { FileText } from "lucide-react";
-import { FONT, LETTER_SPACING, RADIUS, SPACE } from "../tokens/colors";
+import { FONT, LETTER_SPACING, RADIUS, SPACE, tint } from "../tokens/colors";
 import { Button, Chip, Modal } from "./ui";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
@@ -60,6 +60,16 @@ function describeWhen(dateStr: string, timeStr: string): string {
   });
 }
 
+/** Wait this long after the last keystroke before searching projects. */
+const PROJECT_SEARCH_DEBOUNCE_MS = 300;
+const PROJECT_MATCH_LIMIT = 5;
+
+interface ProjectMatch {
+  id: string;
+  name: string;
+  meetingCount?: number;
+}
+
 export function NewMeetingModal({
   open,
   onClose,
@@ -79,6 +89,7 @@ export function NewMeetingModal({
   const [goal, setGoal] = useState("");
   const [brief, setBrief] = useState("");
   const [docVersion, setDocVersion] = useState<number | null>(null);
+  const [projectMatches, setProjectMatches] = useState<ProjectMatch[]>([]);
   const [scheduling, setScheduling] = useState(false);
   const [dateStr, setDateStr] = useState("");
   const [timeStr, setTimeStr] = useState("14:00");
@@ -97,6 +108,49 @@ export function NewMeetingModal({
     setDateStr(localDateValue(tomorrow));
     setTimeStr("14:00");
   }, [open, lockedProject?.id, lockedProject?.name, defaultScheduled, seed?.goal, seed?.title]);
+
+  // Typing a project name that already exists used to create a second project
+  // with a near-identical slug, splitting a project's history in two. The
+  // matches below let the facilitator land on the existing one instead.
+  //
+  // 300ms after the last keystroke, not on every one: a search per character
+  // means a request per character, and the list arriving mid-word shifts the
+  // options under the pointer.
+  useEffect(() => {
+    if (!open || lockedProject || !token) return;
+
+    const term = projectName.trim();
+    if (term.length < 2) {
+      setProjectMatches([]);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      fetch(`${API_BASE}/api/meeting/projects`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (cancelled || !data?.ok) return;
+          const all: ProjectMatch[] = data.data?.projects ?? [];
+          const needle = term.toLowerCase();
+          setProjectMatches(
+            all
+              .filter((p) => p.name?.toLowerCase().includes(needle))
+              .slice(0, PROJECT_MATCH_LIMIT),
+          );
+        })
+        .catch(() => {
+          if (!cancelled) setProjectMatches([]);
+        });
+    }, PROJECT_SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [open, lockedProject, token, projectName]);
 
   useEffect(() => {
     if (!open || !lockedProject || !token) return;
@@ -301,7 +355,47 @@ export function NewMeetingModal({
               value={projectName}
               onChange={(e) => setProjectName(e.target.value)}
               placeholder="e.g. Stratis"
+              autoComplete="off"
             />
+          )}
+
+          {!lockedProject && projectMatches.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: FONT.size.micro, color: colors.textDim }}>
+                Existing projects — pick one to keep the history together
+              </span>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {projectMatches.map((p) => {
+                  const exact = p.name.trim().toLowerCase() === projectName.trim().toLowerCase();
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setProjectName(p.name)}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "baseline",
+                        gap: 6,
+                        padding: "4px 10px",
+                        borderRadius: RADIUS.pill,
+                        border: `1px solid ${exact ? colors.accent : colors.border}`,
+                        background: exact ? tint(colors.accent, colors.surface) : "transparent",
+                        color: exact ? colors.accent : colors.textMuted,
+                        fontSize: FONT.size.caption,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {p.name}
+                      {typeof p.meetingCount === "number" && (
+                        <span style={{ fontFamily: FONT.mono, fontSize: FONT.size.micro, color: colors.textDim }}>
+                          {p.meetingCount}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </div>
 

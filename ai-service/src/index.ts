@@ -29,6 +29,18 @@ import type {
   DocumentPatchOutput,
   DecisionExtractOutput,
 } from "../../shared/types";
+import { createFence, UNTRUSTED_CONTENT_RULE } from "./untrusted";
+
+export { createFence, UNTRUSTED_CONTENT_RULE } from "./untrusted";
+
+/**
+ * Every system prompt carries the untrusted-content rule. Meeting material is
+ * fenced in the user message; this is where the model is told what that fence
+ * means.
+ */
+function hardened(systemPrompt: string): string {
+  return `${systemPrompt}\n\n${UNTRUSTED_CONTENT_RULE}`;
+}
 
 export type { ChatMessage, CompletionResult } from "./providers/types";
 export {
@@ -125,7 +137,7 @@ export async function structuredCall(
 > {
   const provider = selectProvider();
   const messages: ChatMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT_JSON },
+    { role: "system", content: hardened(SYSTEM_PROMPT_JSON) },
     { role: "user", content: input },
   ];
 
@@ -161,24 +173,24 @@ export interface LiveContext {
 }
 
 function liveContextPrompt(ctx: LiveContext): string {
-  const surfacedQs = ctx.surfacedQuestions?.length
-    ? ctx.surfacedQuestions.map((q) => `- ${q}`).join("\n")
-    : "(none)";
-
+  const fence = createFence();
   const sections: string[] = [];
 
   if (ctx.projectDocument?.trim()) {
     sections.push(
-      `Prior project context (from the project's existing PM document — background only; don't re-decide what's already settled here, only build on or revisit it if the transcript explicitly raises it):\n${ctx.projectDocument.trim()}`,
+      "Prior project context (from the project's existing PM document — background only; don't re-decide what's already settled here, only build on or revisit it if the transcript explicitly raises it):",
+      fence.block("PROJECT DOCUMENT", ctx.projectDocument),
     );
   }
 
   sections.push(
-    `Meeting goal: ${ctx.goal?.trim() || "(not provided)"}`,
-    `Agenda / brief: ${ctx.brief?.trim() || "(not provided)"}`,
-    `Rolling memory so far: ${ctx.rollingSummary?.trim() || "(empty)"}`,
-    `Questions already surfaced this meeting (open or answered) — never repeat or rephrase any of these:\n${surfacedQs}`,
-    `Recent transcript (most recent last):\n${ctx.recentTranscript.trim() || "(silence)"}`,
+    fence.block("MEETING GOAL", ctx.goal, "(not provided)"),
+    fence.block("AGENDA BRIEF", ctx.brief, "(not provided)"),
+    fence.block("ROLLING MEMORY", ctx.rollingSummary, "(empty)"),
+    "Questions already surfaced this meeting (open or answered) — never repeat or rephrase any of these:",
+    fence.list("SURFACED QUESTIONS", ctx.surfacedQuestions),
+    "Recent transcript (most recent last):",
+    fence.block("TRANSCRIPT", ctx.recentTranscript, "(silence)"),
   );
 
   return sections.join("\n\n");
@@ -198,7 +210,7 @@ export async function liveCardCall(
 > {
   const provider = selectProvider();
   const messages: ChatMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT_LIVE_CARD },
+    { role: "system", content: hardened(SYSTEM_PROMPT_LIVE_CARD) },
     { role: "user", content: liveContextPrompt(ctx) },
   ];
 
@@ -233,11 +245,14 @@ export interface DocPatchContext {
 }
 
 function docPatchPrompt(ctx: DocPatchContext): string {
+  const fence = createFence();
   return [
     `Project: ${ctx.projectId}`,
-    `Current PM document (version ${ctx.baseVersion}):\n${ctx.currentDocument.trim() || "(empty — first version)"}`,
-    `Rolling memory: ${ctx.rollingSummary?.trim() || "(none)"}`,
-    `Meeting transcript:\n${ctx.transcript.trim() || "(no transcript)"}`,
+    `Current PM document (version ${ctx.baseVersion}):`,
+    fence.block("CURRENT DOCUMENT", ctx.currentDocument, "(empty — first version)"),
+    fence.block("ROLLING MEMORY", ctx.rollingSummary),
+    "Meeting transcript:",
+    fence.block("TRANSCRIPT", ctx.transcript, "(no transcript)"),
   ].join("\n\n");
 }
 
@@ -255,7 +270,7 @@ export async function documentPatchCall(
 > {
   const provider = selectProvider();
   const messages: ChatMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT_DOC_PATCH },
+    { role: "system", content: hardened(SYSTEM_PROMPT_DOC_PATCH) },
     { role: "user", content: docPatchPrompt(ctx) },
   ];
 
@@ -297,20 +312,21 @@ export interface DecisionExtractContext {
 }
 
 function decisionExtractPrompt(ctx: DecisionExtractContext): string {
+  const fence = createFence();
   const today = new Date().toISOString().slice(0, 10);
-  const confirmed = ctx.confirmedDecisions?.length
-    ? ctx.confirmedDecisions.map((d) => `- ${d}`).join("\n")
-    : null;
+  const hasConfirmed = (ctx.confirmedDecisions ?? []).some((d) => d.trim());
   return [
     `Today's date is ${today}. Resolve any spoken date to a full ISO date on or after today.`,
-    `Meeting goal: ${ctx.goal?.trim() || "(not provided)"}`,
-    `Rolling memory (running notes of the whole meeting): ${ctx.rollingSummary?.trim() || "(none)"}`,
-    ...(confirmed
+    fence.block("MEETING GOAL", ctx.goal, "(not provided)"),
+    fence.block("ROLLING MEMORY", ctx.rollingSummary),
+    ...(hasConfirmed
       ? [
-          `Decisions ALREADY CONFIRMED by the facilitator — do NOT include these in your output, in any wording:\n${confirmed}`,
+          "Decisions ALREADY CONFIRMED by the facilitator — do NOT include these in your output, in any wording:",
+          fence.list("CONFIRMED DECISIONS", ctx.confirmedDecisions),
         ]
       : []),
-    `Full meeting transcript:\n${ctx.transcript.trim() || "(no transcript)"}`,
+    "Full meeting transcript:",
+    fence.block("TRANSCRIPT", ctx.transcript, "(no transcript)"),
   ].join("\n\n");
 }
 
@@ -328,7 +344,7 @@ export async function extractDecisionsCall(
 > {
   const provider = selectProvider();
   const messages: ChatMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT_DECISION_EXTRACT },
+    { role: "system", content: hardened(SYSTEM_PROMPT_DECISION_EXTRACT) },
     { role: "user", content: decisionExtractPrompt(ctx) },
   ];
 
