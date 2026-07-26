@@ -9,6 +9,7 @@ import { detectAnswered } from "../realtime/autodetect";
 import { pushSuggestion, pushAnswered, pushNotes, registerStreamIngest } from "../realtime/hub";
 import { getDocumentRow, rowToDocument, renderDocument } from "../lib/pmDocument";
 import { withRetry } from "../lib/withRetry";
+import { dedupeMemory, shouldReplaceMemory } from "../lib/rollingMemory";
 import { env } from "../config/env";
 
 export const transcriptRouter = Router();
@@ -190,12 +191,19 @@ async function routeTextToAi(
   }
 
   if (out.chunk_signal === "IMPORTANT" && out.rolling_memory_update?.trim()) {
-    const notes = out.rolling_memory_update.trim();
-    await db.query(
-      `UPDATE sessions SET rolling_summary = $1 WHERE id = $2`,
-      [notes, sessionId]
-    );
-    pushNotes(sessionId, notes);
+    // The model is asked to merge and keep it tight; this enforces it. Without
+    // the cap the memory grows a near-copy of each point, and every later
+    // prompt — live cards, decision extract, document patch — pays for it.
+    const notes = dedupeMemory(out.rolling_memory_update.trim());
+    const previous = ctx.rollingSummary;
+
+    if (shouldReplaceMemory(previous, notes)) {
+      await db.query(
+        `UPDATE sessions SET rolling_summary = $1 WHERE id = $2`,
+        [notes, sessionId]
+      );
+      pushNotes(sessionId, notes);
+    }
   }
 
   const cards =
