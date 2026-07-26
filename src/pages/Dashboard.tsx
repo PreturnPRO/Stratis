@@ -478,7 +478,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
             style={{
               display: "flex",
               alignItems: "center",
-              justifyContent: "space-between",
+              justifyContent: "flex-end",
               marginBottom: 12,
               fontFamily: FONT.mono,
               fontSize: FONT.size.caption,
@@ -487,7 +487,6 @@ export default function Dashboard({ onNav }: DashboardProps) {
               textTransform: "uppercase",
             }}
           >
-            <span>SYS.02 — DASHBOARD</span>
             <span>{todayLabel}</span>
           </div>
           <div

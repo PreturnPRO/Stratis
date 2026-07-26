@@ -201,7 +201,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
         }),
       })
       const data = await res.json()
-      if (!res.ok || !data.ok) { setError(data.error ?? 'Could not commit the document'); return }
+      if (!res.ok || !data.ok) { setError(data.error ?? 'Could not save the document'); return }
       setDocState(data.data.document.state)
       setVersion(data.data.document.version)
       setVersions(data.data.versions ?? [])
@@ -470,7 +470,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
                   disabled={!approvedCount || busy}
                   onClick={() => void commit()}
                 >
-                  {busy ? 'Committing…' : `Commit ${approvedCount} → v${version + 1}`}
+                  {busy ? 'Saving…' : `Save ${approvedCount} to v${version + 1}`}
                 </Button>
               </div>
             </div>
