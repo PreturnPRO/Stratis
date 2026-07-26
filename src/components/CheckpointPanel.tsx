@@ -14,6 +14,9 @@ interface CheckpointPanelProps {
   extracting: boolean;
   speakers?: string[];
   present: boolean;
+  /** Load/extract/save failure from useCheckpoint. Edits roll back on failure,
+   *  so without this line the revert is invisible and reads as data loss. */
+  error?: string | null;
   onEdit: (decisionId: string, patch: DecisionEdit) => void;
   onReExtract: () => void;
   onTogglePresent: () => void;
@@ -325,6 +328,7 @@ export function CheckpointPanel({
   extracting,
   speakers = [],
   present,
+  error,
   onEdit,
   onReExtract,
   onTogglePresent,
@@ -389,6 +393,22 @@ export function CheckpointPanel({
           )}
         </div>
       </div>
+
+      {error && (
+        <div
+          role="alert"
+          style={{
+            background: colors.redBg,
+            border: `1px solid ${colors.red}55`,
+            color: colors.red,
+            borderRadius: RADIUS.sm,
+            padding: "8px 12px",
+            fontSize: FONT.size.label,
+          }}
+        >
+          {error} — your change was not saved.
+        </div>
+      )}
 
       <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: SPACE[2.5] }}>
         {decisions.length === 0 && extracting ? (
