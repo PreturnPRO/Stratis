@@ -23,6 +23,8 @@ export interface StoredSummary {
   blocks: StoredSummaryBlock[];
   provider: string | null;
   createdAt: string;
+  /** When the summary was released to participants. NULL = facilitator-only. */
+  sentAt: string | null;
 }
 
 interface SessionMetaRow {
@@ -134,8 +136,9 @@ export async function getStoredSummary(sessionId: string): Promise<StoredSummary
     participants_json: unknown;
     duration_minutes: number;
     created_at: string;
+    sent_at: string | null;
   }>(
-    `SELECT id, session_id, summary_title, summary_subtitle, participants_json, duration_minutes, created_at
+    `SELECT id, session_id, summary_title, summary_subtitle, participants_json, duration_minutes, created_at, sent_at
      FROM participant_summaries WHERE session_id = $1
      ORDER BY created_at ASC LIMIT 1`,
     [sessionId],
@@ -163,6 +166,7 @@ export async function getStoredSummary(sessionId: string): Promise<StoredSummary
     blocks: blocksResult.rows,
     provider: null,
     createdAt: row.created_at,
+    sentAt: row.sent_at,
   };
 }
 

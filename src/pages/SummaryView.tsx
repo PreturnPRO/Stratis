@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { COLORS, FONT, LETTER_SPACING, RADIUS, SPACE, tint } from '../tokens/colors';
+import { FONT, LETTER_SPACING, RADIUS, SPACE, tint } from '../tokens/colors';
 import { NodeBadge as _NodeBadge } from '../components/NodeTypes';
 import { ParticipantSummaryOutput, SummaryBlock, ActionItem } from '../mocks/summaryMock';
 import type { DecisionRecord } from '../../shared/types';
@@ -9,13 +9,14 @@ import { useTheme } from '../hooks/useTheme';
 import { API_BASE } from '../lib/api';
 
 type UserRole = 'facilitator' | 'participant';
+type ThemeColors = ReturnType<typeof useTheme>['colors'];
 
 interface SummaryViewProps {
   sessionId?: string;
   autoSendCountdownSeconds?: number;
 }
 
-function getBlockConfig(colors: Record<keyof typeof COLORS, string>): Record<
+function getBlockConfig(colors: ThemeColors): Record<
   SummaryBlock['block_type'],
   { icon: string; color: string; nodeType?: 'DECISION' | 'OPEN_QUESTION' | 'ASSUMPTION' | 'RISK' }
 > {
@@ -52,7 +53,7 @@ function parseContentLines(content: string): string[] {
   return content.split('\n').map(l => l.trim()).filter(Boolean);
 }
 
-const CountPill: React.FC<{ colors: Record<keyof typeof COLORS, string>; color: string; children: React.ReactNode }> = ({ colors, color, children }) => (
+const CountPill: React.FC<{ colors: ThemeColors; color: string; children: React.ReactNode }> = ({ colors, color, children }) => (
   <span
     style={{
       display: 'inline-flex',
@@ -94,9 +95,10 @@ const FacilitatorBadge: React.FC = () => {
 const TimerBar: React.FC<{
   seconds: number;
   paused: boolean;
+  sending: boolean;
   onSendNow: () => void;
   onEdit: () => void;
-}> = ({ seconds, paused, onSendNow, onEdit }) => {
+}> = ({ seconds, paused, sending, onSendNow, onEdit }) => {
   const { colors } = useTheme();
   const accent = paused ? colors.cyan : colors.amber;
   return (
@@ -157,6 +159,7 @@ const TimerBar: React.FC<{
         </button>
         <button
           onClick={onSendNow}
+          disabled={sending}
           style={{
             fontSize: FONT.size.caption,
             fontWeight: 500,
@@ -165,10 +168,11 @@ const TimerBar: React.FC<{
             border: `1px solid ${colors.teal}55`,
             background: colors.tealBg,
             color: colors.teal,
-            cursor: 'pointer',
+            cursor: sending ? 'default' : 'pointer',
+            opacity: sending ? 0.6 : 1,
           }}
         >
-          Send now
+          {sending ? 'Sending…' : 'Send now'}
         </button>
       </div>
     </div>
@@ -436,7 +440,11 @@ const SummaryView: React.FC<SummaryViewProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   const [countdown, setCountdown] = useState(autoSendCountdownSeconds);
+  // Truth about "sent" lives on the server (participant_summaries.sent_at).
+  // `sent` mirrors it; `sending` guards the POST so countdown-zero and a manual
+  // "Send now" in the same tick cannot double-fire.
   const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
   // Holds the auto-send while the facilitator is correcting the AI's wording.
   // Without it the summary could go out mid-edit, which is the exact failure
   // the edit affordance exists to prevent.
@@ -479,6 +487,7 @@ const SummaryView: React.FC<SummaryViewProps> = ({
             metric?: { completenessRate: number | null };
             provider?: string;
             transcriptCount?: number;
+            sentAt?: string | null;
           };
         } = await res.json();
 
@@ -493,6 +502,7 @@ const SummaryView: React.FC<SummaryViewProps> = ({
         setDecisions(data.data.decisions ?? []);
         setCompletenessRate(data.data.metric?.completenessRate ?? null);
         setProvider(data.data.provider ?? null);
+        setSent(!!data.data.sentAt);
       } catch {
         if (!cancelled) {
           setError('Could not reach summary endpoint');
@@ -511,16 +521,40 @@ const SummaryView: React.FC<SummaryViewProps> = ({
     };
   }, [sessionId, token]);
 
-  useEffect(() => {
-    if (!isFacilitator || sent || editingSummary) return;
-    if (countdown <= 0) {
+  const sendSummary = async () => {
+    if (sending || sent || !sessionId || !token) return;
+    setSending(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/summary/${sessionId}/send`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data: { ok: boolean; error?: string; data?: { sentAt: string } } = await res.json();
+      if (!res.ok || !data.ok) {
+        setError(data.error ?? 'Could not send the summary');
+        return;
+      }
       setSent(true);
+      setError(null);
+    } catch {
+      setError('Could not reach the server to send the summary');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isFacilitator || sent || sending || editingSummary) return;
+    if (countdown <= 0) {
+      // Auto-send is a real send: same endpoint as "Send now", not a UI flip.
+      void sendSummary();
       return;
     }
 
     const t = setTimeout(() => setCountdown(s => s - 1), 1000);
     return () => clearTimeout(t);
-  }, [countdown, isFacilitator, sent, editingSummary]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countdown, isFacilitator, sent, sending, editingSummary]);
 
   const saveBlock = async (blockId: string | undefined, content: string): Promise<boolean> => {
     if (!blockId || !sessionId || !token) {
@@ -677,7 +711,8 @@ const SummaryView: React.FC<SummaryViewProps> = ({
           <TimerBar
             seconds={countdown}
             paused={editingSummary}
-            onSendNow={() => setSent(true)}
+            sending={sending}
+            onSendNow={() => void sendSummary()}
             onEdit={() => setEditingSummary(e => !e)}
           />
         )}

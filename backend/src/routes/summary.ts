@@ -96,6 +96,55 @@ summaryRouter.get("/", requireAuth, (_req, res) => {
 });
 
 /**
+ * Release the summary to participants.
+ *
+ * The UI used to flip a local `sent` flag and announce "Summary sent to N
+ * participants" without any request leaving the browser — a false confirmation
+ * in the one product whose whole claim is an honest record. Sending now means
+ * this row's sent_at is set; the client renders sent only from server state.
+ *
+ * Idempotent: a countdown firing at the same moment as a manual Send now must
+ * not produce two send timestamps, so the first write wins.
+ */
+summaryRouter.post("/:sessionId/send", requireAuth, async (req, res, next) => {
+  try {
+    const sessionId = req.params.sessionId;
+
+    const session = await getSessionForSummary(
+      sessionId,
+      req.auth!.sub,
+      req.auth!.orgId,
+      req.auth!.role,
+    );
+    if (!session) {
+      return res.status(404).json({
+        ok: false,
+        error: "Session not found or you do not have access",
+      });
+    }
+
+    const updated = await db.query<{ sent_at: string }>(
+      `
+      UPDATE participant_summaries
+      SET sent_at = COALESCE(sent_at, NOW())
+      WHERE session_id = $1
+      RETURNING sent_at
+      `,
+      [sessionId],
+    );
+
+    const row = updated.rows[0];
+    if (!row) {
+      return res.status(404).json({ ok: false, error: "No summary exists for this session yet" });
+    }
+
+    res.json({ ok: true, data: { sentAt: row.sent_at } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * Rewrite one generated block.
  *
  * The summary is the only artefact other people read, so a wrong line in it
@@ -207,6 +256,7 @@ summaryRouter.get("/:sessionId", requireAuth, async (req, res, next) => {
         metric: completenessFromRecords(decisions),
         provider: stored.provider ?? "stored",
         transcriptCount: stored.blocks.length,
+        sentAt: stored.sentAt,
       },
     });
   } catch (err) {
