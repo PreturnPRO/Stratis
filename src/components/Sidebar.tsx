@@ -13,7 +13,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { NAV_ITEMS, FONT, RADIUS, SPACE } from "../constants";
+import { FONT, RADIUS, SPACE } from "../tokens/colors";
+import { NAV_ITEMS } from "../constants";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
 
