@@ -7,6 +7,7 @@ import { Button } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { NewMeetingModal, type MeetingSeed, type NewMeetingFormValues } from "../components/NewMeetingModal";
 import { useCreateMeeting, projectIdFromTitle } from "../hooks/useCreateMeeting";
+import { carriedInto, unownedCount } from "../lib/docketCarry";
 
 // The Docket is deliberately NOT a calendar. A month grid answers "when am I
 // busy?" — a question every team already has Google Calendar for, and which
@@ -24,8 +25,6 @@ interface DocketMeeting {
   scheduledAt: string | null;
   createdAt: string;
   activeSession: { id: string; status: string } | null;
-  carriedOpen: number;
-  carriedUnowned: number;
 }
 
 interface WaitingItem {
@@ -35,6 +34,8 @@ interface WaitingItem {
   owner: string | null;
   missing: string | null;
   sourceMeeting: string | null;
+  sourceMeetingId: string;
+  sourceAt: string;
   projectId: string | null;
   since: string;
 }
@@ -85,6 +86,7 @@ export default function Docket({
 
   const [meetings, setMeetings] = useState<DocketMeeting[]>([]);
   const [waiting, setWaiting] = useState<WaitingItem[]>([]);
+  const [waitingTotal, setWaitingTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -105,8 +107,10 @@ export default function Docket({
       }
       const data = await res.json();
       if (!data.ok) throw new Error(data.error ?? "Could not load the docket");
+      const items: WaitingItem[] = data.data?.waiting ?? [];
       setMeetings(data.data?.meetings ?? []);
-      setWaiting(data.data?.waiting ?? []);
+      setWaiting(items);
+      setWaitingTotal(data.data?.waitingTotal ?? items.length);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load the docket");
@@ -190,11 +194,11 @@ export default function Docket({
             {scheduledCount === 0
               ? "Nothing booked yet"
               : `${scheduledCount} meeting${scheduledCount === 1 ? "" : "s"} ahead`}
-            {waiting.length > 0 && (
+            {waitingTotal > 0 && (
               <>
                 {" · "}
                 <span style={{ color: colors.amber, fontWeight: 600 }}>
-                  {waiting.length} decision{waiting.length === 1 ? "" : "s"} waiting for a date
+                  {waitingTotal} open question{waitingTotal === 1 ? "" : "s"}
                 </span>
               </>
             )}
@@ -223,6 +227,12 @@ export default function Docket({
                 {grouped[band].map((m) => {
                   const live = !!m.activeSession;
                   const isOpen = expanded === m.id;
+                  const carried = carriedInto(waiting, {
+                    id: m.id,
+                    projectId: m.projectId,
+                    at: m.scheduledAt ?? m.createdAt,
+                  });
+                  const carriedUnowned = unownedCount(carried);
                   return (
                     <article
                       key={m.id}
@@ -261,22 +271,20 @@ export default function Docket({
                           </p>
                         )}
 
-                        {(m.carriedOpen > 0 || m.carriedUnowned > 0) && (
+                        {carried.length > 0 && (
                           <div style={styles.tags}>
-                            {m.carriedOpen > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => setExpanded(isOpen ? null : m.id)}
-                                aria-expanded={isOpen}
-                                style={{ ...styles.tag, ...styles.tagOpen }}
-                              >
-                                {m.carriedOpen} open thread{m.carriedOpen === 1 ? "" : "s"} carried in{" "}
-                                {isOpen ? "▴" : "▾"}
-                              </button>
-                            )}
-                            {m.carriedUnowned > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setExpanded(isOpen ? null : m.id)}
+                              aria-expanded={isOpen}
+                              style={{ ...styles.tag, ...styles.tagOpen }}
+                            >
+                              {carried.length} open thread{carried.length === 1 ? "" : "s"} carried in{" "}
+                              {isOpen ? "▴" : "▾"}
+                            </button>
+                            {carriedUnowned > 0 && (
                               <span style={{ ...styles.tag, ...styles.tagWarn }}>
-                                {m.carriedUnowned} decision{m.carriedUnowned === 1 ? "" : "s"} still unowned
+                                {carriedUnowned} still unowned
                               </span>
                             )}
                           </div>
@@ -287,6 +295,20 @@ export default function Docket({
                             <p style={styles.threadsNote}>
                               Carried from earlier meetings on <b style={{ color: colors.text }}>{m.projectId}</b>.
                             </p>
+                            <ul style={styles.threadList}>
+                              {carried.map((w) => (
+                                <li key={w.id} style={styles.threadItem}>
+                                  <span style={styles.threadText}>{w.text}</span>
+                                  <span style={styles.threadMeta}>
+                                    {w.sourceMeeting ?? "Checkpoint"} ·{" "}
+                                    {w.owner?.trim() ? w.owner : (
+                                      <b style={{ color: colors.amber }}>unowned</b>
+                                    )}{" "}
+                                    · open {daysOpen(w.since)}d
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
                             <Button
                               variant="ghost"
                               size="sm"
@@ -351,13 +373,16 @@ export default function Docket({
           {waiting.length > 0 && (
             <section>
               <div style={{ ...styles.band, color: colors.amber }}>
-                <span>Awaiting a date</span>
-                <span style={{ ...styles.bandCount, color: colors.amber }}>{waiting.length}</span>
+                <span>Open questions</span>
+                <span style={{ ...styles.bandCount, color: colors.amber }}>{waitingTotal}</span>
                 <span style={styles.bandRule} />
               </div>
               <p style={styles.awaitNote}>
-                Unresolved from your checkpoints, with no meeting booked to settle them. Scheduling
-                one carries its wording into the new meeting's goal.
+                Unresolved from your checkpoints, oldest first. Scheduling one carries its wording
+                into the new meeting's goal.
+                {waitingTotal > waiting.length && (
+                  <> Showing the {waiting.length} oldest of {waitingTotal}.</>
+                )}
               </p>
 
               <div style={styles.awaitBox}>
@@ -514,6 +539,20 @@ function makeStyles(colors: ReturnType<typeof useTheme>["colors"]): Record<strin
       borderRadius: 8,
     },
     threadsNote: { margin: "0 0 8px", fontSize: FONT.size.label, color: colors.textMuted },
+    threadList: { margin: "0 0 10px", padding: 0, listStyle: "none", display: "grid", gap: 8 },
+    threadItem: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 2,
+      paddingLeft: 10,
+      borderLeft: `2px solid ${colors.tealLight}`,
+    },
+    threadText: { color: colors.text, fontSize: FONT.size.label, lineHeight: 1.45 },
+    threadMeta: {
+      fontFamily: FONT.mono,
+      fontSize: FONT.size.micro,
+      color: colors.textDim,
+    },
     acts: { display: "flex", alignItems: "center", gap: 8, marginTop: 11, flexWrap: "wrap" },
     ics: {
       marginLeft: "auto",
