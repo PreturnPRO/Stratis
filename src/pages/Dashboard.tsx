@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FONT, LETTER_SPACING, RADIUS, SPACE } from "../constants";
+import { FONT, LETTER_SPACING, RADIUS, SPACE } from "../tokens/colors";
 import { Button } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { NewMeetingModal } from "../components/NewMeetingModal";
@@ -81,9 +81,15 @@ function formatDate(value?: string | null): string {
   }).format(d);
 }
 
-function hashAccent(id: string, colors: Colors): string {
+// Color encodes PROJECT, nothing else: same project, same hue, everywhere on
+// the page. Hashing the record id (as this once did) produced color that
+// looked categorical but meant nothing — and taught users to distrust the
+// palette in places where it does mean something.
+function projectAccent(project: string | undefined | null, colors: Colors): string {
+  const key = (project ?? "").trim().toLowerCase();
+  if (!key) return colors.textDim;
   let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
+  for (let i = 0; i < key.length; i++) hash = key.charCodeAt(i) + ((hash << 5) - hash);
   const palette = [colors.accent, colors.cyan, colors.teal, colors.amber];
   return palette[Math.abs(hash) % palette.length];
 }
@@ -159,7 +165,7 @@ function MeetingRow({
 }) {
   const live = !!meeting.activeSession;
   const when = meetingTime(meeting);
-  const dot = live ? colors.accent : hashAccent(meeting.id, colors);
+  const dot = live ? colors.accent : projectAccent(meeting.project ?? meeting.projectId, colors);
 
   return (
     <div>
@@ -318,7 +324,7 @@ function DashboardPanels({
             style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
           >
             {summaries.map((s) => {
-              const edge = hashAccent(s.id, colors);
+              const edge = projectAccent(s.project, colors);
               return (
                 <button
                   key={s.id}
@@ -489,18 +495,18 @@ export default function Dashboard({ onNav }: DashboardProps) {
           >
             <span>{todayLabel}</span>
           </div>
+          {/* Greeting stays subordinate to the work: the meeting list is what
+              this page is for, and it must be visible without scrolling. */}
           <div
             style={{
-              fontSize: "clamp(36px, 4.6vw, 64px)",
+              fontSize: "clamp(24px, 2.6vw, 34px)",
               fontWeight: 600,
-              letterSpacing: "-.028em",
-              lineHeight: 1,
+              letterSpacing: "-.024em",
+              lineHeight: 1.15,
               color: colors.text,
             }}
           >
-            Welcome back,
-            <br />
-            <span style={{ color: colors.textDim }}>{user?.name ?? "facilitator"}</span>
+            Welcome back, <span style={{ color: colors.textDim }}>{user?.name ?? "facilitator"}</span>
           </div>
         </div>
 
