@@ -308,8 +308,9 @@ function CollapsedCard({
   const { colors } = useTheme()
   const styles = makeStyles(colors)
   return (
-    <button style={styles.collapsedRow} onClick={onReopen} title="Tap to re-open">
+    <button style={styles.collapsedRow} onClick={onReopen}>
       <span style={styles.strikethrough}>{card.question}</span>
+      <span style={styles.reopenHint}>Re-open</span>
     </button>
   )
 }
@@ -342,10 +343,9 @@ function QueuedRow({
           e.stopPropagation()
           onMarkAnswered()
         }}
-        title="Mark answered"
         aria-label="Mark answered"
       >
-        ✓
+        ✓ Answered
       </button>
     </div>
   )
@@ -524,11 +524,25 @@ function makeStyles(colors: Record<string, string>, theme: 'dark' | 'light' = 'd
     borderBottom: `1px solid ${colors.border}`,
     cursor: 'pointer',
     textAlign: 'left',
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: 8,
   },
   strikethrough: {
+    flex: 1,
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
     fontSize: FONT.size.label,
     color: colors.textMuted,
     textDecoration: 'line-through',
+  },
+  reopenHint: {
+    flexShrink: 0,
+    fontSize: FONT.size.caption,
+    color: colors.accent,
+    fontWeight: 500,
   },
   queuedRow: {
     display: 'flex',
@@ -575,12 +589,12 @@ function makeStyles(colors: Record<string, string>, theme: 'dark' | 'light' = 'd
   },
   queuedRowAnswer: {
     flexShrink: 0,
-    width: 22,
-    height: 22,
+    padding: '3px 9px',
     marginRight: 8,
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
+    whiteSpace: 'nowrap',
     fontSize: FONT.size.caption,
     borderRadius: 6,
     border: `1px solid ${colors.border}`,
