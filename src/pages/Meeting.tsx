@@ -22,6 +22,7 @@ import { useSessionRecovery } from "../hooks/useSessionRecovery";
 import { useMediaRecorder } from "../hooks/useMediaRecorder";
 import { usePcmStream } from "../hooks/usePcmStream";
 import { mergeTranscripts } from "../lib/mergeTranscripts";
+import { loadSeen, saveSeen, shouldInterruptEnd, unreviewedIds } from "../lib/checkpointReview";
 import { API_BASE } from "../lib/api";
 
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
@@ -182,6 +183,10 @@ export default function Meeting({ onNav }: MeetingProps) {
   const [showEndConfirm, setShowEndConfirm] = useState(false);
   const [showCheckpoint, setShowCheckpoint] = useState(false);
   const [presentMode, setPresentMode] = useState(false);
+  // The checkpoint shown on the way out, when decisions are still unread.
+  const [showEndCheckpoint, setShowEndCheckpoint] = useState(false);
+  const [seenDecisions, setSeenDecisions] = useState<string[]>([]);
+  const checkpointOpenedRef = useRef(false);
 
   const [isRecording, setIsRecording] = useState(false);
 
@@ -279,6 +284,52 @@ export default function Meeting({ onNav }: MeetingProps) {
       void checkpoint.load();
     }
   }, [checkpoint, extractAfterFlush]);
+
+  const checkpointVisible = showCheckpoint || showEndCheckpoint;
+
+  useEffect(() => {
+    if (!sessionId) return;
+    setSeenDecisions(loadSeen(sessionId));
+    checkpointOpenedRef.current = false;
+  }, [sessionId]);
+
+  // Anything on screen in the panel counts as reviewed.
+  useEffect(() => {
+    if (!checkpointVisible || !sessionId) return;
+    checkpointOpenedRef.current = true;
+
+    const unseen = unreviewedIds(checkpoint.decisions, seenDecisions);
+    if (unseen.length === 0) return;
+
+    const next = [...seenDecisions, ...unseen];
+    saveSeen(sessionId, next);
+    setSeenDecisions(next);
+  }, [checkpointVisible, sessionId, checkpoint.decisions, seenDecisions]);
+
+  // Ending goes through the checkpoint only when there is something unread —
+  // otherwise the Checkpoint button already did this job mid-meeting.
+  const requestEnd = useCallback(() => {
+    const unreviewed = unreviewedIds(checkpoint.decisions, seenDecisions).length;
+    const interrupt = shouldInterruptEnd({
+      unreviewed,
+      extracting: checkpoint.extracting,
+      everOpened: checkpointOpenedRef.current,
+    });
+
+    if (!interrupt) {
+      setShowEndConfirm(true);
+      return;
+    }
+
+    setShowEndCheckpoint(true);
+    // Same rule as the button: extract only when nothing has been pulled yet,
+    // so peek-then-end cannot fire two ~90s extractions against one quota.
+    if (checkpoint.decisions.length === 0) {
+      extractAfterFlush();
+    } else {
+      void checkpoint.load();
+    }
+  }, [checkpoint, seenDecisions, extractAfterFlush]);
 
   const sendAudioChunk = useCallback(async (blob: Blob) => {
     if (!token || !sessionId || blob.size === 0) return;
@@ -544,8 +595,14 @@ useEffect(() => {
     } finally {
       setEnding(false);
       setShowEndConfirm(false);
+      setShowEndCheckpoint(false);
     }
   };
+
+  // Committed decisions still missing a date — what the exit line reports.
+  const undatedCount = checkpoint.metric
+    ? Math.max(0, checkpoint.metric.committed - checkpoint.metric.withDueDate)
+    : 0;
 
   const canRecord = !!sessionId && !!token && !ending;
   const elapsed = sessionId && startMs != null ? Math.max(0, Math.floor((nowMs - startMs) / 1000)) : null;
@@ -702,7 +759,7 @@ useEffect(() => {
                 Checkpoint
               </Button>
 
-              <Button variant="ghost" size="sm" onClick={() => setShowEndConfirm(true)} disabled={ending}>
+              <Button variant="ghost" size="sm" onClick={requestEnd} disabled={ending}>
                 End Meeting
               </Button>
             </div>
@@ -924,6 +981,61 @@ useEffect(() => {
           <p style={{ fontSize: FONT.size.body, color: colors.textMuted, lineHeight: 1.5, margin: 0 }}>
             This action will disconnect the continuous recording feed and run post-meeting summary parsing. You will proceed to review individual PM document patches before final commit.
           </p>
+        </Modal>
+      )}
+
+      {showEndCheckpoint && (
+        <Modal
+          title=""
+          width={620}
+          closeOnBackdrop={false}
+          onClose={() => setShowEndCheckpoint(false)}
+        >
+          <CheckpointPanel
+            decisions={checkpoint.decisions}
+            metric={checkpoint.metric}
+            extracting={checkpoint.extracting}
+            speakers={speakerNames}
+            present={false}
+            onEdit={checkpoint.edit}
+            onReExtract={extractAfterFlush}
+            onTogglePresent={() => {
+              setShowEndCheckpoint(false);
+              setShowCheckpoint(true);
+              setPresentMode(true);
+            }}
+            onClose={() => setShowEndCheckpoint(false)}
+            footer={
+              <div
+                style={{
+                  borderTop: `1px solid ${colors.border}`,
+                  marginTop: 4,
+                  paddingTop: 14,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  flexWrap: "wrap",
+                }}
+              >
+                <span style={{ fontSize: FONT.size.label, color: colors.textMuted, maxWidth: "38ch", lineHeight: 1.45 }}>
+                  {checkpoint.extracting
+                    ? "Still reading the meeting — you can end now and finish this on the docket."
+                    : undatedCount > 0
+                      ? `${undatedCount} decision${undatedCount === 1 ? "" : "s"} without a date — ${undatedCount === 1 ? "it waits" : "they wait"} on the docket as an open question.`
+                      : "Everything here has a date."}
+                </span>
+                <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                  <Button variant="ghost" size="sm" onClick={() => setShowEndCheckpoint(false)} disabled={ending}>
+                    Back to meeting
+                  </Button>
+                  <Button variant="subtle" size="sm" onClick={handleEndMeeting} disabled={ending}>
+                    {ending ? "Concluding…" : "End meeting"}
+                  </Button>
+                </div>
+              </div>
+            }
+          />
         </Modal>
       )}
 
