@@ -3,6 +3,7 @@ import { Check, CircleAlert, PauseCircle, Pencil, Presentation, RefreshCw, X } f
 import { FONT, RADIUS, SPACE, tint } from "../tokens/colors";
 import { useTheme } from "../hooks/useTheme";
 import { Button } from "./ui";
+import { toggleOpenStatus } from "../lib/decisionStatus";
 import type { DecisionRecord, DecisionStatus } from "../../shared/types";
 import type { CompletenessMetric, DecisionEdit } from "../hooks/useCheckpoint";
 
@@ -16,6 +17,11 @@ interface CheckpointPanelProps {
   onReExtract: () => void;
   onTogglePresent: () => void;
   onClose: () => void;
+  /**
+   * Rendered below the panel's own actions. Used by the end-of-meeting layer to
+   * put its exit at the bottom, so reading the list is the path to the button.
+   */
+  footer?: React.ReactNode;
 }
 
 function statusMeta(colors: Record<string, string>): Record<
@@ -47,6 +53,7 @@ function DecisionRow({
   const { colors } = useTheme();
   const meta = statusMeta(colors)[decision.status];
   const Icon = meta.icon;
+  const isOpen = decision.status === "open";
   const [owner, setOwner] = useState(decision.owner ?? "");
   const [editingText, setEditingText] = useState(false);
   const [draftText, setDraftText] = useState(decision.text);
@@ -239,11 +246,11 @@ function DecisionRow({
         )
       )}
 
-      {!present && decision.status !== "open" && (
+      {!present && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
           <input
             type="date"
-            defaultValue={isoOrEmpty(decision.dueDate)}
+            value={isoOrEmpty(decision.dueDate)}
             onChange={(e) =>
               onEdit({
                 dueDate: e.target.value || null,
@@ -285,14 +292,21 @@ function DecisionRow({
           </datalist>
           <button
             type="button"
-            onClick={() => onEdit({ status: "open" })}
+            aria-pressed={isOpen}
+            title={
+              isOpen
+                ? "Currently parked as open — click to bring it back for a date"
+                : "Park this as deliberately undecided"
+            }
+            onClick={() => onEdit({ status: toggleOpenStatus(decision.status, decision.dueDate) })}
             style={{
-              background: "transparent",
-              border: `1px solid ${colors.border}`,
+              background: isOpen ? tint(colors.cyan, colors.surfaceMuted) : "transparent",
+              border: `1px solid ${isOpen ? colors.cyan : colors.border}`,
               borderRadius: RADIUS.pill,
-              color: colors.textMuted,
+              color: isOpen ? colors.cyan : colors.textMuted,
               padding: "5px 10px",
               fontSize: FONT.size.micro,
+              fontWeight: isOpen ? 600 : 400,
               cursor: "pointer",
             }}
           >
@@ -314,6 +328,7 @@ export function CheckpointPanel({
   onReExtract,
   onTogglePresent,
   onClose,
+  footer,
 }: CheckpointPanelProps) {
   const { colors } = useTheme();
   const rate = metric?.completenessRate;
@@ -433,6 +448,8 @@ export function CheckpointPanel({
           {present ? "Exit present" : "Present to room"}
         </Button>
       </div>
+
+      {footer}
     </div>
   );
 }
