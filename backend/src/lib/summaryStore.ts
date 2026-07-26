@@ -4,10 +4,13 @@ import { structuredCall } from "@ai/index";
 import type { AIBlock } from "@shared/types";
 
 export interface StoredSummaryBlock {
+  id?: string;
   block_type: string;
   title: string;
   content: string;
   visible_to_participants: boolean;
+  /** Set when a facilitator rewrote this block. NULL means untouched AI output. */
+  edited_at?: string | null;
 }
 
 export interface StoredSummary {
@@ -141,7 +144,7 @@ export async function getStoredSummary(sessionId: string): Promise<StoredSummary
   if (!row) return null;
 
   const blocksResult = await db.query<StoredSummaryBlock>(
-    `SELECT block_type, title, content, visible_to_participants
+    `SELECT id, block_type, title, content, visible_to_participants, edited_at
      FROM summary_blocks WHERE summary_id = $1 ORDER BY sort_order ASC`,
     [row.id],
   );

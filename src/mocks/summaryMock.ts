@@ -1,4 +1,7 @@
 export interface SummaryBlock {
+  id?: string;
+  /** Set when a facilitator rewrote this block; null means untouched AI output. */
+  edited_at?: string | null;
   block_type:
     | 'OVERVIEW'
     | 'WHAT_CHANGED'

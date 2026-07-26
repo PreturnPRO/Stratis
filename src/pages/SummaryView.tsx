@@ -93,15 +93,17 @@ const FacilitatorBadge: React.FC = () => {
 
 const TimerBar: React.FC<{
   seconds: number;
+  paused: boolean;
   onSendNow: () => void;
   onEdit: () => void;
-}> = ({ seconds, onSendNow, onEdit }) => {
+}> = ({ seconds, paused, onSendNow, onEdit }) => {
   const { colors } = useTheme();
+  const accent = paused ? colors.cyan : colors.amber;
   return (
     <div
       style={{
-        background: colors.amberSubtle,
-        border: `1px solid ${colors.amber}55`,
+        background: paused ? colors.cyanBg : colors.amberSubtle,
+        border: `1px solid ${accent}55`,
         borderRadius: 8,
         padding: '10px 14px',
         display: 'flex',
@@ -115,7 +117,7 @@ const TimerBar: React.FC<{
         aria-live="polite"
         style={{
           fontSize: FONT.size.label,
-          color: colors.amber,
+          color: accent,
           fontWeight: 500,
           display: 'flex',
           alignItems: 'center',
@@ -128,12 +130,14 @@ const TimerBar: React.FC<{
             width: 7,
             height: 7,
             borderRadius: '50%',
-            background: colors.amber,
+            background: accent,
             display: 'inline-block',
-            animation: 'stratisTimerPulse 1.2s ease-in-out infinite',
+            animation: paused ? undefined : 'stratisTimerPulse 1.2s ease-in-out infinite',
           }}
         />
-        Auto-sends in {formatCountdown(seconds)} — review before it goes out
+        {paused
+          ? 'Editing — nothing sends until you finish'
+          : `Auto-sends in ${formatCountdown(seconds)} — review before it goes out`}
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
         <button
@@ -143,13 +147,13 @@ const TimerBar: React.FC<{
             fontWeight: 500,
             padding: '5px 12px',
             borderRadius: RADIUS.pill,
-            border: `1px solid ${colors.border}`,
-            background: colors.surface,
-            color: colors.textMuted,
+            border: `1px solid ${paused ? accent : colors.border}`,
+            background: paused ? colors.surface : colors.surface,
+            color: paused ? accent : colors.textMuted,
             cursor: 'pointer',
           }}
         >
-          Edit
+          {paused ? 'Done editing' : 'Edit'}
         </button>
         <button
           onClick={onSendNow}
@@ -171,14 +175,58 @@ const TimerBar: React.FC<{
   );
 };
 
+const EditedBadge: React.FC = () => {
+  const { colors } = useTheme();
+  return (
+    <span
+      title="Rewritten by the facilitator — not the AI's wording"
+      style={{
+        fontSize: FONT.size.micro,
+        color: colors.teal,
+        background: colors.tealBg,
+        border: `1px solid ${colors.teal}55`,
+        borderRadius: 3,
+        padding: '1px 6px',
+        marginLeft: SPACE[1.5],
+        fontWeight: 500,
+      }}
+    >
+      Edited by facilitator
+    </span>
+  );
+};
+
 const SummaryBlockSection: React.FC<{
   block: SummaryBlock;
   role: UserRole;
-}> = ({ block, role }) => {
+  canEdit: boolean;
+  onSave: (content: string) => Promise<boolean>;
+}> = ({ block, role, canEdit, onSave }) => {
   const { colors } = useTheme();
   const cfg = getBlockConfig(colors)[block.block_type];
   const lines = parseContentLines(block.content);
   const isList = lines.length > 1 || ['DECISIONS', 'OPEN_ITEMS', 'ASSUMPTIONS', 'RISKS'].includes(block.block_type);
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(block.content);
+  const [saving, setSaving] = useState(false);
+
+  const startEdit = () => {
+    setDraft(block.content);
+    setEditing(true);
+  };
+
+  const save = async () => {
+    const clean = draft.trim();
+    if (!clean || clean === block.content) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    const ok = await onSave(clean);
+    setSaving(false);
+    if (ok) setEditing(false);
+  };
 
   return (
     <div style={{ marginBottom: 20 }}>
@@ -198,9 +246,83 @@ const SummaryBlockSection: React.FC<{
           {BLOCK_LABEL[block.block_type]}
         </span>
         {!block.visible_to_participants && role === 'facilitator' && <FacilitatorBadge />}
+        {block.edited_at && <EditedBadge />}
+        {canEdit && !editing && (
+          <button
+            onClick={startEdit}
+            style={{
+              marginLeft: 'auto',
+              fontSize: FONT.size.micro,
+              padding: '3px 10px',
+              borderRadius: RADIUS.pill,
+              border: `1px solid ${colors.border}`,
+              background: 'transparent',
+              color: colors.textMuted,
+              cursor: 'pointer',
+            }}
+          >
+            Edit
+          </button>
+        )}
       </div>
 
-      {isList ? (
+      {editing ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            rows={Math.min(14, Math.max(3, lines.length + 1))}
+            aria-label={`${BLOCK_LABEL[block.block_type]} content`}
+            style={{
+              background: colors.surface,
+              border: `1px solid ${colors.borderLight}`,
+              borderRadius: RADIUS.sm,
+              color: colors.textPrimary,
+              padding: '10px 12px',
+              fontSize: FONT.size.body,
+              lineHeight: 1.6,
+              resize: 'vertical',
+              fontFamily: 'inherit',
+            }}
+          />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <button
+              onClick={() => void save()}
+              disabled={saving}
+              style={{
+                fontSize: FONT.size.caption,
+                fontWeight: 500,
+                padding: '5px 12px',
+                borderRadius: RADIUS.pill,
+                border: `1px solid ${colors.teal}55`,
+                background: colors.tealBg,
+                color: colors.teal,
+                cursor: saving ? 'default' : 'pointer',
+              }}
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              onClick={() => setEditing(false)}
+              disabled={saving}
+              style={{
+                fontSize: FONT.size.caption,
+                padding: '5px 12px',
+                borderRadius: RADIUS.pill,
+                border: `1px solid ${colors.border}`,
+                background: 'transparent',
+                color: colors.textMuted,
+                cursor: saving ? 'default' : 'pointer',
+              }}
+            >
+              Cancel
+            </button>
+            <span style={{ fontSize: FONT.size.micro, color: colors.textDim }}>
+              One line per item.
+            </span>
+          </div>
+        </div>
+      ) : isList ? (
         <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
           {lines.map((line, i) => (
             <li
@@ -315,6 +437,10 @@ const SummaryView: React.FC<SummaryViewProps> = ({
 
   const [countdown, setCountdown] = useState(autoSendCountdownSeconds);
   const [sent, setSent] = useState(false);
+  // Holds the auto-send while the facilitator is correcting the AI's wording.
+  // Without it the summary could go out mid-edit, which is the exact failure
+  // the edit affordance exists to prevent.
+  const [editingSummary, setEditingSummary] = useState(false);
 
   const isFacilitator = role === 'facilitator';
 
@@ -386,7 +512,7 @@ const SummaryView: React.FC<SummaryViewProps> = ({
   }, [sessionId, token]);
 
   useEffect(() => {
-    if (!isFacilitator || sent) return;
+    if (!isFacilitator || sent || editingSummary) return;
     if (countdown <= 0) {
       setSent(true);
       return;
@@ -394,7 +520,46 @@ const SummaryView: React.FC<SummaryViewProps> = ({
 
     const t = setTimeout(() => setCountdown(s => s - 1), 1000);
     return () => clearTimeout(t);
-  }, [countdown, isFacilitator, sent]);
+  }, [countdown, isFacilitator, sent, editingSummary]);
+
+  const saveBlock = async (blockId: string | undefined, content: string): Promise<boolean> => {
+    if (!blockId || !sessionId || !token) {
+      setError('This summary block cannot be edited yet — reload and try again.');
+      return false;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/api/summary/${sessionId}/block/${blockId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ content }),
+      });
+      const data: { ok: boolean; error?: string; data?: { block: SummaryBlock } } = await res.json();
+
+      if (!res.ok || !data.ok || !data.data?.block) {
+        setError(data.error ?? 'Could not save that edit');
+        return false;
+      }
+
+      const saved = data.data.block;
+      setSummary(prev =>
+        prev
+          ? {
+              ...prev,
+              summary_blocks: prev.summary_blocks.map(b => (b.id === saved.id ? saved : b)),
+            }
+          : prev,
+      );
+      setError(null);
+      return true;
+    } catch {
+      setError('Could not reach the server to save that edit');
+      return false;
+    }
+  };
 
   if (loading) {
     return (
@@ -511,8 +676,9 @@ const SummaryView: React.FC<SummaryViewProps> = ({
         {isFacilitator && !sent && (
           <TimerBar
             seconds={countdown}
+            paused={editingSummary}
             onSendNow={() => setSent(true)}
-            onEdit={() => {  }}
+            onEdit={() => setEditingSummary(e => !e)}
           />
         )}
 
@@ -632,7 +798,13 @@ const SummaryView: React.FC<SummaryViewProps> = ({
         )}
 
         {visibleBlocks.map((block, i) => (
-          <SummaryBlockSection key={i} block={block} role={role} />
+          <SummaryBlockSection
+            key={block.id ?? i}
+            block={block}
+            role={role}
+            canEdit={isFacilitator && !sent}
+            onSave={(content) => saveBlock(block.id, content)}
+          />
         ))}
 
         {summary.action_items.length > 0 && (
