@@ -1,4 +1,4 @@
-import { FONT } from "../constants";
+import { FONT } from "../tokens/colors";
 import { useEffect, useState } from "react";
 import { useTheme } from "../hooks/useTheme";
 

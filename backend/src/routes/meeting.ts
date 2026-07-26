@@ -417,8 +417,6 @@ interface DocketMeetingRow {
   created_at: string;
   active_session_id: string | null;
   active_session_status: SessionStatus | null;
-  carried_open: number;
-  carried_unowned: number;
 }
 
 interface WaitingRow {
@@ -428,9 +426,15 @@ interface WaitingRow {
   owner: string | null;
   missing: string | null;
   source_meeting: string | null;
+  source_meeting_id: string;
+  source_at: string;
   project_id: string | null;
   since: string;
+  total_count: string;
 }
+
+/** Cap on unresolved decisions returned with the docket. */
+const OPEN_ITEM_LIMIT = 200;
 
 meetingRouter.get("/docket", requireAuth, async (req, res) => {
   try {
@@ -448,9 +452,7 @@ meetingRouter.get("/docket", requireAuth, async (req, res) => {
         m.scheduled_at,
         m.created_at,
         live.id     AS active_session_id,
-        live.status AS active_session_status,
-        COALESCE(carry.open_count, 0)    AS carried_open,
-        COALESCE(carry.unowned_count, 0) AS carried_unowned
+        live.status AS active_session_status
       FROM meetings m
       LEFT JOIN LATERAL (
         SELECT s.id, s.status
@@ -459,20 +461,6 @@ meetingRouter.get("/docket", requireAuth, async (req, res) => {
         ORDER BY s.started_at DESC NULLS LAST
         LIMIT 1
       ) live ON TRUE
-      -- Continuity: unresolved decisions from EARLIER meetings on the same
-      -- project. These are what the next meeting inherits.
-      LEFT JOIN LATERAL (
-        SELECT
-          COUNT(*) FILTER (WHERE d.status IN ('open', 'incomplete'))                        AS open_count,
-          COUNT(*) FILTER (WHERE d.owner IS NULL OR btrim(d.owner) = '')                    AS unowned_count
-        FROM decisions d
-        JOIN meetings dm ON dm.id = d.meeting_id
-        WHERE dm.project_id = m.project_id
-          AND dm.org_id = m.org_id
-          AND dm.id <> m.id
-          AND d.dismissed = FALSE
-          AND d.status IN ('open', 'incomplete')
-      ) carry ON TRUE
       WHERE m.org_id = $1
         AND (
           (m.scheduled_at IS NOT NULL AND m.scheduled_at >= $2)
@@ -487,6 +475,15 @@ meetingRouter.get("/docket", requireAuth, async (req, res) => {
       [orgId, ts],
     );
 
+    // Every unresolved decision in the org, oldest first. This list drives both
+    // the "Awaiting a date" band and the per-meeting carried-thread counts, so
+    // a badge can never disagree with the items behind it.
+    //
+    // It used to be filtered by NOT EXISTS (any upcoming meeting on the same
+    // project), which hid an open question the moment ANY meeting was booked on
+    // its project — not one that addressed it. A team with a weekly sync per
+    // project saw the band permanently empty while open items piled up: the
+    // more you scheduled, the less you were shown.
     const waitingResult = await db.query<WaitingRow>(
       `
       SELECT
@@ -496,24 +493,20 @@ meetingRouter.get("/docket", requireAuth, async (req, res) => {
         d.owner,
         d.missing,
         dm.title      AS source_meeting,
+        dm.id         AS source_meeting_id,
         dm.project_id AS project_id,
-        d.created_at  AS since
+        COALESCE(dm.scheduled_at, dm.created_at) AS source_at,
+        d.created_at  AS since,
+        COUNT(*) OVER () AS total_count
       FROM decisions d
       JOIN meetings dm ON dm.id = d.meeting_id
       WHERE dm.org_id = $1
         AND d.dismissed = FALSE
         AND d.status IN ('open', 'incomplete')
-        AND NOT EXISTS (
-          SELECT 1 FROM meetings up
-          WHERE up.project_id = dm.project_id
-            AND up.org_id = dm.org_id
-            AND up.scheduled_at IS NOT NULL
-            AND up.scheduled_at >= $2
-        )
       ORDER BY d.created_at ASC
-      LIMIT 20
+      LIMIT ${OPEN_ITEM_LIMIT}
       `,
-      [orgId, ts],
+      [orgId],
     );
 
     res.json({
@@ -531,8 +524,6 @@ meetingRouter.get("/docket", requireAuth, async (req, res) => {
             row.active_session_id && row.active_session_status
               ? { id: row.active_session_id, status: row.active_session_status }
               : null,
-          carriedOpen: Number(row.carried_open) || 0,
-          carriedUnowned: Number(row.carried_unowned) || 0,
         })),
         waiting: waitingResult.rows.map((row) => ({
           id: row.id,
@@ -541,9 +532,13 @@ meetingRouter.get("/docket", requireAuth, async (req, res) => {
           owner: row.owner,
           missing: row.missing,
           sourceMeeting: row.source_meeting,
+          sourceMeetingId: row.source_meeting_id,
+          sourceAt: row.source_at,
           projectId: row.project_id,
           since: row.since,
         })),
+        // Total before the cap, so the UI can say when it is showing a slice.
+        waitingTotal: Number(waitingResult.rows[0]?.total_count ?? 0),
       },
     });
   } catch (error) {

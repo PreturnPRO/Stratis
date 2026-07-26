@@ -47,15 +47,6 @@ const PAGE_LABELS: Record<string, string> = {
   document: "Document",
 };
 
-const PAGE_SYS: Record<string, string> = {
-  dashboard: "SYS.02",
-  docket: "SYS.07",
-  meeting: "SYS.03",
-  projects: "SYS.04",
-  summary: "SYS.05",
-  document: "SYS.06",
-};
-
 function LiveClock({ colors }: { colors: { accent: string } }) {
   const [now, setNow] = useState(() => new Date());
 
@@ -431,7 +422,6 @@ function AppShell() {
             }}
           >
             <LiveClock colors={colors} />
-            {PAGE_SYS[active] ?? ""}
           </span>
         </header>
 

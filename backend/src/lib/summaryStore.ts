@@ -4,10 +4,13 @@ import { structuredCall } from "@ai/index";
 import type { AIBlock } from "@shared/types";
 
 export interface StoredSummaryBlock {
+  id?: string;
   block_type: string;
   title: string;
   content: string;
   visible_to_participants: boolean;
+  /** Set when a facilitator rewrote this block. NULL means untouched AI output. */
+  edited_at?: string | null;
 }
 
 export interface StoredSummary {
@@ -20,6 +23,8 @@ export interface StoredSummary {
   blocks: StoredSummaryBlock[];
   provider: string | null;
   createdAt: string;
+  /** When the summary was released to participants. NULL = facilitator-only. */
+  sentAt: string | null;
 }
 
 interface SessionMetaRow {
@@ -131,8 +136,9 @@ export async function getStoredSummary(sessionId: string): Promise<StoredSummary
     participants_json: unknown;
     duration_minutes: number;
     created_at: string;
+    sent_at: string | null;
   }>(
-    `SELECT id, session_id, summary_title, summary_subtitle, participants_json, duration_minutes, created_at
+    `SELECT id, session_id, summary_title, summary_subtitle, participants_json, duration_minutes, created_at, sent_at
      FROM participant_summaries WHERE session_id = $1
      ORDER BY created_at ASC LIMIT 1`,
     [sessionId],
@@ -141,7 +147,7 @@ export async function getStoredSummary(sessionId: string): Promise<StoredSummary
   if (!row) return null;
 
   const blocksResult = await db.query<StoredSummaryBlock>(
-    `SELECT block_type, title, content, visible_to_participants
+    `SELECT id, block_type, title, content, visible_to_participants, edited_at
      FROM summary_blocks WHERE summary_id = $1 ORDER BY sort_order ASC`,
     [row.id],
   );
@@ -160,6 +166,7 @@ export async function getStoredSummary(sessionId: string): Promise<StoredSummary
     blocks: blocksResult.rows,
     provider: null,
     createdAt: row.created_at,
+    sentAt: row.sent_at,
   };
 }
 

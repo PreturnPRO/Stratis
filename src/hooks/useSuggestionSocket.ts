@@ -50,6 +50,7 @@ export interface UseSuggestionSocketReturn {
   connected: boolean
   markAnswered: (id: string) => void
   markActive: (id: string) => void
+  dismissCard: (id: string) => void
   sendControl: (msg: WsClientEvent) => boolean
   sendAudioFrame: (frame: ArrayBuffer) => boolean
 }
@@ -129,6 +130,33 @@ export function useSuggestionSocket(
       }
     } catch (err) {
       console.error('[ws:manual] Error marking card answered:', err);
+      void fetchCards();
+    }
+  }, [validSessionId, token, fetchCards]);
+
+  // Wrong card, not an answered one. Marking it answered would record that the
+  // room resolved something it never discussed.
+  const dismissCard = useCallback(async (id: string) => {
+    if (!token || !validSessionId) return;
+
+    setCards((prev) => prev.filter((c) => c.id !== id));
+
+    try {
+      const res = await fetch(`${API_BASE}/api/ai/suggest/dismiss`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ sessionId: validSessionId, cardId: id }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        console.warn('[ws:manual] Dismiss rejected by server, rolling back state:', data.error);
+        void fetchCards();
+      }
+    } catch (err) {
+      console.error('[ws:manual] Error dismissing card:', err);
       void fetchCards();
     }
   }, [validSessionId, token, fetchCards]);
@@ -263,6 +291,7 @@ export function useSuggestionSocket(
     connected,
     markAnswered,
     markActive,
+    dismissCard,
     sendControl,
     sendAudioFrame,
   };

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown } from "lucide-react";
-import { FONT, LETTER_SPACING, RADIUS, SPACE } from "../constants";
+import { FONT, LETTER_SPACING, RADIUS, SPACE } from "../tokens/colors";
 import { Button } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { NewMeetingModal } from "../components/NewMeetingModal";
@@ -12,7 +11,6 @@ import AmbientBackground from "../components/AmbientBackground";
 import { API_BASE } from "../lib/api";
 
 type Colors = ReturnType<typeof useTheme>["colors"];
-type Shadow = ReturnType<typeof useTheme>["shadow"];
 
 interface DashboardProps {
   onNav?: (id: string, params?: Record<string, string>) => void;
@@ -83,9 +81,15 @@ function formatDate(value?: string | null): string {
   }).format(d);
 }
 
-function hashAccent(id: string, colors: Colors): string {
+// Color encodes PROJECT, nothing else: same project, same hue, everywhere on
+// the page. Hashing the record id (as this once did) produced color that
+// looked categorical but meant nothing — and taught users to distrust the
+// palette in places where it does mean something.
+function projectAccent(project: string | undefined | null, colors: Colors): string {
+  const key = (project ?? "").trim().toLowerCase();
+  if (!key) return colors.textDim;
   let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
+  for (let i = 0; i < key.length; i++) hash = key.charCodeAt(i) + ((hash << 5) - hash);
   const palette = [colors.accent, colors.cyan, colors.teal, colors.amber];
   return palette[Math.abs(hash) % palette.length];
 }
@@ -124,9 +128,129 @@ function SectionHeader({
   );
 }
 
-function ReminderCard({
+function meetingTime(m: DashboardMeeting): string | null {
+  return m.scheduledAt ?? m.time ?? null;
+}
+
+/** Live first, then scheduled soonest-first, then the undated ones in backend order. */
+function orderMeetings(meetings: DashboardMeeting[]): DashboardMeeting[] {
+  const rank = (m: DashboardMeeting) => (m.activeSession ? 0 : meetingTime(m) ? 1 : 2);
+  return meetings
+    .map((m, i) => ({ m, i }))
+    .sort((a, b) => {
+      const byRank = rank(a.m) - rank(b.m);
+      if (byRank !== 0) return byRank;
+
+      const at = meetingTime(a.m);
+      const bt = meetingTime(b.m);
+      if (at && bt && at !== bt) return String(at).localeCompare(String(bt));
+
+      return a.i - b.i;
+    })
+    .map((entry) => entry.m);
+}
+
+function MeetingRow({
   colors,
-  shadow,
+  meeting,
+  first,
+  last,
+  onStart,
+}: {
+  colors: Colors;
+  meeting: DashboardMeeting;
+  first: boolean;
+  last: boolean;
+  onStart: () => void;
+}) {
+  const live = !!meeting.activeSession;
+  const when = meetingTime(meeting);
+  const dot = live ? colors.accent : projectAccent(meeting.project ?? meeting.projectId, colors);
+
+  return (
+    <div>
+      <div style={{ position: "relative", paddingLeft: 26 }}>
+        {!first && (
+          <span style={{ position: "absolute", left: 5, top: 0, height: "50%", width: 1, background: colors.border }} />
+        )}
+        {!last && (
+          <span style={{ position: "absolute", left: 5, top: "50%", height: "50%", width: 1, background: colors.border }} />
+        )}
+        <span
+          style={{
+            position: "absolute",
+            left: 0,
+            top: "50%",
+            transform: "translateY(-50%)",
+            width: 11,
+            height: 11,
+            borderRadius: "50%",
+            background: colors.surfaceElevated,
+            border: `2px solid ${dot}`,
+            boxShadow: `0 0 0 3px ${colors.bg}`,
+          }}
+        />
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={onStart}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onStart();
+            }
+          }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            background: colors.surface,
+            border: `1px solid ${live ? colors.accentDim : colors.border}`,
+            borderRadius: RADIUS.md,
+            padding: "10px 12px",
+            cursor: "pointer",
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            {live && (
+              <div
+                style={{
+                  fontFamily: FONT.mono,
+                  fontSize: FONT.size.caption,
+                  fontWeight: 700,
+                  letterSpacing: LETTER_SPACING.wide,
+                  color: colors.accent,
+                  marginBottom: 2,
+                }}
+              >
+                LIVE NOW
+              </div>
+            )}
+            <div style={{ color: colors.text, fontSize: FONT.size.body, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {meeting.title}
+            </div>
+            <div style={{ fontFamily: FONT.mono, color: colors.textMuted, fontSize: FONT.size.caption, marginTop: 2 }}>
+              {meeting.project ?? meeting.projectId ?? "Project"}
+              {when ? ` · ${formatDate(when)}` : ""}
+            </div>
+          </div>
+          <Button variant="primary" onClick={(e) => { e.stopPropagation(); onStart(); }}>
+            {live ? "Resume" : "Start"}
+          </Button>
+        </div>
+      </div>
+      {!last && (
+        <div style={{ position: "relative", height: 22 }}>
+          <span style={{ position: "absolute", left: 31, top: 0, bottom: 0, width: 1, background: colors.border }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DashboardPanels({
+  colors,
   loading,
   meetings,
   summaries,
@@ -136,7 +260,6 @@ function ReminderCard({
   onNav,
 }: {
   colors: Colors;
-  shadow: Shadow;
   loading: boolean;
   meetings: DashboardMeeting[];
   summaries: DashboardSummary[];
@@ -145,298 +268,94 @@ function ReminderCard({
   onOpenSummary: (s: DashboardSummary) => void;
   onNav?: (id: string, params?: Record<string, string>) => void;
 }) {
-  const [open, setOpen] = useState(false);
-
-  const nextUp = useMemo(() => {
-    const live = meetings.filter((m) => m.activeSession);
-    const scheduled = meetings
-      .filter((m) => !m.activeSession && (m.scheduledAt ?? m.time))
-      .sort((a, b) =>
-        String(a.scheduledAt ?? a.time).localeCompare(String(b.scheduledAt ?? b.time)),
-      );
-    return [...live, ...scheduled].slice(0, 3);
-  }, [meetings]);
-  const total = meetings.length + summaries.length;
-  const nextMeeting = meetings[0];
-  const latestSummary = summaries[0];
-
-  const subline = nextMeeting
-    ? `Next: ${formatDate(nextMeeting.scheduledAt ?? nextMeeting.time)} — ${nextMeeting.title}`
-    : latestSummary
-    ? `New: ${formatDate(latestSummary.date)} — ${latestSummary.title}`
-    : undefined;
+  const ordered = useMemo(() => orderMeetings(meetings), [meetings]);
 
   return (
-    <div style={{ marginBottom: 32 }}>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        style={{
-          textAlign: "left",
-          background: colors.surfaceElevated,
-          border: `1px solid ${colors.accentDim}`,
-          borderRadius: 12,
-          padding: "16px 18px",
-          boxShadow: `${shadow.shadCard}, ${shadow.glow(colors.accent)}`,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 16,
-          width: "100%",
-          maxWidth: 420,
-          cursor: "pointer",
-        }}
-      >
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ position: "relative", display: "inline-flex", width: 8, height: 8, flexShrink: 0 }}>
-              {total > 0 && (
-                <span
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    borderRadius: "50%",
-                    background: colors.accent,
-                    animation: "recPulse 1.5s ease-out infinite",
-                  }}
-                />
-              )}
-              <span style={{ position: "relative", width: 8, height: 8, borderRadius: "50%", background: colors.accent }} />
-            </span>
-            <span
-              style={{
-                fontFamily: FONT.mono,
-                fontSize: FONT.size.label,
-                fontWeight: 600,
-                letterSpacing: LETTER_SPACING.wide,
-                color: colors.text,
-                textTransform: "uppercase",
-              }}
-            >
-              {total} REMINDER{total === 1 ? "" : "S"}
-            </span>
-          </div>
-          {subline && (
-            <div style={{ fontSize: FONT.size.body, color: colors.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {subline}
-            </div>
-          )}
-        </div>
-        <ChevronDown
-          size={16}
-          strokeWidth={2}
-          color={colors.textMuted}
-          style={{ flexShrink: 0, transition: "transform 0.25s cubic-bezier(.4,0,.2,1)", transform: open ? "rotate(180deg)" : "rotate(0)" }}
+    <div
+      className="dashboard-panels"
+      style={{
+        marginBottom: 32,
+        display: "grid",
+        gridTemplateColumns: "minmax(320px, 520px) minmax(300px, 440px)",
+        gap: 40,
+      }}
+    >
+      <div>
+        <SectionHeader
+          colors={colors}
+          label="Ready to start"
+          count={ordered.length}
+          action={<Button variant="ghost" onClick={onRefresh}>Refresh</Button>}
         />
-      </button>
-
-      <div
-        style={{
-          maxHeight: open ? 2400 : 0,
-          opacity: open ? 1 : 0,
-          overflow: "hidden",
-          transition: "max-height 0.45s cubic-bezier(.16,1,.3,1), opacity 0.3s ease",
-        }}
-      >
-        <div
-          className="dashboard-expand-grid"
-          style={{
-            marginTop: 24,
-            display: "grid",
-            gridTemplateColumns: "minmax(300px, 440px) minmax(300px, 440px) minmax(240px, 320px)",
-            gap: 40,
-          }}
-        >
-          <div>
-            <SectionHeader
-              colors={colors}
-              label="Upcoming meetings"
-              count={meetings.length}
-              action={<Button variant="ghost" onClick={onRefresh}>Refresh</Button>}
-            />
-            {loading ? (
-              <LoadingState count={3} />
-            ) : meetings.length === 0 ? (
-              <EmptyState message="No meetings yet. Create your first meeting." />
-            ) : (
-              <div style={{ position: "relative" }}>
-                <div style={{ display: "flex", flexDirection: "column" }}>
-                  {meetings.map((m, i) => {
-                    const dot = hashAccent(m.id, colors);
-                    return (
-                    <div key={m.id}>
-                      <div style={{ position: "relative", paddingLeft: 26 }}>
-                        {i > 0 && (
-                          <span style={{ position: "absolute", left: 5, top: 0, height: "50%", width: 1, background: colors.border }} />
-                        )}
-                        {i < meetings.length - 1 && (
-                          <span style={{ position: "absolute", left: 5, top: "50%", height: "50%", width: 1, background: colors.border }} />
-                        )}
-                        <span
-                          style={{
-                            position: "absolute",
-                            left: 0,
-                            top: "50%",
-                            transform: "translateY(-50%)",
-                            width: 11,
-                            height: 11,
-                            borderRadius: "50%",
-                            background: colors.surfaceElevated,
-                            border: `2px solid ${dot}`,
-                            boxShadow: `0 0 0 3px ${colors.bg}`,
-                          }}
-                        />
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            gap: 12,
-                            background: colors.surface,
-                            border: `1px solid ${colors.border}`,
-                            borderRadius: RADIUS.md,
-                            padding: "10px 12px",
-                          }}
-                        >
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ color: colors.text, fontSize: FONT.size.body, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.title}</div>
-                            <div style={{ fontFamily: FONT.mono, color: colors.textMuted, fontSize: FONT.size.caption, marginTop: 2 }}>
-                              {m.project ?? m.projectId ?? "Project"} · {formatDate(m.scheduledAt ?? m.time)}
-                            </div>
-                          </div>
-                          <Button variant="primary" onClick={() => onStartMeeting(m)}>
-                            {m.activeSession ? "Resume" : "Start"}
-                          </Button>
-                        </div>
-                      </div>
-                      {i < meetings.length - 1 && (
-                        <div style={{ position: "relative", height: 22 }}>
-                          <span style={{ position: "absolute", left: 31, top: 0, bottom: 0, width: 1, background: colors.border }} />
-                        </div>
-                      )}
-                    </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div>
-            <SectionHeader colors={colors} label="Recent summaries" count={summaries.length} />
-            {loading ? (
-              <LoadingState count={3} />
-            ) : summaries.length === 0 ? (
-              <EmptyState message="No summaries yet. End a meeting to generate one." />
-            ) : (
-              <div
-                className="dashboard-summary-cards"
-                style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
-              >
-                {summaries.map((s) => {
-                  const edge = hashAccent(s.id, colors);
-                  return (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => onOpenSummary(s)}
-                      style={{
-                        textAlign: "left",
-                        background: colors.surface,
-                        border: `1px solid ${colors.border}`,
-                        borderLeft: `3px solid ${edge}`,
-                        borderRadius: RADIUS.md,
-                        padding: "12px 14px",
-                        cursor: "pointer",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 6,
-                        minWidth: 0,
-                      }}
-                    >
-                      <div style={{ color: colors.text, fontSize: FONT.size.body, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {s.title}
-                      </div>
-                      <div style={{ fontSize: FONT.size.label, color: colors.textMuted }}>{s.project ?? "Project summary"}</div>
-                      <div style={{ fontFamily: FONT.mono, color: colors.textDim, fontSize: FONT.size.caption }}>
-                        {formatDate(s.date)}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div>
-            <SectionHeader colors={colors} label="Next up" count={nextUp.length} />
-            {loading ? (
-              <LoadingState count={2} />
-            ) : nextUp.length === 0 ? (
-              <EmptyState
-                message="Nothing scheduled."
-                action={
-                  <Button variant="ghost" size="sm" onClick={() => onNav?.("docket")}>
-                    Open the docket
-                  </Button>
-                }
+        {loading ? (
+          <LoadingState count={3} />
+        ) : ordered.length === 0 ? (
+          <EmptyState message="No meetings yet. Create your first meeting." />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {ordered.map((m, i) => (
+              <MeetingRow
+                key={m.id}
+                colors={colors}
+                meeting={m}
+                first={i === 0}
+                last={i === ordered.length - 1}
+                onStart={() => onStartMeeting(m)}
               />
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {nextUp.map((m) => {
-                  const live = !!m.activeSession;
-                  const when = m.scheduledAt ?? m.time ?? null;
-                  return (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={() =>
-                        live && m.activeSession
-                          ? onNav?.("meeting", { sessionId: m.activeSession.id })
-                          : onNav?.("docket")
-                      }
-                      style={{
-                        textAlign: "left",
-                        background: colors.surface,
-                        border: `1px solid ${live ? colors.accentDim : colors.border}`,
-                        borderRadius: RADIUS.md,
-                        padding: "10px 12px",
-                        cursor: "pointer",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 4,
-                        minWidth: 0,
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span
-                          style={{
-                            fontFamily: FONT.mono,
-                            fontSize: FONT.size.caption,
-                            color: live ? colors.accent : colors.textMuted,
-                            fontWeight: live ? 700 : 400,
-                          }}
-                        >
-                          {live ? "LIVE NOW" : when ? formatDate(when) : "Unscheduled"}
-                        </span>
-                      </div>
-                      <div style={{ color: colors.text, fontSize: FONT.size.body, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {m.title}
-                      </div>
-                      <div style={{ fontSize: FONT.size.label, color: colors.textMuted }}>
-                        {m.project ?? m.projectId ?? "No project"}
-                        {live ? " · join" : ""}
-                      </div>
-                    </button>
-                  );
-                })}
-                <Button variant="ghost" size="sm" onClick={() => onNav?.("docket")}>
-                  Open the docket
-                </Button>
-              </div>
-            )}
+            ))}
           </div>
+        )}
+        <div style={{ marginTop: 18 }}>
+          <Button variant="ghost" size="sm" onClick={() => onNav?.("docket")}>
+            Open the docket
+          </Button>
         </div>
+      </div>
+
+      <div>
+        <SectionHeader colors={colors} label="Recent summaries" count={summaries.length} />
+        {loading ? (
+          <LoadingState count={3} />
+        ) : summaries.length === 0 ? (
+          <EmptyState message="No summaries yet. End a meeting to generate one." />
+        ) : (
+          <div
+            className="dashboard-summary-cards"
+            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+          >
+            {summaries.map((s) => {
+              const edge = projectAccent(s.project, colors);
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => onOpenSummary(s)}
+                  style={{
+                    textAlign: "left",
+                    background: colors.surface,
+                    border: `1px solid ${colors.border}`,
+                    borderLeft: `3px solid ${edge}`,
+                    borderRadius: RADIUS.md,
+                    padding: "12px 14px",
+                    cursor: "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                    minWidth: 0,
+                  }}
+                >
+                  <div style={{ color: colors.text, fontSize: FONT.size.body, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {s.title}
+                  </div>
+                  <div style={{ fontSize: FONT.size.label, color: colors.textMuted }}>{s.project ?? "Project summary"}</div>
+                  <div style={{ fontFamily: FONT.mono, color: colors.textDim, fontSize: FONT.size.caption }}>
+                    {formatDate(s.date)}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -444,7 +363,7 @@ function ReminderCard({
 
 export default function Dashboard({ onNav }: DashboardProps) {
   const { token, user } = useAuth();
-  const { theme, colors, shadow } = useTheme();
+  const { theme, colors } = useTheme();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -565,7 +484,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
             style={{
               display: "flex",
               alignItems: "center",
-              justifyContent: "space-between",
+              justifyContent: "flex-end",
               marginBottom: 12,
               fontFamily: FONT.mono,
               fontSize: FONT.size.caption,
@@ -574,21 +493,20 @@ export default function Dashboard({ onNav }: DashboardProps) {
               textTransform: "uppercase",
             }}
           >
-            <span>SYS.02 — DASHBOARD</span>
             <span>{todayLabel}</span>
           </div>
+          {/* Greeting stays subordinate to the work: the meeting list is what
+              this page is for, and it must be visible without scrolling. */}
           <div
             style={{
-              fontSize: "clamp(36px, 4.6vw, 64px)",
+              fontSize: "clamp(24px, 2.6vw, 34px)",
               fontWeight: 600,
-              letterSpacing: "-.028em",
-              lineHeight: 1,
+              letterSpacing: "-.024em",
+              lineHeight: 1.15,
               color: colors.text,
             }}
           >
-            Welcome back,
-            <br />
-            <span style={{ color: colors.textDim }}>{user?.name ?? "facilitator"}</span>
+            Welcome back, <span style={{ color: colors.textDim }}>{user?.name ?? "facilitator"}</span>
           </div>
         </div>
 
@@ -614,9 +532,8 @@ export default function Dashboard({ onNav }: DashboardProps) {
           </div>
         )}
 
-        <ReminderCard
+        <DashboardPanels
           colors={colors}
-          shadow={shadow}
           loading={loading}
           meetings={meetings}
           summaries={summaries}

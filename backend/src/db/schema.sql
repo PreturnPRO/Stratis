@@ -316,6 +316,16 @@ CREATE TABLE IF NOT EXISTS decisions (
 -- Additive upgrade for databases that created the table before `dismissed`.
 ALTER TABLE decisions ADD COLUMN IF NOT EXISTS dismissed BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- Set when a facilitator rewrites a generated summary block. Its presence is
+-- the provenance signal the summary renders: this line is human-ratified, not
+-- model output. NULL means the AI's wording is untouched.
+ALTER TABLE summary_blocks ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
+
+-- Set when the facilitator releases the summary to participants (or the
+-- auto-send countdown does). NULL means still facilitator-only. The UI's
+-- "sent" state must derive from this row, never from client state alone.
+ALTER TABLE participant_summaries ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ;
+
 -- ==========================================================
 -- PERFORMANCE TUNING INDEX SCALE
 -- ==========================================================

@@ -128,25 +128,7 @@ export function NewMeetingModal({
   return (
     <Modal
       closeOnBackdrop={false}
-      title={
-        <>
-          <span
-            style={{
-              display: "block",
-              marginBottom: 4,
-              fontFamily: FONT.mono,
-              fontSize: FONT.size.micro,
-              fontWeight: 700,
-              letterSpacing: 0.6,
-              textTransform: "uppercase",
-              color: colors.textDim,
-            }}
-          >
-            SYS.02.1
-          </span>
-          {lockedProject ? `New meeting — ${lockedProject.name}` : "New meeting"}
-        </>
-      }
+      title={lockedProject ? `New meeting — ${lockedProject.name}` : "New meeting"}
       width={560}
       onClose={() => !submitting && onClose()}
       footer={

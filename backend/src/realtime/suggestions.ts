@@ -193,6 +193,31 @@ export function markAnswered(
   return card;
 }
 
+// A card the AI got wrong is not a card the room answered. Without this the
+// only way to clear one was "mark answered", which writes a falsehood into the
+// record the summary later reads from. Dismissed cards leave the stack for good
+// — hydrate() already filters state = 'DISMISSED' out on restore.
+function persistDismissed(cardId: string, at: string): void {
+  void db
+    .query(
+      `UPDATE live_cards
+       SET answered = TRUE, answered_at = $1, state = 'DISMISSED'
+       WHERE id = $2`,
+      [at, cardId],
+    )
+    .catch((err) => console.error(`[suggestions] persist dismissed failed for ${cardId}:`, err));
+}
+
+export function dismissCard(sessionId: string, cardId: string): SuggestionCard | null {
+  const m = sessionMap(sessionId);
+  const card = m.get(cardId);
+  if (!card) return null;
+
+  m.delete(cardId);
+  persistDismissed(cardId, now());
+  return card;
+}
+
 export function clearSession(sessionId: string): void {
   bySession.delete(sessionId);
 }

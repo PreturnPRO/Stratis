@@ -3,6 +3,8 @@ import { Check, CircleAlert, PauseCircle, Pencil, Presentation, RefreshCw, X } f
 import { FONT, RADIUS, SPACE, tint } from "../tokens/colors";
 import { useTheme } from "../hooks/useTheme";
 import { Button } from "./ui";
+import { LoadingState } from "./states";
+import { toggleOpenStatus } from "../lib/decisionStatus";
 import type { DecisionRecord, DecisionStatus } from "../../shared/types";
 import type { CompletenessMetric, DecisionEdit } from "../hooks/useCheckpoint";
 
@@ -12,10 +14,18 @@ interface CheckpointPanelProps {
   extracting: boolean;
   speakers?: string[];
   present: boolean;
+  /** Load/extract/save failure from useCheckpoint. Edits roll back on failure,
+   *  so without this line the revert is invisible and reads as data loss. */
+  error?: string | null;
   onEdit: (decisionId: string, patch: DecisionEdit) => void;
   onReExtract: () => void;
   onTogglePresent: () => void;
   onClose: () => void;
+  /**
+   * Rendered below the panel's own actions. Used by the end-of-meeting layer to
+   * put its exit at the bottom, so reading the list is the path to the button.
+   */
+  footer?: React.ReactNode;
 }
 
 function statusMeta(colors: Record<string, string>): Record<
@@ -47,6 +57,7 @@ function DecisionRow({
   const { colors } = useTheme();
   const meta = statusMeta(colors)[decision.status];
   const Icon = meta.icon;
+  const isOpen = decision.status === "open";
   const [owner, setOwner] = useState(decision.owner ?? "");
   const [editingText, setEditingText] = useState(false);
   const [draftText, setDraftText] = useState(decision.text);
@@ -239,11 +250,11 @@ function DecisionRow({
         )
       )}
 
-      {!present && decision.status !== "open" && (
+      {!present && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
           <input
             type="date"
-            defaultValue={isoOrEmpty(decision.dueDate)}
+            value={isoOrEmpty(decision.dueDate)}
             onChange={(e) =>
               onEdit({
                 dueDate: e.target.value || null,
@@ -285,14 +296,21 @@ function DecisionRow({
           </datalist>
           <button
             type="button"
-            onClick={() => onEdit({ status: "open" })}
+            aria-pressed={isOpen}
+            title={
+              isOpen
+                ? "Currently parked as open — click to bring it back for a date"
+                : "Park this as deliberately undecided"
+            }
+            onClick={() => onEdit({ status: toggleOpenStatus(decision.status, decision.dueDate) })}
             style={{
-              background: "transparent",
-              border: `1px solid ${colors.border}`,
+              background: isOpen ? tint(colors.cyan, colors.surfaceMuted) : "transparent",
+              border: `1px solid ${isOpen ? colors.cyan : colors.border}`,
               borderRadius: RADIUS.pill,
-              color: colors.textMuted,
+              color: isOpen ? colors.cyan : colors.textMuted,
               padding: "5px 10px",
               fontSize: FONT.size.micro,
+              fontWeight: isOpen ? 600 : 400,
               cursor: "pointer",
             }}
           >
@@ -310,10 +328,12 @@ export function CheckpointPanel({
   extracting,
   speakers = [],
   present,
+  error,
   onEdit,
   onReExtract,
   onTogglePresent,
   onClose,
+  footer,
 }: CheckpointPanelProps) {
   const { colors } = useTheme();
   const rate = metric?.completenessRate;
@@ -341,20 +361,6 @@ export function CheckpointPanel({
     >
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
         <div>
-          <span
-            style={{
-              display: "block",
-              marginBottom: 4,
-              fontFamily: FONT.mono,
-              fontSize: FONT.size.micro,
-              fontWeight: 700,
-              letterSpacing: 0.6,
-              textTransform: "uppercase",
-              color: colors.textDim,
-            }}
-          >
-            SYS.03.1 — CHECKPOINT
-          </span>
           <h2
             style={{
               margin: 0,
@@ -388,8 +394,26 @@ export function CheckpointPanel({
         </div>
       </div>
 
+      {error && (
+        <div
+          role="alert"
+          style={{
+            background: colors.redBg,
+            border: `1px solid ${colors.red}55`,
+            color: colors.red,
+            borderRadius: RADIUS.sm,
+            padding: "8px 12px",
+            fontSize: FONT.size.label,
+          }}
+        >
+          {error} — your change was not saved.
+        </div>
+      )}
+
       <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: SPACE[2.5] }}>
-        {decisions.length === 0 && !extracting ? (
+        {decisions.length === 0 && extracting ? (
+          <LoadingState count={3} persist />
+        ) : decisions.length === 0 ? (
           <div style={{ padding: "32px 0", textAlign: "center", color: colors.textMuted, fontSize: FONT.size.body }}>
             Nothing to confirm yet. Run the checkpoint once the team has decided something.
           </div>
@@ -433,6 +457,8 @@ export function CheckpointPanel({
           {present ? "Exit present" : "Present to room"}
         </Button>
       </div>
+
+      {footer}
     </div>
   );
 }

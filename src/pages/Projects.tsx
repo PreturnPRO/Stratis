@@ -129,12 +129,11 @@ export default function Projects({ onNav }: Props) {
       <div style={{ marginBottom: 32 }}>
         <div
           style={{
-            display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12,
+            display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: 12,
             fontFamily: FONT.mono, fontSize: FONT.size.caption, letterSpacing: LETTER_SPACING.eyebrow,
             color: colors.textMuted, textTransform: "uppercase",
           }}
         >
-          <span>SYS.04 — PROJECTS</span>
           <span>{projects.length} PROJECT{projects.length === 1 ? "" : "S"}</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>

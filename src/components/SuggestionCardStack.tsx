@@ -39,6 +39,7 @@ interface Props {
   thinking?: boolean
   onMarkAnswered: (id: string) => void
   onMarkActive: (id: string) => void
+  onDismiss: (id: string) => void
 }
 
 const VISIBLE_ACTIVE_CAP = 4
@@ -60,7 +61,7 @@ function formatAge(createdAt: string): string {
   return `${Math.floor(mins / 60)}h`
 }
 
-export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkActive }: Props) {
+export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkActive, onDismiss }: Props) {
   const { colors, theme } = useTheme()
   const styles = makeStyles(colors, theme)
   const [answeredOpen, setAnsweredOpen] = useState(false)
@@ -130,6 +131,7 @@ export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkAct
           key={card.id}
           card={card}
           onMarkAnswered={() => onMarkAnswered(card.id)}
+          onDismiss={() => onDismiss(card.id)}
         />
       ))}
 
@@ -232,9 +234,11 @@ export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkAct
 function ActiveCard({
   card,
   onMarkAnswered,
+  onDismiss,
 }: {
   card: SuggestionCard
   onMarkAnswered: () => void
+  onDismiss: () => void
 }) {
   const { colors } = useTheme()
   const styles = makeStyles(colors)
@@ -278,9 +282,18 @@ function ActiveCard({
       )}
       <p style={styles.question}>{card.question}</p>
       <p style={styles.reason}>{card.reason}</p>
-      <button style={styles.answerBtn} onClick={onMarkAnswered}>
-        Mark answered
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button style={styles.answerBtn} onClick={onMarkAnswered}>
+          Mark answered
+        </button>
+        <button
+          style={styles.dismissBtn}
+          onClick={onDismiss}
+          title="The AI got this one wrong — remove it without recording an answer"
+        >
+          Not relevant
+        </button>
+      </div>
     </div>
   )
 }
@@ -295,8 +308,9 @@ function CollapsedCard({
   const { colors } = useTheme()
   const styles = makeStyles(colors)
   return (
-    <button style={styles.collapsedRow} onClick={onReopen} title="Tap to re-open">
+    <button style={styles.collapsedRow} onClick={onReopen}>
       <span style={styles.strikethrough}>{card.question}</span>
+      <span style={styles.reopenHint}>Re-open</span>
     </button>
   )
 }
@@ -329,10 +343,9 @@ function QueuedRow({
           e.stopPropagation()
           onMarkAnswered()
         }}
-        title="Mark answered"
         aria-label="Mark answered"
       >
-        ✓
+        ✓ Answered
       </button>
     </div>
   )
@@ -442,7 +455,6 @@ function makeStyles(colors: Record<string, string>, theme: 'dark' | 'light' = 'd
     lineHeight: 1.4,
   },
   answerBtn: {
-    alignSelf: 'flex-end',
     marginTop: 4,
     padding: '4px 10px',
     fontSize: FONT.size.caption,
@@ -451,6 +463,17 @@ function makeStyles(colors: Record<string, string>, theme: 'dark' | 'light' = 'd
     border: `1px solid ${colors.accent}`,
     background: 'transparent',
     color: colors.accent,
+    cursor: 'pointer',
+  },
+  dismissBtn: {
+    marginTop: 4,
+    marginLeft: 'auto',
+    padding: '4px 10px',
+    fontSize: FONT.size.caption,
+    borderRadius: 6,
+    border: `1px solid ${colors.border}`,
+    background: 'transparent',
+    color: colors.textDim,
     cursor: 'pointer',
   },
   toggleGroup: {
@@ -501,11 +524,25 @@ function makeStyles(colors: Record<string, string>, theme: 'dark' | 'light' = 'd
     borderBottom: `1px solid ${colors.border}`,
     cursor: 'pointer',
     textAlign: 'left',
+    display: 'flex',
+    alignItems: 'baseline',
+    gap: 8,
   },
   strikethrough: {
+    flex: 1,
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
     fontSize: FONT.size.label,
     color: colors.textMuted,
     textDecoration: 'line-through',
+  },
+  reopenHint: {
+    flexShrink: 0,
+    fontSize: FONT.size.caption,
+    color: colors.accent,
+    fontWeight: 500,
   },
   queuedRow: {
     display: 'flex',
@@ -552,12 +589,12 @@ function makeStyles(colors: Record<string, string>, theme: 'dark' | 'light' = 'd
   },
   queuedRowAnswer: {
     flexShrink: 0,
-    width: 22,
-    height: 22,
+    padding: '3px 9px',
     marginRight: 8,
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
+    whiteSpace: 'nowrap',
     fontSize: FONT.size.caption,
     borderRadius: 6,
     border: `1px solid ${colors.border}`,
