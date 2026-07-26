@@ -187,6 +187,7 @@ export default function Meeting({ onNav }: MeetingProps) {
   const [showEndCheckpoint, setShowEndCheckpoint] = useState(false);
   const [seenDecisions, setSeenDecisions] = useState<string[]>([]);
   const checkpointOpenedRef = useRef(false);
+  const checkpointWarmedRef = useRef(false);
 
   const [isRecording, setIsRecording] = useState(false);
 
@@ -243,7 +244,7 @@ export default function Meeting({ onNav }: MeetingProps) {
     });
   }, []);
 
-  const { cards, connected, markAnswered, markActive, sendControl, sendAudioFrame } =
+  const { cards, connected, markAnswered, markActive, dismissCard, sendControl, sendAudioFrame } =
     useSuggestionSocket(sessionId, {
       onSttInterim: (text) => {
         setPendingText(text);
@@ -613,6 +614,24 @@ useEffect(() => {
   const overtime = remainingSec != null && remainingSec <= 0;
   const timeColor = overtime ? colors.red : inWrapUp ? colors.orange : colors.textMuted;
 
+  // Extraction is a heavy ~90s call, so waiting until someone asks for the
+  // checkpoint guarantees they wait for it. Run it once when the meeting
+  // reaches wrap-up: by the time anyone opens the panel — or presses End —
+  // the decisions are already there and it opens populated.
+  //
+  // Deliberately one call per session. The AI quota is shared with the live
+  // card loop, and a periodic re-read would spend it on a list nobody is
+  // looking at yet.
+  useEffect(() => {
+    if (!inWrapUp || checkpointWarmedRef.current) return;
+    if (!sessionId || !isRecording) return;
+    if (transcripts.length === 0) return;
+    if (checkpoint.decisions.length > 0 || checkpoint.extracting) return;
+
+    checkpointWarmedRef.current = true;
+    void checkpoint.extract();
+  }, [inWrapUp, sessionId, isRecording, transcripts.length, checkpoint]);
+
   const speechActive = lastSpeechMs != null && nowMs - lastSpeechMs < 6000;
   const presenceMode: PresenceMode = !isRecording
     ? "off"
@@ -955,6 +974,7 @@ useEffect(() => {
                   thinking={isRecording && transcripts.length > 0}
                   onMarkAnswered={markAnswered}
                   onMarkActive={markActive}
+                  onDismiss={dismissCard}
                 />
               </div>
             </div>
@@ -965,21 +985,22 @@ useEffect(() => {
 
       {showEndConfirm && (
         <Modal
-          title="Conclude Meeting Session?"
+          title="End the meeting?"
           onClose={() => setShowEndConfirm(false)}
           footer={
             <>
               <Button variant="ghost" onClick={() => setShowEndConfirm(false)} disabled={ending}>
-                Cancel
+                Keep going
               </Button>
               <Button variant="primary" onClick={handleEndMeeting} disabled={ending}>
-                {ending ? "Concluding..." : "Generate Patches"}
+                {ending ? "Writing the summary…" : "End meeting"}
               </Button>
             </>
           }
         >
           <p style={{ fontSize: FONT.size.body, color: colors.textMuted, lineHeight: 1.5, margin: 0 }}>
-            This action will disconnect the continuous recording feed and run post-meeting summary parsing. You will proceed to review individual PM document patches before final commit.
+            Recording stops, and Stratis writes the summary. You'll get to review every change it
+            proposes to the project document before anything is saved.
           </p>
         </Modal>
       )}
@@ -1030,7 +1051,7 @@ useEffect(() => {
                     Back to meeting
                   </Button>
                   <Button variant="subtle" size="sm" onClick={handleEndMeeting} disabled={ending}>
-                    {ending ? "Concluding…" : "End meeting"}
+                    {ending ? "Writing the summary…" : "End meeting"}
                   </Button>
                 </div>
               </div>

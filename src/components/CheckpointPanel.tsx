@@ -3,6 +3,7 @@ import { Check, CircleAlert, PauseCircle, Pencil, Presentation, RefreshCw, X } f
 import { FONT, RADIUS, SPACE, tint } from "../tokens/colors";
 import { useTheme } from "../hooks/useTheme";
 import { Button } from "./ui";
+import { LoadingState } from "./states";
 import { toggleOpenStatus } from "../lib/decisionStatus";
 import type { DecisionRecord, DecisionStatus } from "../../shared/types";
 import type { CompletenessMetric, DecisionEdit } from "../hooks/useCheckpoint";
@@ -356,20 +357,6 @@ export function CheckpointPanel({
     >
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
         <div>
-          <span
-            style={{
-              display: "block",
-              marginBottom: 4,
-              fontFamily: FONT.mono,
-              fontSize: FONT.size.micro,
-              fontWeight: 700,
-              letterSpacing: 0.6,
-              textTransform: "uppercase",
-              color: colors.textDim,
-            }}
-          >
-            SYS.03.1 — CHECKPOINT
-          </span>
           <h2
             style={{
               margin: 0,
@@ -404,7 +391,9 @@ export function CheckpointPanel({
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: SPACE[2.5] }}>
-        {decisions.length === 0 && !extracting ? (
+        {decisions.length === 0 && extracting ? (
+          <LoadingState count={3} persist />
+        ) : decisions.length === 0 ? (
           <div style={{ padding: "32px 0", textAlign: "center", color: colors.textMuted, fontSize: FONT.size.body }}>
             Nothing to confirm yet. Run the checkpoint once the team has decided something.
           </div>

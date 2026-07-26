@@ -163,6 +163,31 @@ aiRouter.post("/suggest/answer", requireAuth, (req, res) => {
   res.json({ ok: true, data: { card } });
 });
 
+aiRouter.post("/suggest/dismiss", requireAuth, (req, res) => {
+  const sessionId =
+    typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
+  const cardId = typeof req.body?.cardId === "string" ? req.body.cardId : "";
+  if (!sessionId || !cardId) {
+    return res
+      .status(400)
+      .json({
+        ok: false,
+        error: "body.sessionId and body.cardId are required",
+      });
+  }
+  if (req.auth!.role !== "facilitator") {
+    return res
+      .status(403)
+      .json({ ok: false, error: "Only the facilitator can dismiss cards" });
+  }
+
+  const card = suggestions.dismissCard(sessionId, cardId);
+  if (!card) {
+    return res.status(404).json({ ok: false, error: "Card not found" });
+  }
+  res.json({ ok: true, data: { card } });
+});
+
 aiRouter.get("/suggest/:sessionId", requireAuth, async (req, res, next) => {
   try {
     await suggestions.hydrate(req.params.sessionId);
