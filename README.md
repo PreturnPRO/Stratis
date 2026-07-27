@@ -132,8 +132,9 @@ STRATIS-APP/
 │       │
 │       ├── db/
 │       │   ├── database.ts      # pg Pool, DATABASE_URL
-│       │   ├── migrate.ts       # applies schema.sql (--reset drops tables)
-│       │   ├── schema.sql       # PostgreSQL schema
+│       │   ├── migrate.ts       # applies schema.sql (--reset runs reset.sql first)
+│       │   ├── schema.sql       # PostgreSQL schema — additive, safe to re-run
+│       │   ├── reset.sql        # DESTRUCTIVE drops, only under --reset
 │       │   └── seed.ts
 │       │
 │       ├── lib/

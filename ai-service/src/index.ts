@@ -123,6 +123,16 @@ export async function firstCall(): Promise<CompletionResult> {
   return result;
 }
 
+// AI_TIMEOUT_MS defaults to 10s, which is a sane ceiling for a one-line health
+// check and far too tight for every real call below: each one ships a whole
+// transcript, and gemini's pacer plus a 503 fallback hop add seconds before a
+// single token is generated. On 10s EVERY live routing call aborted for a whole
+// meeting — no cards, no rolling memory, and a 500 out of the summary route.
+// These are per-attempt budgets, so a fallback retry gets its own clock.
+const LIVE_TIMEOUT_MS = 30_000;
+const SUMMARY_TIMEOUT_MS = 60_000;
+const DOC_PATCH_TIMEOUT_MS = 90_000;
+
 export async function structuredCall(
   input: string,
 ): Promise<
@@ -141,7 +151,7 @@ export async function structuredCall(
     { role: "user", content: input },
   ];
 
-  const result = await provider.complete(messages);
+  const result = await provider.complete(messages, { timeoutMs: SUMMARY_TIMEOUT_MS });
   const parsed: ParseResult = parseStructured(result.text);
 
   if (!parsed.ok) {
@@ -214,7 +224,7 @@ export async function liveCardCall(
     { role: "user", content: liveContextPrompt(ctx) },
   ];
 
-  const result = await provider.complete(messages);
+  const result = await provider.complete(messages, { timeoutMs: LIVE_TIMEOUT_MS });
   const parsed: LiveCardParseResult = parseLiveCard(result.text);
 
   if (!parsed.ok) {
@@ -274,7 +284,7 @@ export async function documentPatchCall(
     { role: "user", content: docPatchPrompt(ctx) },
   ];
 
-  const result = await provider.complete(messages);
+  const result = await provider.complete(messages, { timeoutMs: DOC_PATCH_TIMEOUT_MS });
   const parsed: DocPatchParseResult = parseDocumentPatch(result.text);
 
   if (!parsed.ok) {

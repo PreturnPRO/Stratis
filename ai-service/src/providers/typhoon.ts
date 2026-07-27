@@ -1,5 +1,5 @@
 import { env } from "../../../backend/src/config/env";
-import { fetchWithTimeout, type AIProvider, type ChatMessage, type CompletionResult } from "./types";
+import { fetchWithTimeout, type AIProvider, type ChatMessage, type CompletionResult, type CompleteOptions } from "./types";
 import { createPacer, fetchWithRateLimit, type RateLimitOptions } from "./rateLimit";
 
 const TYPHOON_RATE_LIMIT: RateLimitOptions = {
@@ -11,9 +11,11 @@ const typhoonPacer = createPacer(2100);
 
 export const typhoonProvider: AIProvider = {
   name: "typhoon",
-  async complete(messages: ChatMessage[]): Promise<CompletionResult> {
+  async complete(messages: ChatMessage[], opts?: CompleteOptions): Promise<CompletionResult> {
     const { apiKey, model, baseUrl } = env.ai.typhoon;
     if (!apiKey) throw new Error("TYPHOON_API_KEY is not set");
+
+    const timeoutMs = opts?.timeoutMs ?? env.ai.timeoutMs;
 
     const res = await fetchWithRateLimit(
       () =>
@@ -32,7 +34,7 @@ export const typhoonProvider: AIProvider = {
               max_tokens: 4096,
             }),
           },
-          env.ai.timeoutMs,
+          timeoutMs,
         ),
       {
         ...TYPHOON_RATE_LIMIT,

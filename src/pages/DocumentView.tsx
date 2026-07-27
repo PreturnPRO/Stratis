@@ -125,6 +125,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
         }
         setDocState({ sections: data.data.document.sections })
         setVersion(data.data.document.version ?? 0)
+        setVersions(data.data.versions ?? [])
         setActiveProjectId(data.data.projectId ?? null)
         const out: DocumentPatchOutput = data.data.proposed
         setProposed(out)
@@ -385,12 +386,21 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
             <div style={styles.tocLabel}>Versions</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {versions.slice(0, 8).map((v) => {
-                const active = viewingVersion === v.version
                 const isLatest = v.version === version
+                // Highlight follows what the article is SHOWING, not which row
+                // happens to be newest. Keying the lit state off isLatest alone
+                // left v5 lit while you were reading v3, so the sidebar
+                // contradicted the page — in the one view whose job is telling
+                // you which version you are looking at.
+                const isViewing = viewingVersion == null ? isLatest : viewingVersion === v.version
                 return (
                   <button
                     key={v.id}
-                    style={{ ...styles.historyRow, ...(isLatest ? styles.historyRowActive : {}), ...(active && !isLatest ? styles.historyRowViewing : {}) }}
+                    style={{
+                      ...styles.historyRow,
+                      ...(isViewing && isLatest ? styles.historyRowActive : {}),
+                      ...(isViewing && !isLatest ? styles.historyRowViewing : {}),
+                    }}
                     onClick={() => (isLatest ? exitVersionView() : void loadVersion(v.version))}
                     title={isLatest ? 'Current version' : 'View this version'}
                   >

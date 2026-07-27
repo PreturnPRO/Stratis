@@ -136,11 +136,18 @@ documentRouter.post("/session/:sessionId/generate", requireAuth, async (req, res
       });
     }
 
+    // The history has to ship with the generate response too. The post-meeting
+    // review arrives here, not through GET /:projectId, so without it the
+    // Versions rail renders empty and the facilitator cannot open a single
+    // earlier version of the document they are being asked to amend.
+    const versions = existing ? await getVersions(existing.id) : [];
+
     res.json({
       ok: true,
       data: {
         projectId: meta.project_id,
         document: { ...currentState, version: baseVersion },
+        versions,
         proposed: result.data,
         provider: result.provider,
       },
