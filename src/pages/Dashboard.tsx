@@ -430,6 +430,14 @@ export default function Dashboard({ onNav }: DashboardProps) {
     void loadDashboard();
   }, [token]);
 
+  // No `?? s.id` fallback here: s.id is the SUMMARY's id, and passing it as a
+  // sessionId guarantees a 404 on the page we just navigated to. A card with no
+  // session has nowhere to go, so it does not navigate.
+  const handleOpenSummary = (s: DashboardSummary) => {
+    if (!s.sessionId) return;
+    onNav?.("summary", { sessionId: s.sessionId });
+  };
+
   const handleStartExisting = async (meeting: DashboardMeeting) => {
     setError(null);
 
@@ -539,7 +547,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
           summaries={summaries}
           onRefresh={loadDashboard}
           onStartMeeting={(m) => void handleStartExisting(m)}
-          onOpenSummary={(s) => onNav?.("summary", { sessionId: s.sessionId ?? s.id })}
+          onOpenSummary={handleOpenSummary}
           onNav={onNav}
         />
 

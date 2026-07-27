@@ -2,28 +2,13 @@
 -- STRATIS DATABASE UPGRADE — FINAL ER DIAGRAM (SUPABASE)
 -- ==========================================================
 
--- Drop S1 tables if we want to run a clean, synchronized reset
-DROP TABLE IF EXISTS action_items CASCADE;
-DROP TABLE IF EXISTS summary_blocks CASCADE;
-DROP TABLE IF EXISTS participant_summaries CASCADE;
-DROP TABLE IF EXISTS live_card_evidence CASCADE;
-DROP TABLE IF EXISTS live_cards CASCADE;
-DROP TABLE IF EXISTS node_evidence CASCADE;
-DROP TABLE IF EXISTS document_patch_evidence CASCADE;
-DROP TABLE IF EXISTS document_patch_items CASCADE;
-DROP TABLE IF EXISTS document_patches CASCADE;
-DROP TABLE IF EXISTS node_relationships CASCADE;
-DROP TABLE IF EXISTS nodes CASCADE;
-DROP TABLE IF EXISTS document_versions CASCADE;
-DROP TABLE IF EXISTS documents CASCADE;
-DROP TABLE IF EXISTS transcripts CASCADE;
-DROP TABLE IF EXISTS sessions CASCADE;
-DROP TABLE IF EXISTS meetings CASCADE;
-DROP TABLE IF EXISTS projects CASCADE;
-DROP TABLE IF EXISTS users CASCADE;
-DROP TABLE IF EXISTS organizations CASCADE;
-DROP TABLE IF EXISTS consent_logs CASCADE;
-DROP TABLE IF EXISTS notifications CASCADE;
+-- This file is ADDITIVE and safe to re-run against a live database: every
+-- statement is CREATE TABLE IF NOT EXISTS, ADD COLUMN IF NOT EXISTS, or CREATE
+-- INDEX IF NOT EXISTS. Keep it that way.
+--
+-- The DROP TABLE block that used to sit here now lives in reset.sql and runs
+-- only under `db:migrate --reset`. It made `db:migrate` — the command you reach
+-- for when a column is missing — destroy every row in the database first.
 
 -- 1. ORGANIZATIONS
 CREATE TABLE IF NOT EXISTS organizations (

@@ -1,5 +1,5 @@
 import { env } from "../../../backend/src/config/env";
-import { fetchWithTimeout, type AIProvider, type ChatMessage, type CompletionResult } from "./types";
+import { fetchWithTimeout, type AIProvider, type ChatMessage, type CompletionResult, type CompleteOptions } from "./types";
 import { createPacer, fetchWithRateLimit, type RateLimitOptions } from "./rateLimit";
 
 const GROQ_RATE_LIMIT: RateLimitOptions = {
@@ -12,9 +12,13 @@ const groqPacer = createPacer(2100);
 
 export const groqProvider: AIProvider = {
   name: "groq",
-  async complete(messages: ChatMessage[]): Promise<CompletionResult> {
+  async complete(messages: ChatMessage[], opts?: CompleteOptions): Promise<CompletionResult> {
     const { apiKey, model, baseUrl } = env.ai.groq;
     if (!apiKey) throw new Error("GROQ_API_KEY is not set");
+
+    // Honour the caller's budget: a transcript-sized call needs far longer than
+    // the AI_TIMEOUT_MS default, and dropping opts here aborted it silently.
+    const timeoutMs = opts?.timeoutMs ?? env.ai.timeoutMs;
 
     const res = await fetchWithRateLimit(
       () =>
@@ -34,7 +38,7 @@ export const groqProvider: AIProvider = {
               response_format: { type: "json_object" }
             }),
           },
-          env.ai.timeoutMs,
+          timeoutMs,
         ),
       {
         ...GROQ_RATE_LIMIT,

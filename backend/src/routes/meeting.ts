@@ -36,14 +36,11 @@ interface SessionRow {
   created_at: string;
 }
 
+/** A row of participant_summaries, joined out to the meeting it summarises. */
 interface SummaryRow {
   id: string;
-  user_id: string;
-  session_id: string | null;
-  kind: string;
+  session_id: string;
   title: string;
-  body: string;
-  read: number;
   created_at: string;
   meeting_title: string | null;
   project_id: string | null;
@@ -294,28 +291,36 @@ meetingRouter.get("/dashboard", requireAuth, async (req, res) => {
       [req.auth!.orgId, req.auth!.role, req.auth!.sub]
     );
 
+    // Read the summaries table, not the notification feed.
+    //
+    // This used to select notifications WHERE kind = 'summary', but a document
+    // commit also files a kind='summary' notification (see routes/document.ts),
+    // so "Recent summaries" listed rows titled "<meeting> — document v3" and
+    // every one of them opened the SUMMARY page. That is the wrong destination
+    // for a document card, and where a notification's session had been deleted
+    // (session_id is ON DELETE SET NULL) the card carried no session id at all
+    // and the click 404'd.
+    //
+    // Scoped org + facilitator to match getSessionForSummary in routes/summary.ts,
+    // so a card that renders here can always be opened by whoever sees it.
     const recentSummaries = await db.query<SummaryRow>(
       `
       SELECT
-        n.id,
-        n.user_id,
-        n.session_id,
-        n.kind,
-        n.title,
-        n.body,
-        n.read,
-        n.created_at,
-        m.title AS meeting_title,
+        ps.id,
+        ps.session_id,
+        ps.summary_title AS title,
+        ps.created_at,
+        m.title  AS meeting_title,
         m.project_id AS project_id
-      FROM notifications n
-      LEFT JOIN sessions s ON s.id = n.session_id
-      LEFT JOIN meetings m ON m.id = s.meeting_id
-      WHERE n.user_id = $1
-        AND n.kind = 'summary'
-      ORDER BY n.created_at DESC
-      LIMIT $2
+      FROM participant_summaries ps
+      JOIN sessions s ON s.id = ps.session_id
+      JOIN meetings m ON m.id = s.meeting_id
+      WHERE m.org_id = $1
+        AND ($2 = 'admin' OR s.facilitator_id = $3)
+      ORDER BY ps.created_at DESC
+      LIMIT $4
       `,
-      [req.auth!.sub, limit]
+      [req.auth!.orgId, req.auth!.role, req.auth!.sub, limit]
     );
 
     res.json({
