@@ -12,7 +12,7 @@ html, body, #root {
 body {
   background: #09090b;
   color: #f2f2f3;
-  font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  font-family: 'Inter Variable', 'Inter', 'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   margin: 0;
@@ -44,6 +44,18 @@ button:disabled {
 input, textarea {
   font-family: inherit;
   transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+/* Placeholders inherit the browser default (#757575, 4.32:1) otherwise, which
+   misses AA. Pinned to the textDim token, which is now AA on every surface. */
+input::placeholder, textarea::placeholder {
+  color: #8a8a93;
+  opacity: 1;
+}
+
+body[data-theme="light"] input::placeholder,
+body[data-theme="light"] textarea::placeholder {
+  color: #6b6a60;
 }
 
 /* Visually hidden but still available to assistive tech. */
@@ -96,6 +108,15 @@ input:focus-visible, textarea:focus-visible {
   background-clip: padding-box;
 }
 
+/* Every scrollbar value here was a hardcoded dark grey with no light variant,
+   so in light theme the page painted a near-black bar down the cream. */
+body[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: #d5d0c1;
+}
+body[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: #bdb7a5;
+}
+
 /* Transcript feed — a slightly wider, more present scrollbar (with a rounded
    track rail and Firefox support) so the live capture panel reads as
    scrollable at a glance and the thumb has room to grab. */
@@ -123,6 +144,22 @@ input:focus-visible, textarea:focus-visible {
 }
 .transcript-scroll:hover {
   scrollbar-color: #4a4a54 transparent;
+}
+
+body[data-theme="light"] .transcript-scroll {
+  scrollbar-color: #d5d0c1 transparent;
+}
+body[data-theme="light"] .transcript-scroll::-webkit-scrollbar-track {
+  background: rgba(80, 74, 52, 0.04);
+}
+body[data-theme="light"] .transcript-scroll::-webkit-scrollbar-thumb {
+  background: #d5d0c1;
+}
+body[data-theme="light"] .transcript-scroll::-webkit-scrollbar-thumb:hover {
+  background: #bdb7a5;
+}
+body[data-theme="light"] .transcript-scroll:hover {
+  scrollbar-color: #bdb7a5 transparent;
 }
 
 /* ── Shared keyframes (used by inline-styled components) ───────────────────── */

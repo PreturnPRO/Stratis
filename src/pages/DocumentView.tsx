@@ -3,7 +3,7 @@ import { Pencil } from 'lucide-react'
 import { RADIUS, FONT, LETTER_SPACING, SHADOW, GRADIENT, SPACE } from '../tokens/colors'
 import { useTheme } from '../hooks/useTheme'
 import { useAuth } from '../context/AuthContext'
-import { Button, Modal } from '../components/ui'
+import { Button, IconButton, Modal } from '../components/ui'
 import { Markdown } from '../components/Markdown'
 import {
   PM_SECTIONS,
@@ -335,10 +335,10 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
         <div style={styles.pickerList}>
           {picker.length === 0 && !error && <p style={styles.dim}>No projects yet.</p>}
           {picker.map((p) => (
-            <button key={p.id} style={styles.pickerRow} onClick={() => void loadProject(p.id)}>
+            <Button key={p.id} variant="subtle" style={styles.pickerRow} onClick={() => void loadProject(p.id)}>
               <span style={styles.pickerName}>{p.name}</span>
               <span style={styles.dim}>{p.meetingCount} meeting{p.meetingCount === 1 ? '' : 's'}</span>
-            </button>
+            </Button>
           ))}
         </div>
       </div>
@@ -354,7 +354,9 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
     <div className="document-shell" style={styles.shell}>
       <nav aria-label="Table of contents" style={styles.toc}>
         {!sessionId && (docState || error) && (
-          <button
+          <Button
+            variant="link"
+            size="sm"
             style={styles.backBtn}
             onClick={() => {
               if (browsable) {
@@ -365,7 +367,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
             }}
           >
             ← All projects
-          </button>
+          </Button>
         )}
 
         <div style={styles.tocLabel}>Contents</div>
@@ -373,10 +375,10 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
           {PM_SECTIONS.map((s) => {
             const hasProposed = (reviewsBySection[s.key]?.length ?? 0) > 0
             return (
-              <button key={s.key} style={styles.tocLink} onClick={() => scrollToSection(s.key)}>
+              <Button key={s.key} variant="quiet" style={styles.tocLink} onClick={() => scrollToSection(s.key)}>
                 <span style={{ flex: 1, textAlign: 'left' }}>{s.title}</span>
                 {hasProposed && <span style={styles.tocDot} title="Proposed change" />}
-              </button>
+              </Button>
             )
           })}
         </div>
@@ -394,8 +396,9 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
                 // you which version you are looking at.
                 const isViewing = viewingVersion == null ? isLatest : viewingVersion === v.version
                 return (
-                  <button
+                  <Button
                     key={v.id}
+                    variant="quiet"
                     style={{
                       ...styles.historyRow,
                       ...(isViewing && isLatest ? styles.historyRowActive : {}),
@@ -409,7 +412,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
                       <div style={styles.historySummary}>{v.changeSummary || (isLatest ? 'Current document' : '(no summary)')}</div>
                       <div style={styles.historyDate}>{formatDate(v.createdAt)}{isLatest ? ' · latest' : ''}</div>
                     </div>
-                  </button>
+                  </Button>
                 )
               })}
             </div>
@@ -417,9 +420,9 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
         )}
 
         {isFacilitator && docState && !isHistorical && (
-          <button style={styles.removeDocBtn} onClick={() => setShowRemoveDoc(true)}>
+          <Button variant="quiet" style={styles.removeDocBtn} onClick={() => setShowRemoveDoc(true)}>
             Remove document…
-          </button>
+          </Button>
         )}
       </nav>
 
@@ -499,13 +502,13 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
                   <span style={styles.sectionNumber}>{String(i + 1).padStart(2, '0')}</span>
                   <h2 style={styles.sectionTitle}>{sec?.title ?? s.title}</h2>
                   {isFacilitator && !isHistorical && !secReviews.length && (
-                    <button
+                    <IconButton
                       style={styles.editLink}
                       aria-label={`Edit ${sec?.title ?? s.title}`}
                       onClick={() => openEditSection(s.key, sec?.content ?? '')}
                     >
                       <Pencil size={13} strokeWidth={1.75} />
-                    </button>
+                    </IconButton>
                   )}
                 </div>
 
@@ -655,25 +658,30 @@ function ProposedChange({
       {patch.reason && <p style={styles.proposedReason}>Why: {patch.reason}</p>}
 
       <div style={styles.proposedActions}>
-        <button
+        <Button
+          variant="ghost"
           style={{
             ...styles.reviewBtn,
             color: decision === 'approved' ? colors.onAccent : colors.accent,
-            background: decision === 'approved' ? colors.accent : 'transparent',
+            /* Only pinned once approved; left unset otherwise so the ghost
+               variant can supply the hover fill. */
+            ...(decision === 'approved'
+              ? { background: colors.accent, boxShadow: SHADOW.glow(colors.accent) }
+              : null),
             borderColor: colors.accentDim,
-            boxShadow: decision === 'approved' ? SHADOW.glow(colors.accent) : 'none',
           }}
           onClick={onApprove}
         >
           {decision === 'approved' ? '✓ Approved' : 'Approve'}
-        </button>
-        <button style={styles.reviewBtn} onClick={onToggleEdit}>{editing ? 'Done' : 'Edit'}</button>
-        <button
+        </Button>
+        <Button variant="ghost" style={styles.reviewBtn} onClick={onToggleEdit}>{editing ? 'Done' : 'Edit'}</Button>
+        <Button
+          variant="ghost"
           style={{ ...styles.reviewBtn, color: colors.red, borderColor: `${colors.red}66` }}
           onClick={onReject}
         >
           {decision === 'rejected' ? '✕ Rejected' : 'Reject'}
-        </button>
+        </Button>
       </div>
     </div>
   )
@@ -702,22 +710,26 @@ function makeStyles(colors: Record<string, string>): Record<string, React.CSSPro
       fontFamily: FONT.mono, fontSize: FONT.size.label, fontWeight: 700, letterSpacing: LETTER_SPACING.label, color: colors.textMuted,
       textTransform: 'uppercase', marginBottom: 12,
     },
+    /* `background`, `border` and `cursor` are omitted from the control styles
+       below on purpose — Button's variant supplies them, and re-declaring them
+       here would win the style spread and cancel the hover state. */
     tocLink: {
-      display: 'flex', alignItems: 'center', gap: 8,
-      background: 'transparent', border: 'none', borderRadius: RADIUS.sm,
-      padding: '7px 10px', fontSize: FONT.size.body, color: colors.textMuted, cursor: 'pointer',
+      display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 8,
+      borderRadius: RADIUS.sm, width: '100%',
+      padding: '7px 10px', fontSize: FONT.size.body, fontWeight: 400, color: colors.textMuted,
     },
     tocDot: {
       width: 6, height: 6, borderRadius: '50%', background: colors.amber, flexShrink: 0,
     },
     backBtn: {
-      background: 'transparent', border: 'none', color: colors.accent,
-      cursor: 'pointer', fontSize: FONT.size.label, padding: 0, marginBottom: SPACE[6], textAlign: 'left',
+      color: colors.accent,
+      fontSize: FONT.size.label, marginBottom: SPACE[6], textAlign: 'left',
+      alignSelf: 'flex-start', marginLeft: -11,
     },
     removeDocBtn: {
-      marginTop: 'auto', background: 'transparent', border: `1px dashed ${colors.border}`,
-      borderRadius: RADIUS.sm, color: colors.textMuted, fontSize: FONT.size.label,
-      padding: '9px 10px', cursor: 'pointer', textAlign: 'left',
+      marginTop: 'auto', border: `1px dashed ${colors.border}`,
+      borderRadius: RADIUS.sm, fontSize: FONT.size.label, fontWeight: 400,
+      padding: '9px 10px', textAlign: 'left', justifyContent: 'flex-start', width: '100%',
     },
 
     articleScroll: { flex: 1, overflowY: 'auto', minWidth: 0, minHeight: 0 },
@@ -767,9 +779,7 @@ function makeStyles(colors: Record<string, string>): Record<string, React.CSSPro
     },
     sectionTitle: { flex: 1, fontSize: FONT.size.heading, fontWeight: 600, margin: 0, color: colors.textPrimary, letterSpacing: -0.2 },
     editLink: {
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'transparent', border: 'none', color: colors.textMuted,
-      cursor: 'pointer', padding: '4px', borderRadius: RADIUS.sm,
+      width: 24, height: 24, borderRadius: RADIUS.sm,
     },
 
     proposed: {
@@ -792,22 +802,20 @@ function makeStyles(colors: Record<string, string>): Record<string, React.CSSPro
     proposedActions: { display: 'flex', gap: SPACE[1.5], justifyContent: 'flex-end', marginTop: 2 },
     reviewBtn: {
       padding: '4px 11px', fontSize: FONT.size.caption, fontWeight: 600, borderRadius: RADIUS.sm,
-      border: `1px solid ${colors.border}`, background: 'transparent',
-      color: colors.textMuted, cursor: 'pointer',
     },
 
     pickerList: { display: 'flex', flexDirection: 'column', gap: SPACE[2.5], maxWidth: 640 },
     pickerRow: {
       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      background: colors.surface, border: `1px solid ${colors.border}`,
-      borderRadius: RADIUS.lg, padding: '16px 18px', cursor: 'pointer', textAlign: 'left',
+      borderRadius: RADIUS.lg, padding: '16px 18px', textAlign: 'left',
+      width: '100%', fontWeight: 400,
     },
     pickerName: { fontSize: FONT.size.body, fontWeight: 600, color: colors.textPrimary },
 
     historyRow: {
-      display: 'flex', gap: 8, alignItems: 'flex-start', width: '100%',
-      background: 'transparent', border: '1px solid transparent', borderRadius: RADIUS.sm,
-      padding: '7px 8px', cursor: 'pointer', textAlign: 'left',
+      display: 'flex', gap: 8, alignItems: 'flex-start', justifyContent: 'flex-start', width: '100%',
+      borderRadius: RADIUS.sm,
+      padding: '7px 8px', textAlign: 'left', fontWeight: 400,
     },
     historyRowActive: {
       background: colors.amberSubtle, border: `1px solid ${colors.accentDim}`,

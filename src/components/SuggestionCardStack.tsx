@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { FONT, LETTER_SPACING, SHADOW, GLASS, LIGHT_GLASS, SPACE, tint } from '../tokens/colors'
 import { useTheme } from '../hooks/useTheme'
+import { Button } from './ui'
 import type { LiveCardType, LiveCardUrgency } from '../../shared/types'
 
 export type CardStatus = 'active' | 'answered'
@@ -140,7 +141,8 @@ export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkAct
           ...styles.toggleGroup,
           ...(queuedActive.length > 3 ? styles.toggleGroupBacklog : null),
         }}>
-          <button
+          <Button
+            variant="quiet"
             style={styles.toggleBtn}
             onClick={() => setQueueOpen(o => !o)}
             aria-expanded={queueOpen}
@@ -163,7 +165,7 @@ export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkAct
             }}>
               ▾
             </span>
-          </button>
+          </Button>
 
           {queueOpen && (
             <div style={styles.answeredList}>
@@ -198,7 +200,8 @@ export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkAct
 
       {answered.length > 0 && (
         <div style={styles.toggleGroup}>
-          <button
+          <Button
+            variant="quiet"
             style={styles.toggleBtn}
             onClick={() => setAnsweredOpen(o => !o)}
             aria-expanded={answeredOpen}
@@ -212,7 +215,7 @@ export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkAct
             }}>
               ▾
             </span>
-          </button>
+          </Button>
 
           {answeredOpen && (
             <div style={styles.answeredList}>
@@ -240,7 +243,7 @@ function ActiveCard({
   onMarkAnswered: () => void
   onDismiss: () => void
 }) {
-  const { colors } = useTheme()
+  const { colors, shadow } = useTheme()
   const styles = makeStyles(colors)
   const urgencyColors = urgencyColor(colors)
   const meta = card.cardType ? typeMeta(colors)[card.cardType] : null
@@ -248,20 +251,31 @@ function ActiveCard({
   const stale = isStale(card.createdAt)
 
   return (
+    /* No accent side-stripe and no coloured halo. Four cards each carrying a
+       3px stripe plus a 16px glow put four saturated light sources on the one
+       surface that has to stay calm while someone is mid-sentence. Card type is
+       already carried twice over — by the dot and by the labelled chip directly
+       beneath — so the stripe was redundant as well as loud. */
     <div style={{
       ...styles.card,
       background: colors.surface,
-      borderLeft: `3px solid ${accent}`,
-      boxShadow: `${SHADOW.shadFloat2}, 0 0 16px ${accent}26`,
+      /* `shadow` from the theme, not the hardcoded SHADOW import: that one is
+         the dark-theme ramp, so in light mode every card carried an
+         rgba(0,0,0,0.4) drop shadow on cream. */
+      boxShadow: shadow.shadFloat2,
     }}>
       {meta && (
         <div style={styles.tagRow}>
           <span style={styles.tag}>
             <span style={{ ...styles.dot, background: accent }} />
+            {/* 8% rather than tint()'s 15% default. At 15% these read as
+                coloured blocks on a surface that has to stay calm mid-meeting;
+                at 8% they're washes that still separate the four types. Text
+                contrast improves too, since less colour sits under it. */}
             <span style={{
               ...styles.tagLabel,
               color: accent,
-              background: tint(accent, colors.surface),
+              background: tint(accent, colors.surface, 8),
               padding: '2px 7px',
               borderRadius: 999,
             }}>{meta.label}</span>
@@ -271,7 +285,7 @@ function ActiveCard({
               style={{
                 ...styles.urgency,
                 color: urgencyColors[card.urgency],
-                background: tint(urgencyColors[card.urgency], colors.surface),
+                background: tint(urgencyColors[card.urgency], colors.surface, 8),
                 opacity: stale ? 0.7 : 1,
               }}
             >
@@ -283,16 +297,18 @@ function ActiveCard({
       <p style={styles.question}>{card.question}</p>
       <p style={styles.reason}>{card.reason}</p>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button style={styles.answerBtn} onClick={onMarkAnswered}>
+        <Button size="sm" variant="ghost" style={styles.answerBtn} onClick={onMarkAnswered}>
           Mark answered
-        </button>
-        <button
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
           style={styles.dismissBtn}
           onClick={onDismiss}
           title="The AI got this one wrong — remove it without recording an answer"
         >
           Not relevant
-        </button>
+        </Button>
       </div>
     </div>
   )
@@ -308,10 +324,10 @@ function CollapsedCard({
   const { colors } = useTheme()
   const styles = makeStyles(colors)
   return (
-    <button style={styles.collapsedRow} onClick={onReopen}>
+    <Button variant="quiet" style={styles.collapsedRow} onClick={onReopen}>
       <span style={styles.strikethrough}>{card.question}</span>
       <span style={styles.reopenHint}>Re-open</span>
-    </button>
+    </Button>
   )
 }
 
@@ -332,12 +348,14 @@ function QueuedRow({
 
   return (
     <div style={styles.queuedRow}>
-      <button style={styles.queuedRowMain} onClick={onOpen} title="Bring to front">
+      <Button variant="quiet" style={styles.queuedRowMain} onClick={onOpen} title="Bring to front">
         <span style={{ ...styles.dot, background: accent, flexShrink: 0, opacity: stale ? 0.6 : 1, marginTop: 5 }} />
         <span style={styles.queuedRowText}>{card.question}</span>
         <span style={styles.queuedRowAge}>{formatAge(card.createdAt)}</span>
-      </button>
-      <button
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
         style={styles.queuedRowAnswer}
         onClick={(e) => {
           e.stopPropagation()
@@ -346,7 +364,7 @@ function QueuedRow({
         aria-label="Mark answered"
       >
         ✓ Answered
-      </button>
+      </Button>
     </div>
   )
 }
@@ -454,6 +472,8 @@ function makeStyles(colors: Record<string, string>, theme: 'dark' | 'light' = 'd
     color: colors.textMuted,
     lineHeight: 1.4,
   },
+  /* `background` and `cursor` are deliberately absent: Button's variant owns
+     them, and re-declaring them here would win the spread and kill the hover. */
   answerBtn: {
     marginTop: 4,
     padding: '4px 10px',
@@ -461,20 +481,16 @@ function makeStyles(colors: Record<string, string>, theme: 'dark' | 'light' = 'd
     fontWeight: 500,
     borderRadius: 6,
     border: `1px solid ${colors.accent}`,
-    background: 'transparent',
     color: colors.accent,
-    cursor: 'pointer',
   },
   dismissBtn: {
     marginTop: 4,
     marginLeft: 'auto',
     padding: '4px 10px',
     fontSize: FONT.size.caption,
+    fontWeight: 400,
     borderRadius: 6,
-    border: `1px solid ${colors.border}`,
-    background: 'transparent',
     color: colors.textDim,
-    cursor: 'pointer',
   },
   toggleGroup: {
     borderRadius: 10,
@@ -486,15 +502,17 @@ function makeStyles(colors: Record<string, string>, theme: 'dark' | 'light' = 'd
     background: `${colors.accent}0d`,
     border: `1px solid ${colors.accent}33`,
   },
+  /* Across these row/toggle styles, `background`, `border` and `cursor` are
+     deliberately absent: Button's variant owns them, and re-declaring them here
+     would win the style spread and silently kill the hover state. */
   toggleBtn: {
     width: '100%',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: '8px 14px',
-    background: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
+    borderRadius: 0,
+    fontWeight: 400,
   },
   toggleLabel: {
     display: 'inline-flex',
@@ -519,14 +537,14 @@ function makeStyles(colors: Record<string, string>, theme: 'dark' | 'light' = 'd
   collapsedRow: {
     width: '100%',
     padding: '7px 14px',
-    background: 'transparent',
-    border: 'none',
+    borderRadius: 0,
     borderBottom: `1px solid ${colors.border}`,
-    cursor: 'pointer',
     textAlign: 'left',
     display: 'flex',
     alignItems: 'baseline',
+    justifyContent: 'flex-start',
     gap: 8,
+    fontWeight: 400,
   },
   strikethrough: {
     flex: 1,
@@ -555,12 +573,12 @@ function makeStyles(colors: Record<string, string>, theme: 'dark' | 'light' = 'd
     minWidth: 0,
     display: 'flex',
     alignItems: 'flex-start',
+    justifyContent: 'flex-start',
     gap: 7,
     padding: '7px 6px 7px 14px',
-    background: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
+    borderRadius: 0,
     textAlign: 'left',
+    fontWeight: 400,
   },
   queuedRowText: {
     flex: 1,
@@ -596,11 +614,9 @@ function makeStyles(colors: Record<string, string>, theme: 'dark' | 'light' = 'd
     justifyContent: 'center',
     whiteSpace: 'nowrap',
     fontSize: FONT.size.caption,
+    fontWeight: 400,
     borderRadius: 6,
-    border: `1px solid ${colors.border}`,
-    background: 'transparent',
     color: colors.teal,
-    cursor: 'pointer',
   },
   thinkingCard: {
     borderRadius: 12,

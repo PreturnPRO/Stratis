@@ -273,15 +273,30 @@ export default function Docket({
 
                         {carried.length > 0 && (
                           <div style={styles.tags}>
-                            <button
+                            <Button
                               type="button"
+                              variant="ghost"
                               onClick={() => setExpanded(isOpen ? null : m.id)}
                               aria-expanded={isOpen}
-                              style={{ ...styles.tag, ...styles.tagOpen }}
+                              style={{
+                                /* Deliberately not spreading `styles.tag`: it
+                                   pins `background`, which would win the spread
+                                   and cancel the variant's hover. Teal identity
+                                   is carried as an outline instead of a fill so
+                                   the ghost variant owns the background and this
+                                   chip finally has a hover state. */
+                                fontFamily: FONT.mono,
+                                fontSize: FONT.size.caption,
+                                fontWeight: 400,
+                                padding: "3px 9px",
+                                borderRadius: RADIUS.pill,
+                                borderColor: colors.tealLight,
+                                color: colors.teal,
+                              }}
                             >
                               {carried.length} open thread{carried.length === 1 ? "" : "s"} carried in{" "}
                               {isOpen ? "▴" : "▾"}
-                            </button>
+                            </Button>
                             {carriedUnowned > 0 && (
                               <span style={{ ...styles.tag, ...styles.tagWarn }}>
                                 {carriedUnowned} still unowned
@@ -346,9 +361,9 @@ export default function Docket({
                             Prep — project document
                           </Button>
                           {m.scheduledAt && (
-                            <button type="button" style={styles.ics} onClick={() => downloadIcs(m)}>
+                            <Button type="button" variant="link" size="sm" style={styles.ics} onClick={() => downloadIcs(m)}>
                               add to your calendar (.ics)
-                            </button>
+                            </Button>
                           )}
                         </div>
                       </div>
@@ -522,15 +537,17 @@ function makeStyles(colors: ReturnType<typeof useTheme>["colors"]): Record<strin
     tag: {
       fontFamily: FONT.mono,
       fontSize: FONT.size.caption,
+      fontWeight: 400,
       padding: "3px 9px",
       borderRadius: RADIUS.pill,
       border: `1px solid ${colors.border}`,
       background: colors.surfaceMuted,
       color: colors.textMuted,
-      cursor: "pointer",
     },
-    tagOpen: { borderColor: colors.tealLight, background: colors.tealBg, color: colors.teal },
-    tagWarn: { borderColor: colors.accentDim, background: colors.amberSubtle, color: colors.amber, cursor: "default" },
+    /* `tagOpen` is gone: its chip is now a Button carrying the teal as an
+       outline. `tagWarn` follows the same construction so the two chips sitting
+       side by side don't read as different component types. */
+    tagWarn: { borderColor: colors.accentDim, background: "transparent", color: colors.amber, cursor: "default" },
     threads: {
       marginTop: 9,
       padding: "10px 12px",
@@ -554,16 +571,17 @@ function makeStyles(colors: ReturnType<typeof useTheme>["colors"]): Record<strin
       color: colors.textDim,
     },
     acts: { display: "flex", alignItems: "center", gap: 8, marginTop: 11, flexWrap: "wrap" },
+    /* The dotted bottom border was a fourth button vocabulary in a row that
+       already had two proper Buttons. The `link` variant carries the same
+       affordance with an underline on hover instead. */
     ics: {
       marginLeft: "auto",
-      background: "none",
-      border: "none",
-      borderBottom: `1px dotted ${colors.textDim}`,
       color: colors.textDim,
       fontFamily: FONT.mono,
       fontSize: FONT.size.caption,
-      cursor: "pointer",
-      padding: 0,
+      fontWeight: 400,
+      /* No `padding: 0` — it overrode size="sm" and collapsed the hit target to
+         the 13px line box, in a row of 24px-tall controls. */
     },
     awaitNote: {
       margin: "0 0 10px",
