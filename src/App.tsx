@@ -231,7 +231,6 @@ function AppShell() {
           height: "100dvh",
           background: COLORS.bg,
           color: COLORS.text,
-          fontFamily: "'Helvetica Neue', Arial, sans-serif",
         }}
       >
         <CurtainTransition state={authCurtain} routeLabel="DASHBOARD" onMidpoint={() => {}} theme={theme} />
@@ -266,7 +265,6 @@ function AppShell() {
         display: "flex",
         height: "100dvh",
         background: colors.bg,
-        fontFamily: "'Helvetica Neue', Arial, sans-serif",
         overflow: "hidden",
         color: colors.text,
       }}

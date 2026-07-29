@@ -2,7 +2,7 @@ import { useId, useState } from "react";
 import { Check, CircleAlert, PauseCircle, Pencil, Presentation, RefreshCw, X } from "lucide-react";
 import { FONT, RADIUS, SPACE, tint } from "../tokens/colors";
 import { useTheme } from "../hooks/useTheme";
-import { Button } from "./ui";
+import { Button, IconButton } from "./ui";
 import { LoadingState } from "./states";
 import { toggleOpenStatus } from "../lib/decisionStatus";
 import type { DecisionRecord, DecisionStatus } from "../../shared/types";
@@ -89,21 +89,21 @@ function DecisionRow({
         >
           {decision.text}
         </span>
-        <button
+        <Button
           type="button"
+          variant="link"
+          size="sm"
           onClick={() => onEdit({ dismissed: false })}
           style={{
-            background: "transparent",
-            border: "none",
             color: colors.accent,
             fontSize: FONT.size.label,
             fontWeight: 600,
-            cursor: "pointer",
+            padding: 0,
             flexShrink: 0,
           }}
         >
           Undo
-        </button>
+        </Button>
       </div>
     );
   }
@@ -151,7 +151,7 @@ function DecisionRow({
         )}
         {!present && (
           <span style={{ marginLeft: "auto", display: "inline-flex", gap: 2 }}>
-            <button
+            <IconButton
               type="button"
               onClick={() => {
                 setDraftText(decision.text);
@@ -159,19 +159,19 @@ function DecisionRow({
               }}
               aria-label="Edit decision text"
               title="Edit wording (STT sometimes mishears)"
-              style={{ background: "transparent", border: "none", color: colors.textDim, cursor: "pointer", padding: 4 }}
+              style={{ width: 24, height: 24 }}
             >
               <Pencil size={13} />
-            </button>
-            <button
+            </IconButton>
+            <IconButton
               type="button"
               onClick={() => onEdit({ dismissed: true })}
               aria-label="Dismiss decision"
               title="Not a real decision — dismiss (undoable)"
-              style={{ background: "transparent", border: "none", color: colors.textDim, cursor: "pointer", padding: 4 }}
+              style={{ width: 24, height: 24 }}
             >
               <X size={14} />
-            </button>
+            </IconButton>
           </span>
         )}
       </div>
@@ -294,8 +294,9 @@ function DecisionRow({
               <option key={s} value={s} />
             ))}
           </datalist>
-          <button
+          <Button
             type="button"
+            variant="ghost"
             aria-pressed={isOpen}
             title={
               isOpen
@@ -304,18 +305,23 @@ function DecisionRow({
             }
             onClick={() => onEdit({ status: toggleOpenStatus(decision.status, decision.dueDate) })}
             style={{
-              background: isOpen ? tint(colors.cyan, colors.surfaceMuted) : "transparent",
-              border: `1px solid ${isOpen ? colors.cyan : colors.border}`,
+              /* Only pinned when pressed. Leaving `background` unset in the
+                 unpressed case lets the ghost variant supply the hover fill. */
+              ...(isOpen
+                ? {
+                    background: tint(colors.cyan, colors.surfaceMuted),
+                    border: `1px solid ${colors.cyan}`,
+                    color: colors.cyan,
+                  }
+                : null),
               borderRadius: RADIUS.pill,
-              color: isOpen ? colors.cyan : colors.textMuted,
               padding: "5px 10px",
               fontSize: FONT.size.micro,
               fontWeight: isOpen ? 600 : 400,
-              cursor: "pointer",
             }}
           >
             Deliberately open
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -387,9 +393,9 @@ export function CheckpointPanel({
             </div>
           )}
           {!present && (
-            <button type="button" onClick={onClose} aria-label="Close checkpoint" style={{ background: "transparent", border: "none", color: colors.textMuted, cursor: "pointer", padding: 4 }}>
+            <IconButton type="button" onClick={onClose} aria-label="Close checkpoint">
               <X size={20} />
-            </button>
+            </IconButton>
           )}
         </div>
       </div>
@@ -431,27 +437,16 @@ export function CheckpointPanel({
       </div>
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <button
+        <Button
           type="button"
+          variant="ghost"
           onClick={onReExtract}
           disabled={extracting}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            background: "transparent",
-            border: `1px solid ${colors.border}`,
-            borderRadius: RADIUS.pill,
-            color: colors.textMuted,
-            padding: "7px 12px",
-            fontSize: FONT.size.label,
-            cursor: extracting ? "default" : "pointer",
-            opacity: extracting ? 0.6 : 1,
-          }}
+          iconLeft={<RefreshCw size={14} style={extracting ? { animation: "spin 1s linear infinite" } : undefined} />}
+          style={{ padding: "7px 12px", fontSize: FONT.size.label, fontWeight: 400 }}
         >
-          <RefreshCw size={14} style={extracting ? { animation: "spin 1s linear infinite" } : undefined} />
           {extracting ? "Reading…" : "Re-read meeting"}
-        </button>
+        </Button>
 
         <Button variant="ghost" size="sm" onClick={onTogglePresent} iconLeft={<Presentation size={14} />}>
           {present ? "Exit present" : "Present to room"}

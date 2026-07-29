@@ -51,7 +51,7 @@ export function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-export type ButtonVariant = "primary" | "ghost" | "danger" | "subtle";
+export type ButtonVariant = "primary" | "ghost" | "danger" | "subtle" | "quiet" | "link";
 export type ButtonSize = "sm" | "md";
 
 interface ButtonProps
@@ -90,6 +90,27 @@ function variantBase(
         background: hovered ? colors.surfaceHover : colors.surface,
         border: `1px solid ${colors.border}`,
         color: colors.text,
+      };
+    /* Borderless inline action — the vocabulary the ad-hoc buttons inside cards
+       and panels were reaching for. Reads as part of the card until hovered. */
+    case "quiet":
+      return {
+        background: hovered ? colors.surfaceHover : "transparent",
+        border: "1px solid transparent",
+        color: hovered ? colors.text : colors.textMuted,
+      };
+    /* Text-only affordance for in-flow links (.ics download, ToC entries).
+       The underline is always present — a link with no rest state is
+       indistinguishable from static caption text — and just goes from faint to
+       solid on hover. */
+    case "link":
+      return {
+        background: "transparent",
+        border: "1px solid transparent",
+        color: hovered ? colors.text : colors.textMuted,
+        textDecoration: "underline",
+        textDecorationColor: hovered ? "currentColor" : `${colors.textDim}80`,
+        textUnderlineOffset: 3,
       };
     case "ghost":
     default:
@@ -139,7 +160,11 @@ export function Button({
         fontWeight: 600,
         lineHeight: 1,
         width: fullWidth ? "100%" : undefined,
-        whiteSpace: "nowrap",
+        /* `white-space` inherits, so a blanket `nowrap` here reaches multi-line
+           children. It clipped the two-line clamp on queued suggestion rows
+           mid-word. Pill-shaped variants still want it; the row-shaped `quiet`
+           variant must not have it. */
+        whiteSpace: variant === "quiet" ? "normal" : "nowrap",
         opacity: pressed && !disabled ? 0.82 : 1,
         transition: "background 0.15s, color 0.15s, border-color 0.15s, opacity 0.1s",
         ...SIZE_STYLE[size],
@@ -252,12 +277,65 @@ export function Modal({
   }, [onClose]);
 
   useEffect(() => {
+    const panel = panelRef.current;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+
+    const focusable = () =>
+      Array.from(
+        panel?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCloseRef.current();
+      if (e.key === "Escape") {
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab") return;
+
+      /* Focus trap. `aria-modal="true"` only *claims* the rest of the page is
+         inert; without this, Tab walks straight out of a destructive-confirm
+         dialog into the page behind it. `inert` on the app root is not an
+         option here because the modal renders inside that tree rather than a
+         portal, so the cycle is enforced manually. */
+      const items = focusable();
+      if (items.length === 0) {
+        e.preventDefault();
+        panel?.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+
+      if (e.shiftKey && (active === first || active === panel)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      } else if (active && panel && !panel.contains(active)) {
+        e.preventDefault();
+        first.focus();
+      }
     };
+
     document.addEventListener("keydown", onKey);
-    panelRef.current?.focus();
-    return () => document.removeEventListener("keydown", onKey);
+
+    // Land on the first real control rather than the panel shell.
+    const items = focusable();
+    (items[0] ?? panel)?.focus();
+
+    // Prevent the page behind from scrolling under the dialog.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+      previouslyFocused?.focus?.();
+    };
   }, []);
 
   return (
@@ -269,8 +347,12 @@ export function Modal({
         background: "rgba(0,0,0,0.66)",
         backdropFilter: "blur(2px)",
         display: "flex",
-        alignItems: "center",
+        /* flex-start + `margin: auto` on the panel: still centred when it fits,
+           but scrollable instead of clipped when it doesn't. `center` alone
+           clips the top of an over-tall panel beyond reach. */
+        alignItems: "flex-start",
         justifyContent: "center",
+        overflowY: "auto",
         zIndex: 200,
         animation: "fadeIn 0.15s ease",
         padding: 24,
@@ -286,10 +368,13 @@ export function Modal({
         style={{
           width,
           maxWidth: "100%",
+          maxHeight: "calc(100dvh - 48px)",
+          margin: "auto",
+          display: "flex",
+          flexDirection: "column",
           background: colors.surfaceElevated,
           border: `1px solid ${colors.borderLight}`,
           borderRadius: RADIUS.lg,
-          padding: 24,
           boxShadow: shadow.shadModal,
           animation: "modalIn 0.28s cubic-bezier(.22,1,.36,1)",
           outline: "none",
@@ -300,22 +385,39 @@ export function Modal({
             color: colors.text,
             fontSize: FONT.size.heading,
             fontWeight: 600,
-            margin: "0 0 18px",
+            margin: 0,
+            padding: "24px 24px 18px",
+            flexShrink: 0,
           }}>
             {title}
           </h2>
         )}
-        {children}
+        <div style={{
+          overflowY: "auto",
+          padding: title ? "0 24px" : "24px 24px 0",
+          flex: "1 1 auto",
+          minHeight: 0,
+        }}>
+          {children}
+        </div>
         {footer && (
           <div style={{
             display: "flex",
             justifyContent: "flex-end",
             gap: 8,
-            marginTop: SPACE[6],
+            padding: `${SPACE[5]}px 24px 24px`,
+            flexShrink: 0,
+            /* The primary action must never be the thing that falls off. */
+            position: "sticky",
+            bottom: 0,
+            background: colors.surfaceElevated,
+            borderBottomLeftRadius: RADIUS.lg,
+            borderBottomRightRadius: RADIUS.lg,
           }}>
             {footer}
           </div>
         )}
+        {!footer && <div style={{ height: 24, flexShrink: 0 }} />}
       </div>
     </div>
   );

@@ -11,8 +11,16 @@ export const COLORS = {
 
   text:          "#f2f2f3",
   textPrimary:   "#f2f2f3",
-  textMuted:     "#9a9aa3",
-  textDim:       "#5c5c64",
+  /* Lifted from #9a9aa3: once textDim moved up to meet AA, dim↔muted was only
+     1.23:1 and the three-tier ramp read as two. Now 1.59 dim→muted and 1.93
+     muted→text, so each rung is a visible step. */
+  textMuted:     "#b0b0b8",
+  /* Was #5c5c64 (2.54:1 at worst) — below the 4.5:1 the project commits to, and
+     this tier carries transcript timestamps and card ages, which a facilitator
+     reads mid-meeting. 4.91:1 against surfaceHover, the darkest surface it lands
+     on. The tertiary tier is necessarily closer to textMuted than before; on
+     these backgrounds a genuinely-AA third step cannot be much dimmer. */
+  textDim:       "#8a8a93",
 
   accent:        "#8FAE6D",
   accentHover:   "#A6C285",
@@ -35,9 +43,11 @@ export const COLORS = {
   onAccent:      "#10160b",
   curtain:       "#0c0c0e",
   curtainText:   "#f2f2f3",
-  spkA:          "#e0608a",
-  spkB:          "#4da3e8",
-  spkC:          "#35c98e",
+  /* Same softening as the light theme, desaturated toward the muted grey so
+     dark mode doesn't stay loud after light mode was calmed. All still AA. */
+  spkA:          "#d17a99",
+  spkB:          "#6da7d9",
+  spkC:          "#5cc19b",
 } as const;
 
 export const LIGHT_COLORS = {
@@ -51,30 +61,47 @@ export const LIGHT_COLORS = {
   text:            "#1b1b16",
   textPrimary:     "#1b1b16",
   textMuted:       "#54544c",
-  textDim:         "#8f8d80",
-  accent:          "#587a3d",
-  accentHover:     "#4d6835",
+  /* Was #8f8d80 (2.76:1 at worst). 4.51:1 across every light surface. */
+  textDim:         "#6b6a60",
+  /* Darkened so each semantic foreground clears 4.5:1 against its OWN tint
+     below, not just against the neutral surfaces. The first pass at these tints
+     fixed differentiation and quietly cost legibility — red on redBg dropped to
+     3.99:1 on a role="alert" banner. All five now clear 4.5 on their tint and
+     on #ffffff. */
+  accent:          "#4c6934",
+  accentHover:     "#3f5729",
   accentDim:       "#9fb488",
-  amber:           "#587a3d",
-  amberSubtle:     "#e4ead6",
+  amber:           "#4c6934",
+  /* These five were all byte-identical #e4ead6, which collapsed error, warning,
+     success, info and selected onto one background in light theme. Each is now
+     its own hue mixed 18% over the light bg, so the semantic vocabulary survives
+     a theme switch. Ink stays above 11:1 on all of them. */
+  /* Tinted 8% over the page bg rather than 18%. At 18% the type chips read as
+     coloured blocks on a work surface that is meant to stay calm; at 8% they
+     are washes that still tell the five semantics apart. Contrast improves as a
+     side effect (~4.4 -> ~5.1) because less colour sits between text and fill. */
+  amberSubtle:     "#e8e9df",
   onAccent:        "#f7f8f2",
-  teal:            "#0e7d5c",
-  tealLight:       "#0e7d5c",
-  tealBg:          "#e4ead6",
-  green:           "#0e7d5c",
-  red:             "#bb3338",
-  redBg:           "#e4ead6",
-  danger:          "#bb3338",
-  dangerBg:        "#e4ead6",
-  orange:          "#b34c07",
-  orangeBg:        "#e4ead6",
-  cyan:            "#0f7d9c",
-  cyanBg:          "#e4ead6",
+  teal:            "#0c6d50",
+  tealLight:       "#0c6d50",
+  tealBg:          "#e3e9e1",
+  green:           "#0c6d50",
+  red:             "#ac2f34",
+  redBg:           "#f0e4df",
+  danger:          "#ac2f34",
+  dangerBg:        "#f0e4df",
+  orange:          "#9f4406",
+  orangeBg:        "#efe6db",
+  cyan:            "#0d6983",
+  cyanBg:          "#e3e9e5",
   curtain:         "#181813",
   curtainText:     "#f4f2ea",
-  spkA:            "#a83459",
-  spkB:            "#2465ad",
-  spkC:            "#177a52",
+  /* Pulled toward the ink. Speaker identity still has to be scannable at a
+     glance mid-meeting, but at full saturation the names shouted over the
+     transcript body they label. Hue is preserved; only the shout is gone. */
+  spkA:            "#722b40",
+  spkB:            "#214974",
+  spkC:            "#19563b",
 } as const;
 
 export type ColorToken = keyof typeof COLORS;
@@ -139,7 +166,10 @@ export function tint(semanticHex: string, bgHex: string, pct = 15): string {
 }
 
 export const FONT = {
-  sans: "'Inter', 'Helvetica Neue', Arial, sans-serif",
+  /* `'Inter Variable'` is the family fontsource actually registers; plain
+     `'Inter'` matches nothing, so every consumer of this token silently fell
+     through to Arial even after the font was installed. */
+  sans: "'Inter Variable', 'Inter', 'Helvetica Neue', Arial, sans-serif",
   mono: "'SF Mono', 'JetBrains Mono', ui-monospace, Menlo, monospace",
   size: {
     micro: 10,
