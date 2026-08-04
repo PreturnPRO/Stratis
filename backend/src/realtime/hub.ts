@@ -10,6 +10,7 @@ import type {
 import { verifyToken, type JwtClaims } from "../auth/jwt";
 import { db } from "../db/database";
 import { createSttStream, type SttStreamHandle } from "../lib/sttStream";
+import { getAccountState, getReleaseCutoff } from "../lib/accountState";
 import { markAudio } from "./liveness";
 
 interface Client {
@@ -140,6 +141,28 @@ export function attachHub(server: Server): WebSocketServer {
         socket.close(4401, "Unauthorized");
         return;
       }
+
+      // A socket outlives the request that opened it, so the same revocation
+      // checks the REST middleware runs have to happen here too — otherwise a
+      // suspended facilitator keeps a live audio stream for as long as they
+      // stay connected.
+      const issuedAt = claims.iat ?? 0;
+      const releaseCutoff = await getReleaseCutoff();
+      if (releaseCutoff && issuedAt <= releaseCutoff) {
+        socket.close(4401, "Session ended by update");
+        return;
+      }
+
+      const account = await getAccountState(claims.sub);
+      if (!account || account.status !== "active") {
+        socket.close(4403, "Account is not active");
+        return;
+      }
+      if (account.tokenValidAfter && issuedAt <= account.tokenValidAfter) {
+        socket.close(4401, "Access changed");
+        return;
+      }
+      claims = { ...claims, role: account.role, orgId: account.orgId };
 
       const client: Client = { socket, sessionId, claims, stt: null, isAlive: true };
 

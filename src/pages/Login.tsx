@@ -1,4 +1,4 @@
-import React, { useState, type CSSProperties } from 'react'
+import React, { useEffect, useState, type CSSProperties } from 'react'
 import { FONT, LETTER_SPACING, RADIUS, SPACE } from '../constants'
 import { Button } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
@@ -33,6 +33,17 @@ export default function Login({ onNavigate }: Props) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  // Which sign-in methods this deployment has. Asked rather than assumed: a
+  // Google button that 503s because the server has no OAuth credentials is
+  // worse than no button.
+  const [providers, setProviders] = useState<{ google: boolean } | null>(null)
+
+  useEffect(() => {
+    void fetch(`${API_BASE}/api/auth/providers`)
+      .then((res) => res.json())
+      .then((body) => setProviders(body?.data ?? null))
+      .catch(() => setProviders(null))
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -90,6 +101,24 @@ export default function Login({ onNavigate }: Props) {
         <div style={subtitleStyle(colors)}>Access the Control Room</div>
 
         {error && <div style={errorStyle(colors)}>{error}</div>}
+
+        {providers?.google && (
+          <>
+            <Button
+              type="button"
+              fullWidth
+              onClick={() => {
+                window.location.href = `${API_BASE}/api/auth/google`
+              }}
+              style={{ marginBottom: 16 }}
+            >
+              Continue with Google
+            </Button>
+            <div style={dividerStyle(colors)}>
+              <span style={{ background: colors.surfaceElevated, padding: '0 10px' }}>or</span>
+            </div>
+          </>
+        )}
 
         <form onSubmit={handleSubmit} style={formStyle}>
           <div style={fieldStyle}>
@@ -205,6 +234,17 @@ const errorStyle = (colors: Colors): CSSProperties => ({
   fontSize: FONT.size.label,
   marginBottom: 16,
   lineHeight: 1.4,
+})
+
+const dividerStyle = (colors: Colors): CSSProperties => ({
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  color: colors.textDim,
+  fontSize: FONT.size.caption,
+  marginBottom: 16,
+  borderTop: `1px solid ${colors.border}`,
+  lineHeight: 0,
 })
 
 const formStyle: CSSProperties = {

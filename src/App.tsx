@@ -6,6 +6,9 @@ import Sidebar from "./components/Sidebar";
 import CurtainTransition, { type CurtainState } from "./components/CurtainTransition";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { useTheme, ThemeProvider } from "./hooks/useTheme";
+import { useUpdateGuard } from "./hooks/useUpdateGuard";
+import { installTrackFlush, track } from "./lib/track";
+import { API_BASE } from "./lib/api";
 
 const Landing = lazy(() => import("./pages/Landing"));
 const Login = lazy(() => import("./pages/Login"));
@@ -16,6 +19,11 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Docket = lazy(() => import("./pages/Docket"));
 const SummaryView = lazy(() => import("./pages/SummaryView"));
 const DocumentView = lazy(() => import("./pages/DocumentView"));
+const Settings = lazy(() => import("./pages/Settings"));
+const Admin = lazy(() => import("./pages/Admin"));
+const Pricing = lazy(() => import("./pages/Pricing"));
+const Join = lazy(() => import("./pages/Join"));
+const FeedbackModal = lazy(() => import("./components/FeedbackModal"));
 
 function RouteFallback({ colors }: { colors: { textDim: string } }) {
   return (
@@ -36,7 +44,16 @@ function RouteFallback({ colors }: { colors: { textDim: string } }) {
 }
 
 type AuthPage = "landing" | "login" | "register" | "app";
-type AppPage = "dashboard" | "docket" | "projects" | "meeting" | "summary" | "document";
+type AppPage =
+  | "dashboard"
+  | "docket"
+  | "projects"
+  | "meeting"
+  | "summary"
+  | "document"
+  | "settings"
+  | "admin"
+  | "pricing";
 
 const PAGE_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
@@ -45,6 +62,9 @@ const PAGE_LABELS: Record<string, string> = {
   meeting: "Meeting",
   summary: "Summary",
   document: "Document",
+  settings: "Settings",
+  admin: "Admin",
+  pricing: "Plans",
 };
 
 function LiveClock({ colors }: { colors: { accent: string } }) {
@@ -100,9 +120,75 @@ function renderPage(
           onNav={handleNav}
         />
       );
+    case "settings":
+      return <Settings onNav={handleNav} />;
+    case "admin":
+      return <Admin />;
+    case "pricing":
+      return <Pricing onNav={handleNav} />;
     default:
       return <Dashboard onNav={handleNav} />;
   }
+}
+
+/**
+ * Routes that exist outside the signed-in shell.
+ *
+ * `join` has to render for someone with no account at all, and `oauth` is the
+ * landing strip for a Google redirect — neither can sit behind the auth gate,
+ * and both are read straight from the hash rather than from nav state because
+ * the user arrives on them cold, from a link.
+ */
+function readEntryRoute(): { page: string; params: Record<string, string> } {
+  const hash = window.location.hash.replace(/^#\/?/, "");
+  const [page, query] = hash.split("?");
+  const params: Record<string, string> = {};
+  if (query) new URLSearchParams(query).forEach((v, k) => { params[k] = v; });
+  return { page: page || "", params };
+}
+
+/**
+ * Completes a Google sign-in. The backend redirects here with the token in the
+ * URL fragment; this exchanges it for the user record, hands both to
+ * AuthContext, and scrubs the fragment so the token does not sit in the address
+ * bar or in history.
+ */
+function OAuthLanding({
+  params,
+  onDone,
+}: {
+  params: Record<string, string>;
+  onDone: (error: string | null) => void;
+}) {
+  const { login } = useAuth();
+  const doneRef = useRef(false);
+
+  useEffect(() => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+
+    const token = params.token;
+    if (!token) {
+      onDone(params.error || "Google sign-in did not complete");
+      return;
+    }
+
+    void fetch(`${API_BASE}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(async (res) => {
+        const body = await res.json();
+        if (!res.ok || !body?.data) throw new Error(body?.error ?? "Could not finish signing in");
+        login(token, body.data);
+        window.history.replaceState(null, "", "#/dashboard");
+        onDone(null);
+      })
+      .catch((err: Error) => onDone(err.message));
+  }, [params, login, onDone]);
+
+  return (
+    <div style={{ padding: 40, color: COLORS.textMuted, fontSize: FONT.size.body }}>
+      Finishing sign-in…
+    </div>
+  );
 }
 
 function hashToEntry(): { page: AppPage; params: Record<string, string> } {
@@ -118,13 +204,111 @@ function entryToHash(page: AppPage, params: Record<string, string>): string {
   return `#/${page}${query ? `?${query}` : ""}`;
 }
 
+/**
+ * A single strip across the top of the app for things the server told us:
+ * a new build is available, or this session was ended. Deliberately one
+ * component in one place — these messages must never compete with the meeting
+ * surface or appear twice.
+ */
+function SystemNotice({
+  tone,
+  message,
+  actionLabel,
+  onAction,
+  onDismiss,
+}: {
+  tone: "info" | "danger";
+  message: string;
+  actionLabel?: string;
+  onAction?: () => void;
+  onDismiss?: () => void;
+}) {
+  const { colors } = useTheme();
+  const isDanger = tone === "danger";
+  return (
+    <div
+      role={isDanger ? "alert" : "status"}
+      style={{
+        // In the flow, not fixed. A fixed strip sat on top of the app header
+        // and hid the breadcrumb underneath it; this pushes the page down
+        // instead of covering it.
+        flexShrink: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 12,
+        padding: "8px 14px",
+        background: isDanger ? colors.dangerBg : colors.surfaceElevated,
+        borderBottom: `1px solid ${isDanger ? colors.danger : colors.border}`,
+        color: isDanger ? colors.danger : colors.text,
+        fontSize: FONT.size.label,
+      }}
+    >
+      <span>{message}</span>
+      {actionLabel && onAction && (
+        <button
+          onClick={onAction}
+          style={{
+            padding: "4px 12px",
+            borderRadius: RADIUS.pill,
+            border: `1px solid ${colors.accent}`,
+            background: "transparent",
+            color: colors.accent,
+            fontSize: FONT.size.label,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          {actionLabel}
+        </button>
+      )}
+      {onDismiss && (
+        <button
+          onClick={onDismiss}
+          aria-label="Dismiss"
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "inherit",
+            opacity: 0.7,
+            cursor: "pointer",
+            fontSize: FONT.size.body,
+            lineHeight: 1,
+          }}
+        >
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
+
 function AppShell() {
-  const { isAuthed, logout } = useAuth();
+  const { isAuthed, logout, isAdmin, endedReason, clearEndedReason } = useAuth();
   const [authPage, setAuthPage] = useState<AuthPage>("landing");
   const initialEntry = hashToEntry();
   const [active, setActive] = useState<AppPage>(initialEntry.page);
   const [navParams, setNavParams] = useState<Record<string, string>>(initialEntry.params);
   const { theme, toggleTheme, colors } = useTheme();
+
+  const [entryRoute, setEntryRoute] = useState(() => readEntryRoute());
+  const [oauthError, setOauthError] = useState<string | null>(null);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+
+  useEffect(() => {
+    const onHashChange = () => setEntryRoute(readEntryRoute());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  // The update check is paused during a meeting: a reload prompt over a live
+  // recording is the one place this feature could do harm.
+  const { update, reload, dismiss } = useUpdateGuard({ pause: active === "meeting" });
+
+  useEffect(() => {
+    installTrackFlush();
+    track("app_opened");
+  }, []);
 
   const [authCurtain, setAuthCurtain] = useState<CurtainState>("idle");
   const prevAuthedRef = useRef(isAuthed);
@@ -224,6 +408,67 @@ function AppShell() {
   const canBack = historyIndex > 0;
   const canForward = historyIndex < history.length - 1;
 
+  // An invite link and an OAuth return both have to render before, and
+  // independently of, the signed-in shell.
+  if (entryRoute.page === "join" && entryRoute.params.token) {
+    return (
+      <ErrorBoundary area="join">
+        <Suspense fallback={<RouteFallback colors={colors} />}>
+          <Join
+            token={entryRoute.params.token}
+            onNav={(id, params) => {
+              window.location.hash = entryToHash(id as AppPage, params ?? {});
+              setEntryRoute(readEntryRoute());
+              handleNav(id, params);
+            }}
+            onNavigateAuth={(page) => {
+              window.history.replaceState(null, "", "#/");
+              setEntryRoute({ page: "", params: {} });
+              setAuthPage(page);
+            }}
+          />
+        </Suspense>
+      </ErrorBoundary>
+    );
+  }
+
+  // Pricing is public. Someone deciding whether Stratis is worth paying for
+  // should not have to make an account to read the plans.
+  if (!isAuthed && entryRoute.page === "pricing") {
+    return (
+      <div style={{ height: "100dvh", overflow: "auto", background: COLORS.bg, color: COLORS.text }}>
+        <ErrorBoundary area="pricing">
+          <Suspense fallback={<RouteFallback colors={colors} />}>
+            <Pricing
+              onNav={() => {
+                window.history.replaceState(null, "", "#/");
+                setEntryRoute({ page: "", params: {} });
+                setAuthPage("register");
+              }}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      </div>
+    );
+  }
+
+  if (entryRoute.page === "oauth") {
+    return (
+      <ErrorBoundary area="oauth">
+        <Suspense fallback={<RouteFallback colors={colors} />}>
+          <OAuthLanding
+            params={entryRoute.params}
+            onDone={(error) => {
+              setOauthError(error);
+              setEntryRoute({ page: "", params: {} });
+              if (error) setAuthPage("login");
+            }}
+          />
+        </Suspense>
+      </ErrorBoundary>
+    );
+  }
+
   if (!isAuthed) {
     return (
       <div
@@ -231,10 +476,22 @@ function AppShell() {
           height: "100dvh",
           background: COLORS.bg,
           color: COLORS.text,
+          display: "flex",
+          flexDirection: "column",
         }}
       >
         <CurtainTransition state={authCurtain} routeLabel="DASHBOARD" onMidpoint={() => {}} theme={theme} />
-        <main style={{ height: "100%" }}>
+        {(endedReason || oauthError) && (
+          <SystemNotice
+            tone="danger"
+            message={oauthError ?? endedReason?.message ?? ""}
+            onDismiss={() => {
+              clearEndedReason();
+              setOauthError(null);
+            }}
+          />
+        )}
+        <main style={{ flex: 1, minHeight: 0 }}>
           <ErrorBoundary key={authPage} area={authPage}>
             <Suspense fallback={<RouteFallback colors={colors} />}>
               {authPage === "landing" && <Landing onNavigate={setAuthPage} />}
@@ -284,6 +541,8 @@ function AppShell() {
         }}
         theme={theme}
         onToggleTheme={toggleTheme}
+        isAdmin={isAdmin}
+        onFeedback={() => setFeedbackOpen(true)}
       />
 
       <div
@@ -295,6 +554,16 @@ function AppShell() {
           position: "relative",
         }}
       >
+        {update && (
+          <SystemNotice
+            tone="info"
+            message={`Stratis ${update.version} is available. Reload to pick it up.`}
+            actionLabel="Reload"
+            onAction={reload}
+            onDismiss={dismiss}
+          />
+        )}
+
         <header
           style={{
             height: 40,
@@ -442,6 +711,16 @@ function AppShell() {
           </div>
         </main>
       </div>
+
+      {feedbackOpen && (
+        <Suspense fallback={null}>
+          <FeedbackModal
+            surface={active}
+            sessionId={navParams.sessionId}
+            onClose={() => setFeedbackOpen(false)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

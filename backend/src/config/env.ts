@@ -36,6 +36,39 @@ export const env = {
 
   jwtSecret: process.env.JWT_SECRET ?? "dev-insecure-secret-change-me",
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "7d",
+  /** A guest link should outlive one meeting, not a week. */
+  guestTokenExpiresIn: process.env.GUEST_TOKEN_EXPIRES_IN ?? "12h",
+
+  /**
+   * Reported by /api/system/version and stamped on telemetry rows. Set this per
+   * deploy (Render exposes RENDER_GIT_COMMIT) so the beta dashboard can tell
+   * which build produced an event.
+   */
+  appVersion:
+    process.env.APP_VERSION ??
+    process.env.RENDER_GIT_COMMIT?.slice(0, 7) ??
+    "dev",
+
+  /** Where the browser lands after an OAuth round trip or an invite accept. */
+  appUrl: (process.env.APP_URL ?? process.env.CLIENT_ORIGIN ?? "http://localhost:5173")
+    .split(",")[0]
+    .trim(),
+
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID ?? "",
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+    /**
+     * Must match a redirect URI registered on the Google Cloud OAuth client
+     * exactly, including the scheme and any trailing path.
+     */
+    redirectUri:
+      process.env.GOOGLE_REDIRECT_URI ??
+      `http://localhost:${Number(process.env.PORT ?? 3001)}/api/auth/google/callback`,
+    /** Google sign-in is off until both halves of the credential are present. */
+    get enabled(): boolean {
+      return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+    },
+  },
 
   ai: {
     provider: (process.env.AI_PROVIDER ?? "groq") as

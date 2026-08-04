@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { requireAuth } from "../auth/middleware";
 import { db } from "../db/database";
 import { newId, now } from "../lib/ids";
+import { enforceMeetingQuota } from "../lib/entitlements";
 
 export const meetingRouter = Router();
 
@@ -337,7 +338,7 @@ meetingRouter.get("/dashboard", requireAuth, async (req, res) => {
   }
 });
 
-meetingRouter.post("/", requireAuth, async (req, res) => {
+meetingRouter.post("/", requireAuth, enforceMeetingQuota, async (req, res) => {
   try {
     const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
     const projectId = typeof req.body?.projectId === "string" ? req.body.projectId.trim() : typeof req.body?.project_id === "string" ? req.body.project_id.trim() : "";
