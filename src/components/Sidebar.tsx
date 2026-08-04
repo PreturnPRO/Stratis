@@ -10,6 +10,9 @@ import {
   Moon,
   PanelLeft,
   PanelLeftClose,
+  Settings as SettingsIcon,
+  ShieldCheck,
+  MessageSquarePlus,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState, type MouseEvent as ReactMouseEvent } from "react";
@@ -31,6 +34,8 @@ const ICON_MAP: Record<string, LucideIcon> = {
   ListChecks,
   Video,
   FileText,
+  SettingsIcon,
+  ShieldCheck,
 };
 
 const AVATAR_COLORS = [
@@ -56,12 +61,17 @@ export default function Sidebar({
   onLogout,
   theme,
   onToggleTheme,
+  isAdmin = false,
+  onFeedback,
 }: {
   active: string;
   onNav: (id: string) => void;
   onLogout?: () => void;
   theme: "dark" | "light";
   onToggleTheme: () => void;
+  /** Admin is the only nav entry that is not for everyone. */
+  isAdmin?: boolean;
+  onFeedback?: () => void;
 }) {
   const { user } = useAuth();
   const { colors } = useTheme();
@@ -75,6 +85,7 @@ export default function Sidebar({
   const [pressedNav, setPressedNav] = useState<string | null>(null);
   const [themePressed, setThemePressed] = useState(false);
   const [logoutPressed, setLogoutPressed] = useState(false);
+  const [feedbackPressed, setFeedbackPressed] = useState(false);
   const [togglePressed, setTogglePressed] = useState(false);
 
   useEffect(() => {
@@ -164,7 +175,11 @@ export default function Sidebar({
         </button>
       </div>
 
-      {NAV_ITEMS.map((item: { id: string; icon: string; label: string }) => {
+      {[
+        ...(NAV_ITEMS as { id: string; icon: string; label: string }[]),
+        { id: "settings", icon: "SettingsIcon", label: "Settings" },
+        ...(isAdmin ? [{ id: "admin", icon: "ShieldCheck", label: "Admin" }] : []),
+      ].map((item: { id: string; icon: string; label: string }) => {
         const isActive = active === item.id;
         const IconComp = ICON_MAP[item.icon];
 
@@ -210,6 +225,36 @@ export default function Sidebar({
       </div>
 
       <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+        {onFeedback && (
+          <button
+            title="Send feedback"
+            aria-label="Send feedback"
+            onClick={onFeedback}
+            onMouseLeave={() => setFeedbackPressed(false)}
+            onMouseDown={() => setFeedbackPressed(true)}
+            onMouseUp={() => setFeedbackPressed(false)}
+            style={{
+              width: expanded ? EXPANDED_WIDTH - 8 : 56, height: 44, marginLeft: 4,
+              borderRadius: 8, background: "transparent", border: "none",
+              color: colors.textDim, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "flex-start",
+              gap: 14, paddingLeft: 17,
+              opacity: feedbackPressed ? 0.7 : 1,
+              transition: "opacity 0.1s, color 0.15s, width 0.2s cubic-bezier(.4,0,.2,1)",
+            }}
+          >
+            <span style={{ display: "flex", flexShrink: 0 }}>
+              <MessageSquarePlus size={16} strokeWidth={1.75} />
+            </span>
+            <span style={{
+              fontSize: FONT.size.body, fontWeight: 500, whiteSpace: "nowrap",
+              opacity: expanded ? 1 : 0, transition: "opacity 0.15s",
+            }}>
+              Send feedback
+            </span>
+          </button>
+        )}
+
         <button
           title="Toggle theme"
           aria-label="Toggle theme"

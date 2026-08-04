@@ -12,6 +12,14 @@
 -- Only `tsx src/db/migrate.ts --reset` runs this file. Never import it from
 -- schema.sql again.
 
+DROP TABLE IF EXISTS plan_requests CASCADE;
+DROP TABLE IF EXISTS app_releases CASCADE;
+DROP TABLE IF EXISTS feedback CASCADE;
+DROP TABLE IF EXISTS analytics_events CASCADE;
+DROP TABLE IF EXISTS session_participants CASCADE;
+DROP TABLE IF EXISTS session_guests CASCADE;
+DROP TABLE IF EXISTS invite_redemptions CASCADE;
+DROP TABLE IF EXISTS invites CASCADE;
 DROP TABLE IF EXISTS action_items CASCADE;
 DROP TABLE IF EXISTS summary_blocks CASCADE;
 DROP TABLE IF EXISTS participant_summaries CASCADE;
