@@ -46,10 +46,15 @@ const TEAM: {
   photo: string
   photoZoom: number
   photoPos: string
+  /** LINE QR, served from public/. Omitted until that person sends theirs. */
+  lineQr?: string
+  /** Per-person QR size: the source images carry different quiet-zone margins,
+      so a single number renders the codes at visibly different scales. */
+  lineQrSize?: number
 }[] = [
-  { name: 'Naphat Nirunsitirut', role: 'Interface Designer', email: 'KaifyProduction@gmail.com', tel: '+66 98 101 3409', photo: 'https://i.ibb.co/9mvscLW2/image-1.jpg', photoZoom: 1.5, photoPos: '32.5% 25%' },
-  { name: 'Thananarin Saisornthananant', role: 'Software Architect', email: 's.thananarin@gmail.com', tel: '+66 64 478 8545', photo: 'https://i.ibb.co/279tD5s4/FB-IMG-1783759688169.jpg', photoZoom: 1.5, photoPos: '55% 45%' },
-  { name: 'Phuwich Khamteja', role: 'Project Lead', email: 'subphuwich@gmail.com', tel: '+66 62 875 6868', photo: 'https://i.ibb.co/DP8FSnzS/fqs-2569-01-14-144852-111.jpg', photoZoom: 2, photoPos: '75% 45%' },
+  { name: 'Naphat Nirunsitirut', role: 'Interface Designer', email: 'KaifyProduction@gmail.com', tel: '+66 98 101 3409', photo: 'https://i.ibb.co/9mvscLW2/image-1.jpg', photoZoom: 1.5, photoPos: '32.5% 25%' , lineQr: '/line-naphat.jpg' },
+  { name: 'Thananarin Saisornthananant', role: 'Software Architect', email: 's.thananarin@gmail.com', tel: '+66 64 478 8545', photo: 'https://i.ibb.co/279tD5s4/FB-IMG-1783759688169.jpg', photoZoom: 1.5, photoPos: '55% 45%' , lineQr: '/line-thananarin.jpg' , lineQrSize: 78 },
+  { name: 'Phuwich Khamteja', role: 'Project Lead', email: 'subphuwich@gmail.com', tel: '+66 62 875 6868', photo: 'https://i.ibb.co/DP8FSnzS/fqs-2569-01-14-144852-111.jpg', photoZoom: 2, photoPos: '75% 45%' , lineQr: '/line-phuwich.jpg' , lineQrSize: 78 },
 ]
 
 const STEP_COUNT = 8
@@ -539,7 +544,9 @@ function TeamCard({
 
       <div
         style={{
-          height: 200,
+          // minHeight, not height: the QR sits beside the contact lines and is
+          // taller than they are, so the card has to be free to grow.
+          minHeight: 200,
           borderRadius: 14,
           padding: 22,
           display: 'flex',
@@ -567,13 +574,37 @@ function TeamCard({
           </div>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 14, color: colors.textMuted, fontSize: FONT.size.caption }}>
-          <a href={`mailto:${person.email}`} style={contactLinkStyle}>
-            {person.email}
-          </a>
-          <a href={`tel:${person.tel.replace(/[^+\d]/g, '')}`} style={contactLinkStyle}>
-            {person.tel}
-          </a>
+        {/* minHeight keeps every card the same height even though the QR sizes
+            differ per person, so the row of cards stays bottom-aligned. */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginTop: 14, minHeight: 72 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0, color: colors.textMuted, fontSize: FONT.size.caption }}>
+            <a href={`mailto:${person.email}`} style={contactLinkStyle}>
+              {person.email}
+            </a>
+            <a href={`tel:${person.tel.replace(/[^+\d]/g, '')}`} style={contactLinkStyle}>
+              {person.tel}
+            </a>
+          </div>
+
+          {person.lineQr && (
+            <img
+              src={person.lineQr}
+              alt={`LINE QR code for ${person.name}`}
+              width={person.lineQrSize ?? 68}
+              height={person.lineQrSize ?? 68}
+              style={{
+                flexShrink: 0,
+                width: person.lineQrSize ?? 68,
+                height: person.lineQrSize ?? 68,
+                borderRadius: 8,
+                // The QR art is black on white, so it carries its own white
+                // plate to stay scannable on the dark theme.
+                background: '#fff',
+                padding: 4,
+                objectFit: 'contain',
+              }}
+            />
+          )}
         </div>
       </div>
     </div>
