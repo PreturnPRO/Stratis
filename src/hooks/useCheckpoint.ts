@@ -1,12 +1,6 @@
-// Closing checkpoint state (alignment checkpoint, Feature 2).
-//
-// Reads the decisions the backend extracted from the session, lets the
-// facilitator trigger a fresh extract at wrap-up, and applies edits (set a due
-// date, mark deliberately open, fix wording). The completeness metric comes back
-// with every call so the UI never computes it locally.
 import { useState, useCallback } from "react";
 import type { DecisionRecord, DecisionStatus } from "../../shared/types";
-import { API_BASE } from "../lib/api";
+import { apiFetch } from "../lib/http";
 
 export interface CompletenessMetric {
   committed: number;
@@ -36,6 +30,11 @@ export interface UseCheckpointReturn {
   edit: (decisionId: string, patch: DecisionEdit) => Promise<void>;
 }
 
+interface DecisionPayload {
+  decisions?: DecisionRecord[];
+  metric?: CompletenessMetric;
+}
+
 const EMPTY_METRIC: CompletenessMetric = {
   committed: 0,
   withDueDate: 0,
@@ -54,61 +53,42 @@ export function useCheckpoint(
   const [extracting, setExtracting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const authHeaders = useCallback(
-    (): Record<string, string> => (token ? { Authorization: `Bearer ${token}` } : {}),
-    [token],
-  );
-
   const load = useCallback(async () => {
     if (!sessionId || !token) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/session/${sessionId}/decisions`, {
-        headers: authHeaders(),
-      });
-      const payload = await res.json();
-      if (res.ok && payload.ok) {
-        setDecisions(payload.data.decisions ?? []);
-        setMetric(payload.data.metric ?? EMPTY_METRIC);
-      } else {
-        setError(payload.error || "Failed to load decisions");
-      }
-    } catch {
-      setError("Network error loading decisions");
+      const data = await apiFetch<DecisionPayload>(`/api/session/${sessionId}/decisions`);
+      setDecisions(data.decisions ?? []);
+      setMetric(data.metric ?? EMPTY_METRIC);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load decisions");
     } finally {
       setLoading(false);
     }
-  }, [sessionId, token, authHeaders]);
+  }, [sessionId, token]);
 
   const extract = useCallback(async () => {
     if (!sessionId || !token) return;
     setExtracting(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/session/${sessionId}/decisions/extract`, {
-        method: "POST",
-        headers: authHeaders(),
-      });
-      const payload = await res.json();
-      if (res.ok && payload.ok) {
-        setDecisions(payload.data.decisions ?? []);
-        setMetric(payload.data.metric ?? EMPTY_METRIC);
-      } else {
-        setError(payload.error || "Failed to extract decisions");
-      }
-    } catch {
-      setError("Network error extracting decisions");
+      const data = await apiFetch<DecisionPayload>(
+        `/api/session/${sessionId}/decisions/extract`,
+        { method: "POST" },
+      );
+      setDecisions(data.decisions ?? []);
+      setMetric(data.metric ?? EMPTY_METRIC);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to extract decisions");
     } finally {
       setExtracting(false);
     }
-  }, [sessionId, token, authHeaders]);
+  }, [sessionId, token]);
 
   const edit = useCallback(
     async (decisionId: string, patch: DecisionEdit) => {
       if (!sessionId || !token) return;
-      // Optimistic: reflect the edit immediately; reconcile with the server's
-      // authoritative row + metric when the response lands.
       setDecisions((prev) =>
         prev.map((d) =>
           d.id === decisionId
@@ -125,30 +105,18 @@ export function useCheckpoint(
         ),
       );
       try {
-        const res = await fetch(
-          `${API_BASE}/api/session/${sessionId}/decisions/${decisionId}`,
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json", ...authHeaders() },
-            body: JSON.stringify(patch),
-          },
+        const data = await apiFetch<{ decision: DecisionRecord; metric?: CompletenessMetric }>(
+          `/api/session/${sessionId}/decisions/${decisionId}`,
+          { method: "PATCH", body: patch },
         );
-        const payload = await res.json();
-        if (res.ok && payload.ok) {
-          setDecisions((prev) =>
-            prev.map((d) => (d.id === decisionId ? payload.data.decision : d)),
-          );
-          setMetric(payload.data.metric ?? EMPTY_METRIC);
-        } else {
-          setError(payload.error || "Failed to save edit");
-          await load();
-        }
-      } catch {
-        setError("Network error saving edit");
+        setDecisions((prev) => prev.map((d) => (d.id === decisionId ? data.decision : d)));
+        setMetric(data.metric ?? EMPTY_METRIC);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to save edit");
         await load();
       }
     },
-    [sessionId, token, authHeaders, load],
+    [sessionId, token, load],
   );
 
   return { decisions, metric, loading, extracting, error, load, extract, edit };

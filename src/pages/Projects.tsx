@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { COLORS, RADIUS, FONT, LETTER_SPACING, SPACE } from "../tokens/colors";
+import { useCallback, useMemo, useState } from "react";
+import { RADIUS, FONT, LETTER_SPACING, SPACE } from "../tokens/colors";
 import { Button, Modal } from "../components/ui";
 import { NewMeetingModal } from "../components/NewMeetingModal";
 import { useAuth } from "../context/AuthContext";
 import { useCreateMeeting } from "../hooks/useCreateMeeting";
-import { API_BASE } from "../lib/api";
+import { useTheme } from "../hooks/useTheme";
+import AmbientBackground from "../components/AmbientBackground";
+import { useCachedQuery } from "../lib/cache";
+import { apiFetch } from "../lib/http";
 
 interface Props {
   onNav?: (id: string, params?: Record<string, string>) => void;
@@ -24,25 +27,18 @@ function formatDate(value?: string | null): string {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(d);
 }
 
-// Stable-ish dot color derived from the project name.
-const DOT_COLORS = [COLORS.accent, COLORS.teal, COLORS.cyan, COLORS.orange, COLORS.red];
-function colorFor(name: string): string {
+function colorFor(name: string, dotColors: readonly string[]): string {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  return DOT_COLORS[Math.abs(hash) % DOT_COLORS.length];
+  return dotColors[Math.abs(hash) % dotColors.length];
 }
 
 export default function Projects({ onNav }: Props) {
+  const { theme, colors } = useTheme();
   const { token, user } = useAuth();
+  const dotColors = [colors.accent, colors.teal, colors.cyan, colors.orange, colors.red];
 
-  const authHeaders = useMemo(
-    (): Record<string, string> => (token ? { Authorization: `Bearer ${token}` } : {}),
-    [token],
-  );
-
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [writeError, setWriteError] = useState<string | null>(null);
 
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState("");
@@ -51,48 +47,29 @@ export default function Projects({ onNav }: Props) {
   const [newMeetingProject, setNewMeetingProject] = useState<Project | null>(null);
   const create = useCreateMeeting(onNav);
 
-  const load = useCallback(async () => {
-    if (!token) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`${API_BASE}/api/meeting/projects`, { headers: authHeaders });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        setError(data.error ?? "Could not load projects");
-        return;
-      }
-      setProjects(data.data?.projects ?? []);
-    } catch {
-      setError("Could not reach the server");
-    } finally {
-      setLoading(false);
-    }
-  }, [token, authHeaders]);
+  const query = useCachedQuery<{ projects?: Project[] }>(
+    "projects",
+    useCallback(() => apiFetch<{ projects?: Project[] }>("/api/meeting/projects"), []),
+    { scope: user?.id, enabled: Boolean(token) },
+  );
 
-  useEffect(() => { void load(); }, [load]);
+  const projects = useMemo(() => query.data?.projects ?? [], [query.data]);
+  const load = query.refresh;
+  const loading = query.loading;
+  const error = writeError ?? query.error;
 
   const handleCreate = async () => {
     const name = newName.trim();
     if (!name) return;
     setCreating(true);
-    setError(null);
+    setWriteError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/meeting/projects`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders },
-        body: JSON.stringify({ name }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        setError(data.error ?? "Could not create project");
-        return;
-      }
+      await apiFetch("/api/meeting/projects", { method: "POST", body: { name } });
       setShowNew(false);
       setNewName("");
       await load();
-    } catch {
-      setError("Could not reach the server");
+    } catch (err) {
+      setWriteError(err instanceof Error ? err.message : "Could not create project");
     } finally {
       setCreating(false);
     }
@@ -103,6 +80,7 @@ export default function Projects({ onNav }: Props) {
     durationMinutes: number;
     goal: string;
     brief: string;
+    scheduledAt: string | null;
   }) => {
     if (!newMeetingProject) return;
     const sessionId = await create.createMeeting({
@@ -111,6 +89,7 @@ export default function Projects({ onNav }: Props) {
       goal: input.goal,
       brief: input.brief,
       durationMinutes: input.durationMinutes,
+      scheduledAt: input.scheduledAt,
     });
     if (sessionId) setNewMeetingProject(null);
   };
@@ -118,15 +97,31 @@ export default function Projects({ onNav }: Props) {
   const owner = user?.name ?? "You";
 
   return (
-    <div className="page-padding" style={{ overflowY: "auto", flex: 1 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 32 }}>
-        <h1 style={{ color: COLORS.text, fontSize: FONT.size.title, fontWeight: 600, margin: 0 }}>All projects</h1>
-        <Button variant="primary" onClick={() => setShowNew(true)}>+ New project</Button>
+    <div style={{ flex: 1, position: "relative", height: "100%", overflow: "hidden" }}>
+      <AmbientBackground theme={theme} />
+
+      <div className="page-padding" style={{ position: "relative", zIndex: 1, height: "100%", overflowY: "auto" }}>
+      <div style={{ marginBottom: 32 }}>
+        <div
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "flex-end", marginBottom: 12,
+            fontFamily: FONT.mono, fontSize: FONT.size.caption, letterSpacing: LETTER_SPACING.eyebrow,
+            color: colors.textMuted, textTransform: "uppercase",
+          }}
+        >
+          <span>{projects.length} PROJECT{projects.length === 1 ? "" : "S"}</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <h1 style={{ color: colors.text, fontSize: "clamp(28px, 3.4vw, 40px)", fontWeight: 600, letterSpacing: "-.028em", margin: 0 }}>
+            All projects
+          </h1>
+          <Button variant="ghost" onClick={() => setShowNew(true)}>+ NEW PROJECT</Button>
+        </div>
       </div>
 
       {error && (
         <div style={{
-          background: COLORS.redBg, border: `1px solid ${COLORS.red}`, color: COLORS.red,
+          background: colors.redBg, border: `1px solid ${colors.red}`, color: colors.red,
           borderRadius: RADIUS.md, padding: "10px 14px", fontSize: FONT.size.body, marginBottom: SPACE[5],
         }}>
           {error}
@@ -134,18 +129,18 @@ export default function Projects({ onNav }: Props) {
       )}
 
       {loading ? (
-        <p style={{ color: COLORS.textMuted, fontSize: FONT.size.body }}>Loading projects…</p>
+        <p style={{ color: colors.textMuted, fontSize: FONT.size.body }}>Loading projects…</p>
       ) : projects.length === 0 ? (
         <div style={{
-          border: `1px dashed ${COLORS.border}`, borderRadius: RADIUS.lg, padding: "48px 24px",
-          textAlign: "center", color: COLORS.textMuted, fontSize: FONT.size.body,
+          border: `1px dashed ${colors.border}`, borderRadius: RADIUS.lg, padding: "48px 24px",
+          textAlign: "center", color: colors.textMuted, fontSize: FONT.size.body,
         }}>
           No projects yet. Create one, or start a meeting from the dashboard.
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>
           {projects.map((p) => {
-            const dot = colorFor(p.name);
+            const dot = colorFor(p.name, dotColors);
             const openDocument = () => onNav?.("document", { projectId: p.id });
             return (
               <div
@@ -160,8 +155,8 @@ export default function Projects({ onNav }: Props) {
                   }
                 }}
                 style={{
-                  background: COLORS.surface,
-                  border: `1px solid ${COLORS.border}`,
+                  background: colors.surface,
+                  border: `1px solid ${colors.border}`,
                   borderRadius: RADIUS.lg,
                   padding: "20px 22px",
                   textAlign: "left",
@@ -170,31 +165,43 @@ export default function Projects({ onNav }: Props) {
               >
                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: dot, flexShrink: 0 }} />
-                    <span style={{ color: COLORS.text, fontWeight: 600, fontSize: FONT.size.body }}>{p.name}</span>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: dot, boxShadow: `0 0 10px ${dot}`, flexShrink: 0 }} />
+                    <span style={{ color: colors.text, fontWeight: 600, fontSize: 17 }}>{p.name}</span>
                   </div>
-                  <span aria-hidden="true" style={{ color: COLORS.textMuted, fontSize: FONT.size.label }}>↗</span>
+                  <span aria-hidden="true" style={{ color: colors.textMuted, fontSize: FONT.size.label }}>↗</span>
                 </div>
 
-                <div style={{ color: COLORS.textMuted, fontSize: FONT.size.label, marginBottom: 12, paddingLeft: 16 }}>
+                <div style={{ color: colors.textMuted, fontSize: FONT.size.label, marginBottom: 12, paddingLeft: 16 }}>
                   {owner}
                 </div>
 
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingLeft: 16 }}>
-                  <div style={{ display: "flex", gap: 16, fontSize: FONT.size.label, color: COLORS.textMuted }}>
-                    <span><span style={{ color: COLORS.text }}>{p.meetingCount}</span> meeting{p.meetingCount === 1 ? "" : "s"}</span>
-                    <span style={{ color: COLORS.textMuted }}>Last: {formatDate(p.lastMeetingAt)}</span>
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, paddingLeft: 16 }}>
+                  <div style={{ fontFamily: FONT.mono, fontSize: FONT.size.caption, color: colors.textMuted, textTransform: "uppercase", whiteSpace: "nowrap" }}>
+                    {p.meetingCount} meeting{p.meetingCount === 1 ? "" : "s"} · last: {formatDate(p.lastMeetingAt)}
                   </div>
-                  <Button
-                    variant="subtle"
-                    size="sm"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setNewMeetingProject(p);
-                    }}
-                  >
-                    + New meeting
-                  </Button>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      style={{ background: colors.amberSubtle, border: `1px solid ${colors.accentDim}`, color: colors.accent }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setNewMeetingProject(p);
+                      }}
+                    >
+                      New meeting
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openDocument();
+                      }}
+                    >
+                      PM document
+                    </Button>
+                  </div>
                 </div>
               </div>
             );
@@ -216,15 +223,15 @@ export default function Projects({ onNav }: Props) {
             </>
           }
         >
-          <label htmlFor="new-project-name" style={{ color: COLORS.textMuted, fontSize: FONT.size.label, letterSpacing: LETTER_SPACING.wide, display: "block", marginBottom: SPACE[1.5] }}>
+          <label htmlFor="new-project-name" style={{ color: colors.textMuted, fontSize: FONT.size.label, letterSpacing: LETTER_SPACING.wide, display: "block", marginBottom: SPACE[1.5] }}>
             Project name
           </label>
           <input
             id="new-project-name"
             autoFocus
             style={{
-              width: "100%", background: COLORS.bg, border: `1px solid ${COLORS.border}`,
-              color: COLORS.text, borderRadius: RADIUS.sm, padding: "10px 12px", fontSize: FONT.size.body, outline: "none",
+              width: "100%", background: colors.bg, border: `1px solid ${colors.border}`,
+              color: colors.text, borderRadius: RADIUS.sm, padding: "10px 12px", fontSize: FONT.size.body, outline: "none",
             }}
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
@@ -233,6 +240,7 @@ export default function Projects({ onNav }: Props) {
           />
         </Modal>
       )}
+      </div>
 
       <NewMeetingModal
         open={!!newMeetingProject}

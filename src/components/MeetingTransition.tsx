@@ -1,8 +1,6 @@
 import { useState, useEffect } from "react";
-import { COLORS, FONT, LETTER_SPACING, SHADOW } from "../constants";
+import { COLORS, FONT, LETTER_SPACING, SHADOW } from "../tokens/colors";
 
-// Quiet priming beat between "start meeting" and the live session — reads as
-// the tool getting ready, not an announcement. Hold, then a quick fade.
 const HOLD_MS = 650;
 const EXIT_MS = 300;
 

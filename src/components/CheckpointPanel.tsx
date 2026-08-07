@@ -1,14 +1,10 @@
-// Closing checkpoint (alignment checkpoint, Feature 2 + 3).
-//
-// The facilitator's last-three-minutes instrument: shows the decisions the room
-// made, flags the ones leaving without a due date, and lets the facilitator fix
-// them in place or mark one deliberately open. `present` renders the same list
-// large and read-only for a projector / screenshare (Feature 3) — the room reads
-// along while the facilitator speaks; edits happen in normal mode.
 import { useId, useState } from "react";
 import { Check, CircleAlert, PauseCircle, Pencil, Presentation, RefreshCw, X } from "lucide-react";
-import { COLORS, FONT, RADIUS, SPACE } from "../constants";
-import { Button } from "./ui";
+import { FONT, RADIUS, SPACE, tint } from "../tokens/colors";
+import { useTheme } from "../hooks/useTheme";
+import { Button, IconButton } from "./ui";
+import { LoadingState } from "./states";
+import { toggleOpenStatus } from "../lib/decisionStatus";
 import type { DecisionRecord, DecisionStatus } from "../../shared/types";
 import type { CompletenessMetric, DecisionEdit } from "../hooks/useCheckpoint";
 
@@ -16,27 +12,33 @@ interface CheckpointPanelProps {
   decisions: DecisionRecord[];
   metric: CompletenessMetric | null;
   extracting: boolean;
-  // Unique speaker names from the transcript — owner-input suggestions, so the
-  // facilitator picks a name instead of retyping it. Free text still allowed.
   speakers?: string[];
   present: boolean;
+  /** Load/extract/save failure from useCheckpoint. Edits roll back on failure,
+   *  so without this line the revert is invisible and reads as data loss. */
+  error?: string | null;
   onEdit: (decisionId: string, patch: DecisionEdit) => void;
   onReExtract: () => void;
   onTogglePresent: () => void;
   onClose: () => void;
+  /**
+   * Rendered below the panel's own actions. Used by the end-of-meeting layer to
+   * put its exit at the bottom, so reading the list is the path to the button.
+   */
+  footer?: React.ReactNode;
 }
 
-const STATUS_META: Record<
+function statusMeta(colors: Record<string, string>): Record<
   DecisionStatus,
   { label: string; color: string; icon: typeof Check }
-> = {
-  complete: { label: "READY", color: COLORS.green, icon: Check },
-  incomplete: { label: "NEEDS A DATE", color: COLORS.orange, icon: CircleAlert },
-  open: { label: "OPEN", color: COLORS.cyan, icon: PauseCircle },
-};
+> {
+  return {
+    complete: { label: "READY", color: colors.green, icon: Check },
+    incomplete: { label: "NEEDS A DATE", color: colors.orange, icon: CircleAlert },
+    open: { label: "OPEN", color: colors.cyan, icon: PauseCircle },
+  };
+}
 
-// The AI sometimes returns a spoken phrase ("end of month") rather than an ISO
-// date; a native date input can only bind YYYY-MM-DD, so only prefill it then.
 function isoOrEmpty(due: string | null): string {
   return due && /^\d{4}-\d{2}-\d{2}$/.test(due) ? due : "";
 }
@@ -52,21 +54,21 @@ function DecisionRow({
   present: boolean;
   onEdit: (patch: DecisionEdit) => void;
 }) {
-  const meta = STATUS_META[decision.status];
+  const { colors } = useTheme();
+  const meta = statusMeta(colors)[decision.status];
   const Icon = meta.icon;
+  const isOpen = decision.status === "open";
   const [owner, setOwner] = useState(decision.owner ?? "");
   const [editingText, setEditingText] = useState(false);
   const [draftText, setDraftText] = useState(decision.text);
   const datalistId = useId();
 
-  // Soft-dismissed: collapse to a single undoable line. The row is kept in the
-  // DB, so Undo restores it exactly; nothing is ever hard-deleted.
   if (decision.dismissed) {
     if (present) return null;
     return (
       <div
         style={{
-          border: `1px dashed ${COLORS.border}`,
+          border: `1px dashed ${colors.border}`,
           borderRadius: RADIUS.md,
           padding: "8px 14px",
           display: "flex",
@@ -78,7 +80,7 @@ function DecisionRow({
         <span
           style={{
             fontSize: FONT.size.label,
-            color: COLORS.textDim,
+            color: colors.textDim,
             textDecorationLine: "line-through",
             overflow: "hidden",
             textOverflow: "ellipsis",
@@ -87,21 +89,21 @@ function DecisionRow({
         >
           {decision.text}
         </span>
-        <button
+        <Button
           type="button"
+          variant="link"
+          size="sm"
           onClick={() => onEdit({ dismissed: false })}
           style={{
-            background: "transparent",
-            border: "none",
-            color: COLORS.accent,
+            color: colors.accent,
             fontSize: FONT.size.label,
             fontWeight: 600,
-            cursor: "pointer",
+            padding: 0,
             flexShrink: 0,
           }}
         >
           Undo
-        </button>
+        </Button>
       </div>
     );
   }
@@ -109,8 +111,8 @@ function DecisionRow({
   return (
     <div
       style={{
-        border: `1px solid ${decision.status === "incomplete" ? `${meta.color}55` : COLORS.border}`,
-        background: COLORS.surfaceMuted,
+        border: `1px solid ${decision.status === "incomplete" ? `${meta.color}55` : colors.border}`,
+        background: colors.surfaceMuted,
         borderRadius: RADIUS.md,
         padding: present ? "18px 22px" : "14px 16px",
         display: "flex",
@@ -119,26 +121,37 @@ function DecisionRow({
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <Icon size={present ? 18 : 14} color={meta.color} />
         <span
           style={{
-            fontSize: present ? FONT.size.micro : 10,
-            fontWeight: 700,
-            letterSpacing: 0.6,
-            color: meta.color,
-            textTransform: "uppercase",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 5,
+            padding: "2px 8px",
+            borderRadius: RADIUS.pill,
+            background: tint(meta.color, colors.surfaceMuted),
           }}
         >
-          {meta.label}
+          <Icon size={present ? 18 : 14} color={meta.color} />
+          <span
+            style={{
+              fontSize: present ? FONT.size.micro : 10,
+              fontWeight: 700,
+              letterSpacing: 0.6,
+              color: meta.color,
+              textTransform: "uppercase",
+            }}
+          >
+            {meta.label}
+          </span>
         </span>
         {decision.owner && (
-          <span style={{ fontSize: FONT.size.micro, color: COLORS.textDim }}>
+          <span style={{ fontSize: FONT.size.micro, color: colors.textDim }}>
             · {decision.owner}
           </span>
         )}
         {!present && (
           <span style={{ marginLeft: "auto", display: "inline-flex", gap: 2 }}>
-            <button
+            <IconButton
               type="button"
               onClick={() => {
                 setDraftText(decision.text);
@@ -146,19 +159,19 @@ function DecisionRow({
               }}
               aria-label="Edit decision text"
               title="Edit wording (STT sometimes mishears)"
-              style={{ background: "transparent", border: "none", color: COLORS.textDim, cursor: "pointer", padding: 4 }}
+              style={{ width: 24, height: 24 }}
             >
               <Pencil size={13} />
-            </button>
-            <button
+            </IconButton>
+            <IconButton
               type="button"
               onClick={() => onEdit({ dismissed: true })}
               aria-label="Dismiss decision"
               title="Not a real decision — dismiss (undoable)"
-              style={{ background: "transparent", border: "none", color: COLORS.textDim, cursor: "pointer", padding: 4 }}
+              style={{ width: 24, height: 24 }}
             >
               <X size={14} />
-            </button>
+            </IconButton>
           </span>
         )}
       </div>
@@ -171,10 +184,10 @@ function DecisionRow({
             rows={2}
             aria-label="Decision text"
             style={{
-              background: COLORS.surface,
-              border: `1px solid ${COLORS.borderLight}`,
+              background: colors.surface,
+              border: `1px solid ${colors.borderLight}`,
               borderRadius: RADIUS.sm,
-              color: COLORS.textPrimary,
+              color: colors.textPrimary,
               padding: "8px 10px",
               fontSize: FONT.size.body,
               lineHeight: 1.5,
@@ -204,7 +217,7 @@ function DecisionRow({
           style={{
             margin: 0,
             fontSize: present ? FONT.size.subheading : FONT.size.body,
-            color: COLORS.textPrimary,
+            color: colors.textPrimary,
             lineHeight: 1.5,
             fontWeight: present ? 600 : 500,
           }}
@@ -214,35 +227,34 @@ function DecisionRow({
       )}
 
       {decision.scope && (
-        <p style={{ margin: 0, fontSize: FONT.size.label, color: COLORS.textMuted }}>
+        <p style={{ margin: 0, fontSize: FONT.size.label, color: colors.textMuted }}>
           {decision.scope}
         </p>
       )}
 
       {decision.dueDate ? (
-        <span style={{ fontSize: FONT.size.label, color: COLORS.textMuted }}>
-          Due: <strong style={{ color: COLORS.textPrimary }}>{decision.dueDate}</strong>
+        <span style={{ fontSize: FONT.size.label, color: colors.textMuted }}>
+          Due: <strong style={{ color: colors.textPrimary }}>{decision.dueDate}</strong>
         </span>
       ) : decision.status === "open" ? (
         decision.revisit && (
-          <span style={{ fontSize: FONT.size.label, color: COLORS.textMuted }}>
+          <span style={{ fontSize: FONT.size.label, color: colors.textMuted }}>
             Revisit: {decision.revisit}
           </span>
         )
       ) : (
         !present && (
-          <span style={{ fontSize: FONT.size.label, color: COLORS.orange }}>
+          <span style={{ fontSize: FONT.size.label, color: colors.orange }}>
             {decision.missing || "No deadline set"}
           </span>
         )
       )}
 
-      {/* Edit controls — normal mode only; present mode is read-only for the room. */}
-      {!present && decision.status !== "open" && (
+      {!present && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
           <input
             type="date"
-            defaultValue={isoOrEmpty(decision.dueDate)}
+            value={isoOrEmpty(decision.dueDate)}
             onChange={(e) =>
               onEdit({
                 dueDate: e.target.value || null,
@@ -251,10 +263,10 @@ function DecisionRow({
             }
             aria-label="Due date"
             style={{
-              background: COLORS.surface,
-              border: `1px solid ${COLORS.border}`,
+              background: colors.surface,
+              border: `1px solid ${colors.border}`,
               borderRadius: RADIUS.sm,
-              color: COLORS.textPrimary,
+              color: colors.textPrimary,
               padding: "5px 8px",
               fontSize: FONT.size.label,
             }}
@@ -268,10 +280,10 @@ function DecisionRow({
             onBlur={() => owner !== (decision.owner ?? "") && onEdit({ owner: owner || null })}
             aria-label="Owner"
             style={{
-              background: COLORS.surface,
-              border: `1px solid ${COLORS.border}`,
+              background: colors.surface,
+              border: `1px solid ${colors.border}`,
               borderRadius: RADIUS.sm,
-              color: COLORS.textPrimary,
+              color: colors.textPrimary,
               padding: "5px 8px",
               fontSize: FONT.size.label,
               width: 120,
@@ -282,21 +294,34 @@ function DecisionRow({
               <option key={s} value={s} />
             ))}
           </datalist>
-          <button
+          <Button
             type="button"
-            onClick={() => onEdit({ status: "open" })}
+            variant="ghost"
+            aria-pressed={isOpen}
+            title={
+              isOpen
+                ? "Currently parked as open — click to bring it back for a date"
+                : "Park this as deliberately undecided"
+            }
+            onClick={() => onEdit({ status: toggleOpenStatus(decision.status, decision.dueDate) })}
             style={{
-              background: "transparent",
-              border: `1px solid ${COLORS.border}`,
+              /* Only pinned when pressed. Leaving `background` unset in the
+                 unpressed case lets the ghost variant supply the hover fill. */
+              ...(isOpen
+                ? {
+                    background: tint(colors.cyan, colors.surfaceMuted),
+                    border: `1px solid ${colors.cyan}`,
+                    color: colors.cyan,
+                  }
+                : null),
               borderRadius: RADIUS.pill,
-              color: COLORS.textMuted,
               padding: "5px 10px",
               fontSize: FONT.size.micro,
-              cursor: "pointer",
+              fontWeight: isOpen ? 600 : 400,
             }}
           >
             Deliberately open
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -309,11 +334,14 @@ export function CheckpointPanel({
   extracting,
   speakers = [],
   present,
+  error,
   onEdit,
   onReExtract,
   onTogglePresent,
   onClose,
+  footer,
 }: CheckpointPanelProps) {
+  const { colors } = useTheme();
   const rate = metric?.completenessRate;
   const live = decisions.filter((d) => !d.dismissed);
   const incomplete = live.filter((d) => d.status === "incomplete").length;
@@ -337,7 +365,6 @@ export function CheckpointPanel({
         maxHeight: present ? "100%" : "70vh",
       }}
     >
-      {/* Header */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
         <div>
           <h2
@@ -345,38 +372,55 @@ export function CheckpointPanel({
               margin: 0,
               fontSize: present ? FONT.size.title : FONT.size.heading,
               fontWeight: 700,
-              color: COLORS.textPrimary,
+              color: colors.textPrimary,
             }}
           >
             Before we close
           </h2>
-          <p style={{ margin: "4px 0 0", fontSize: FONT.size.body, color: incomplete > 0 ? COLORS.orange : COLORS.textMuted }}>
+          <p style={{ margin: "4px 0 0", fontSize: FONT.size.body, color: incomplete > 0 ? colors.orange : colors.textMuted }}>
             {headline}
           </p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {rate != null && (
             <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: present ? FONT.size.heading : FONT.size.subheading, fontWeight: 800, color: rate === 100 ? COLORS.green : COLORS.orange }}>
+              <div style={{ fontSize: present ? FONT.size.heading : FONT.size.subheading, fontWeight: 800, color: rate === 100 ? colors.green : colors.orange }}>
                 {rate}%
               </div>
-              <div style={{ fontSize: FONT.size.micro, color: COLORS.textDim, textTransform: "uppercase", letterSpacing: 0.5 }}>
+              <div style={{ fontSize: FONT.size.micro, color: colors.textDim, textTransform: "uppercase", letterSpacing: 0.5 }}>
                 have a date
               </div>
             </div>
           )}
           {!present && (
-            <button type="button" onClick={onClose} aria-label="Close checkpoint" style={{ background: "transparent", border: "none", color: COLORS.textMuted, cursor: "pointer", padding: 4 }}>
+            <IconButton type="button" onClick={onClose} aria-label="Close checkpoint">
               <X size={20} />
-            </button>
+            </IconButton>
           )}
         </div>
       </div>
 
-      {/* Decision list */}
+      {error && (
+        <div
+          role="alert"
+          style={{
+            background: colors.redBg,
+            border: `1px solid ${colors.red}55`,
+            color: colors.red,
+            borderRadius: RADIUS.sm,
+            padding: "8px 12px",
+            fontSize: FONT.size.label,
+          }}
+        >
+          {error} — your change was not saved.
+        </div>
+      )}
+
       <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: SPACE[2.5] }}>
-        {decisions.length === 0 && !extracting ? (
-          <div style={{ padding: "32px 0", textAlign: "center", color: COLORS.textMuted, fontSize: FONT.size.body }}>
+        {decisions.length === 0 && extracting ? (
+          <LoadingState count={3} persist />
+        ) : decisions.length === 0 ? (
+          <div style={{ padding: "32px 0", textAlign: "center", color: colors.textMuted, fontSize: FONT.size.body }}>
             Nothing to confirm yet. Run the checkpoint once the team has decided something.
           </div>
         ) : (
@@ -392,34 +436,24 @@ export function CheckpointPanel({
         )}
       </div>
 
-      {/* Actions */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <button
+        <Button
           type="button"
+          variant="ghost"
           onClick={onReExtract}
           disabled={extracting}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            background: "transparent",
-            border: `1px solid ${COLORS.border}`,
-            borderRadius: RADIUS.pill,
-            color: COLORS.textMuted,
-            padding: "7px 12px",
-            fontSize: FONT.size.label,
-            cursor: extracting ? "default" : "pointer",
-            opacity: extracting ? 0.6 : 1,
-          }}
+          iconLeft={<RefreshCw size={14} style={extracting ? { animation: "spin 1s linear infinite" } : undefined} />}
+          style={{ padding: "7px 12px", fontSize: FONT.size.label, fontWeight: 400 }}
         >
-          <RefreshCw size={14} style={extracting ? { animation: "spin 1s linear infinite" } : undefined} />
           {extracting ? "Reading…" : "Re-read meeting"}
-        </button>
+        </Button>
 
         <Button variant="ghost" size="sm" onClick={onTogglePresent} iconLeft={<Presentation size={14} />}>
           {present ? "Exit present" : "Present to room"}
         </Button>
       </div>
+
+      {footer}
     </div>
   );
 }

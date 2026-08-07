@@ -1,11 +1,3 @@
-// API route skeleton (S1-T03-A).
-// Each namespace is mounted here and currently returns placeholder 200s to
-// confirm the routing works. Real handlers are added in later tasks:
-//   /api/session    → session lifecycle      (S1-T03-F)
-//   /api/transcript → transcript ingest/save (S1-T04-C / S1-T04-D)
-//   /api/ai         → AI pipeline            (S1-T03-B…E)
-//   /api/summary    → meeting summary        (S2-T07-E)
-//   /api/meeting    → meeting CRUD           (S1-T03-G)
 import { Router } from "express";
 import { meetingRouter } from "./meeting";
 import { aiRouter } from "./ai";
@@ -14,6 +6,13 @@ import { sessionRouter } from "./session";
 import { transcriptRouter } from "./transcript";
 import { documentRouter } from "./document";
 import { notificationRouter } from "./notification";
+import { inviteRouter } from "./invite";
+import { profileRouter } from "./profile";
+import { billingRouter } from "./billing";
+import { adminRouter } from "./admin";
+import { trackRouter } from "./track";
+import { feedbackRouter } from "./feedback";
+import { systemRouter } from "./system";
 
 export const apiRouter = Router();
 
@@ -24,3 +23,12 @@ apiRouter.use("/session", sessionRouter);
 apiRouter.use("/transcript", transcriptRouter);
 apiRouter.use("/document", documentRouter);
 apiRouter.use("/notification", notificationRouter);
+
+// Beta guard rails.
+apiRouter.use("/invite", inviteRouter);
+apiRouter.use("/profile", profileRouter);
+apiRouter.use("/billing", billingRouter);
+apiRouter.use("/admin", adminRouter);
+apiRouter.use("/track", trackRouter);
+apiRouter.use("/feedback", feedbackRouter);
+apiRouter.use("/system", systemRouter);

@@ -1,10 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from "react";
-import { COLORS, RADIUS, SHADOW, FONT, LETTER_SPACING, SPACE } from "../tokens/colors";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Legacy style helpers — kept so pages not yet migrated keep working.
-// Prefer the <Button> component below for new/updated UI.
-// ─────────────────────────────────────────────────────────────────────────────
+import { COLORS, RADIUS, FONT, LETTER_SPACING, SPACE } from "../tokens/colors";
+import { useTheme } from "../hooks/useTheme";
 
 export function btnAccent(extra = {}) {
   return {
@@ -47,19 +43,15 @@ export function Avatar({ initials, color, size = 36 }: { initials: string; color
 }
 
 export function SectionLabel({ children }: { children: React.ReactNode }) {
+  const { colors } = useTheme();
   return (
-    <div style={{ color: COLORS.textMuted, fontSize: FONT.size.label, letterSpacing: LETTER_SPACING.label, marginBottom: SPACE[4] }}>
+    <div style={{ color: colors.textMuted, fontSize: FONT.size.label, letterSpacing: LETTER_SPACING.label, marginBottom: SPACE[4] }}>
       {children}
     </div>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Button — variants + sizes with real hover/active feedback. Focus ring comes
-// from the global :focus-visible rule in index.css.
-// ─────────────────────────────────────────────────────────────────────────────
-
-export type ButtonVariant = "primary" | "ghost" | "danger" | "subtle";
+export type ButtonVariant = "primary" | "ghost" | "danger" | "subtle" | "quiet" | "link";
 export type ButtonSize = "sm" | "md";
 
 interface ButtonProps
@@ -75,33 +67,57 @@ const SIZE_STYLE: Record<ButtonSize, React.CSSProperties> = {
   md: { padding: "8px 16px", fontSize: FONT.size.body },
 };
 
-function variantBase(variant: ButtonVariant, hovered: boolean): React.CSSProperties {
+function variantBase(
+  variant: ButtonVariant,
+  hovered: boolean,
+  colors: ReturnType<typeof useTheme>["colors"],
+): React.CSSProperties {
   switch (variant) {
     case "primary":
       return {
-        background: hovered ? COLORS.accentHover : COLORS.accent,
-        border: `1px solid ${hovered ? COLORS.accentHover : COLORS.accent}`,
+        background: hovered ? colors.accentHover : colors.accent,
+        border: `1px solid ${hovered ? colors.accentHover : colors.accent}`,
         color: "#10160b",
-        boxShadow: hovered ? SHADOW.glow(COLORS.accent) : "none",
       };
     case "danger":
       return {
-        background: hovered ? COLORS.dangerBg : "transparent",
-        border: `1px solid ${hovered ? COLORS.danger : `${COLORS.danger}66`}`,
-        color: COLORS.danger,
+        background: hovered ? colors.dangerBg : "transparent",
+        border: `1px solid ${hovered ? colors.danger : `${colors.danger}66`}`,
+        color: colors.danger,
       };
     case "subtle":
       return {
-        background: hovered ? COLORS.surfaceHover : COLORS.surface,
-        border: `1px solid ${COLORS.border}`,
-        color: COLORS.text,
+        background: hovered ? colors.surfaceHover : colors.surface,
+        border: `1px solid ${colors.border}`,
+        color: colors.text,
+      };
+    /* Borderless inline action — the vocabulary the ad-hoc buttons inside cards
+       and panels were reaching for. Reads as part of the card until hovered. */
+    case "quiet":
+      return {
+        background: hovered ? colors.surfaceHover : "transparent",
+        border: "1px solid transparent",
+        color: hovered ? colors.text : colors.textMuted,
+      };
+    /* Text-only affordance for in-flow links (.ics download, ToC entries).
+       The underline is always present — a link with no rest state is
+       indistinguishable from static caption text — and just goes from faint to
+       solid on hover. */
+    case "link":
+      return {
+        background: "transparent",
+        border: "1px solid transparent",
+        color: hovered ? colors.text : colors.textMuted,
+        textDecoration: "underline",
+        textDecorationColor: hovered ? "currentColor" : `${colors.textDim}80`,
+        textUnderlineOffset: 3,
       };
     case "ghost":
     default:
       return {
-        background: hovered ? COLORS.surfaceHover : "transparent",
-        border: `1px solid ${hovered ? COLORS.borderLight : COLORS.border}`,
-        color: hovered ? COLORS.text : COLORS.textMuted,
+        background: hovered ? colors.surfaceHover : "transparent",
+        border: `1px solid ${hovered ? colors.borderLight : colors.border}`,
+        color: hovered ? colors.text : colors.textMuted,
       };
   }
 }
@@ -116,54 +132,73 @@ export function Button({
   disabled,
   onMouseEnter,
   onMouseLeave,
+  onMouseDown,
+  onMouseUp,
   ...rest
 }: ButtonProps) {
   const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
   const active = hovered && !disabled;
+  const { colors } = useTheme();
+
+  const label = children;
 
   return (
     <button
       {...rest}
       disabled={disabled}
       onMouseEnter={(e) => { setHovered(true); onMouseEnter?.(e); }}
-      onMouseLeave={(e) => { setHovered(false); onMouseLeave?.(e); }}
+      onMouseLeave={(e) => { setHovered(false); setPressed(false); onMouseLeave?.(e); }}
+      onMouseDown={(e) => { setPressed(true); onMouseDown?.(e); }}
+      onMouseUp={(e) => { setPressed(false); onMouseUp?.(e); }}
       style={{
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
         gap: 7,
-        borderRadius: RADIUS.md,
+        borderRadius: RADIUS.pill,
         fontWeight: 600,
         lineHeight: 1,
         width: fullWidth ? "100%" : undefined,
-        whiteSpace: "nowrap",
+        /* `white-space` inherits, so a blanket `nowrap` here reaches multi-line
+           children. It clipped the two-line clamp on queued suggestion rows
+           mid-word. Pill-shaped variants still want it; the row-shaped `quiet`
+           variant must not have it. */
+        whiteSpace: variant === "quiet" ? "normal" : "nowrap",
+        opacity: pressed && !disabled ? 0.82 : 1,
+        transition: "background 0.15s, color 0.15s, border-color 0.15s, opacity 0.1s",
         ...SIZE_STYLE[size],
-        ...variantBase(variant, active),
+        ...variantBase(variant, active, colors),
         ...style,
       }}
     >
       {iconLeft}
-      {children}
+      {label}
     </button>
   );
 }
 
-// IconButton — square, icon-only, ghost hover.
 export function IconButton({
   title,
   style,
   children,
   onMouseEnter,
   onMouseLeave,
+  onMouseDown,
+  onMouseUp,
   ...rest
 }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const { colors } = useTheme();
   return (
     <button
       {...rest}
       title={title}
       onMouseEnter={(e) => { setHovered(true); onMouseEnter?.(e); }}
-      onMouseLeave={(e) => { setHovered(false); onMouseLeave?.(e); }}
+      onMouseLeave={(e) => { setHovered(false); setPressed(false); onMouseLeave?.(e); }}
+      onMouseDown={(e) => { setPressed(true); onMouseDown?.(e); }}
+      onMouseUp={(e) => { setPressed(false); onMouseUp?.(e); }}
       style={{
         width: 30,
         height: 30,
@@ -171,9 +206,11 @@ export function IconButton({
         alignItems: "center",
         justifyContent: "center",
         borderRadius: RADIUS.sm,
-        background: hovered ? COLORS.surfaceHover : "transparent",
+        background: hovered ? colors.surfaceHover : "transparent",
         border: "none",
-        color: hovered ? COLORS.text : COLORS.textMuted,
+        opacity: pressed ? 0.82 : 1,
+        transition: "background 0.15s, color 0.15s, opacity 0.1s",
+        color: hovered ? colors.text : colors.textMuted,
         ...style,
       }}
     >
@@ -182,13 +219,9 @@ export function IconButton({
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Chip — compact status indicator.
-// ─────────────────────────────────────────────────────────────────────────────
-
 export function Chip({
   children,
-  color = COLORS.textMuted,
+  color,
   icon,
   mono,
 }: {
@@ -197,6 +230,7 @@ export function Chip({
   icon?: React.ReactNode;
   mono?: boolean;
 }) {
+  const { colors } = useTheme();
   return (
     <span style={{
       display: "inline-flex",
@@ -204,9 +238,9 @@ export function Chip({
       gap: 5,
       padding: "3px 9px",
       borderRadius: RADIUS.pill,
-      background: COLORS.surface,
-      border: `1px solid ${COLORS.border}`,
-      color,
+      background: colors.surface,
+      border: `1px solid ${colors.border}`,
+      color: color ?? colors.textMuted,
       fontSize: FONT.size.caption,
       fontWeight: 500,
       fontFamily: mono ? "'SF Mono', ui-monospace, Menlo, monospace" : undefined,
@@ -217,10 +251,6 @@ export function Chip({
     </span>
   );
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Modal — backdrop fade, panel pop, Esc-to-close, click-outside, focus capture.
-// ─────────────────────────────────────────────────────────────────────────────
 
 export function Modal({
   title,
@@ -235,30 +265,77 @@ export function Modal({
   children: React.ReactNode;
   footer?: React.ReactNode;
   width?: number;
-  // Form modals pass false: a mouse slip onto the backdrop must not wipe the
-  // user's inputs — those close on Cancel/Escape only.
   closeOnBackdrop?: boolean;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const { colors, shadow } = useTheme();
 
-  // Keep the latest onClose in a ref so the effect below can stay mount-only
-  // (empty deps) — depending on `onClose` directly re-ran this effect (and
-  // re-stole focus onto the panel) on every keystroke, since callers pass a
-  // fresh inline arrow function each render.
   const onCloseRef = useRef(onClose);
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
 
   useEffect(() => {
+    const panel = panelRef.current;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+
+    const focusable = () =>
+      Array.from(
+        panel?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCloseRef.current();
+      if (e.key === "Escape") {
+        onCloseRef.current();
+        return;
+      }
+      if (e.key !== "Tab") return;
+
+      /* Focus trap. `aria-modal="true"` only *claims* the rest of the page is
+         inert; without this, Tab walks straight out of a destructive-confirm
+         dialog into the page behind it. `inert` on the app root is not an
+         option here because the modal renders inside that tree rather than a
+         portal, so the cycle is enforced manually. */
+      const items = focusable();
+      if (items.length === 0) {
+        e.preventDefault();
+        panel?.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+
+      if (e.shiftKey && (active === first || active === panel)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      } else if (active && panel && !panel.contains(active)) {
+        e.preventDefault();
+        first.focus();
+      }
     };
+
     document.addEventListener("keydown", onKey);
-    panelRef.current?.focus();
-    return () => document.removeEventListener("keydown", onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    // Land on the first real control rather than the panel shell.
+    const items = focusable();
+    (items[0] ?? panel)?.focus();
+
+    // Prevent the page behind from scrolling under the dialog.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+      previouslyFocused?.focus?.();
+    };
   }, []);
 
   return (
@@ -270,8 +347,12 @@ export function Modal({
         background: "rgba(0,0,0,0.66)",
         backdropFilter: "blur(2px)",
         display: "flex",
-        alignItems: "center",
+        /* flex-start + `margin: auto` on the panel: still centred when it fits,
+           but scrollable instead of clipped when it doesn't. `center` alone
+           clips the top of an over-tall panel beyond reach. */
+        alignItems: "flex-start",
         justifyContent: "center",
+        overflowY: "auto",
         zIndex: 200,
         animation: "fadeIn 0.15s ease",
         padding: 24,
@@ -287,36 +368,56 @@ export function Modal({
         style={{
           width,
           maxWidth: "100%",
-          background: COLORS.surfaceElevated,
-          border: `1px solid ${COLORS.borderLight}`,
+          maxHeight: "calc(100dvh - 48px)",
+          margin: "auto",
+          display: "flex",
+          flexDirection: "column",
+          background: colors.surfaceElevated,
+          border: `1px solid ${colors.borderLight}`,
           borderRadius: RADIUS.lg,
-          padding: 24,
-          boxShadow: SHADOW.lg,
-          animation: "modalIn 0.2s ease",
+          boxShadow: shadow.shadModal,
+          animation: "modalIn 0.28s cubic-bezier(.22,1,.36,1)",
           outline: "none",
         }}
       >
         {title && (
           <h2 id={titleId} style={{
-            color: COLORS.text,
+            color: colors.text,
             fontSize: FONT.size.heading,
             fontWeight: 600,
-            margin: "0 0 18px",
+            margin: 0,
+            padding: "24px 24px 18px",
+            flexShrink: 0,
           }}>
             {title}
           </h2>
         )}
-        {children}
+        <div style={{
+          overflowY: "auto",
+          padding: title ? "0 24px" : "24px 24px 0",
+          flex: "1 1 auto",
+          minHeight: 0,
+        }}>
+          {children}
+        </div>
         {footer && (
           <div style={{
             display: "flex",
             justifyContent: "flex-end",
             gap: 8,
-            marginTop: SPACE[6],
+            padding: `${SPACE[5]}px 24px 24px`,
+            flexShrink: 0,
+            /* The primary action must never be the thing that falls off. */
+            position: "sticky",
+            bottom: 0,
+            background: colors.surfaceElevated,
+            borderBottomLeftRadius: RADIUS.lg,
+            borderBottomRightRadius: RADIUS.lg,
           }}>
             {footer}
           </div>
         )}
+        {!footer && <div style={{ height: 24, flexShrink: 0 }} />}
       </div>
     </div>
   );

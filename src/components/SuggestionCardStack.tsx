@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { COLORS, FONT, LETTER_SPACING, SHADOW, GLASS, SPACE } from '../tokens/colors'
+import { FONT, LETTER_SPACING, SHADOW, GLASS, LIGHT_GLASS, SPACE, tint } from '../tokens/colors'
+import { useTheme } from '../hooks/useTheme'
+import { Button } from './ui'
 import type { LiveCardType, LiveCardUrgency } from '../../shared/types'
 
 export type CardStatus = 'active' | 'answered'
@@ -14,22 +16,23 @@ export interface SuggestionCard {
   createdAt: string
 }
 
-// Cards older than this read as "aging" — urgency pill dims slightly as an
-// informational cue. Nothing is ever auto-removed (augment, never interrupt).
 const STALE_MS = 90_000
 
-// Card-type accent + label (schema spec §6.2). Colors pulled from the theme.
-const TYPE_META: Record<LiveCardType, { color: string; label: string }> = {
-  QUESTION_SUGGESTION: { color: COLORS.accent, label: 'Question' },
-  DRIFT_ALERT: { color: COLORS.orange, label: 'Drift' },
-  MISSING_DECISION: { color: COLORS.cyan, label: 'Missing decision' },
-  UNRESOLVED_ASSUMPTION: { color: COLORS.teal, label: 'Assumption' },
+function typeMeta(colors: Record<string, string>): Record<LiveCardType, { color: string; label: string }> {
+  return {
+    QUESTION_SUGGESTION: { color: colors.accent, label: 'Question' },
+    DRIFT_ALERT: { color: colors.orange, label: 'Drift' },
+    MISSING_DECISION: { color: colors.cyan, label: 'Missing decision' },
+    UNRESOLVED_ASSUMPTION: { color: colors.teal, label: 'Assumption' },
+  }
 }
 
-const URGENCY_COLOR: Record<LiveCardUrgency, string> = {
-  LOW: COLORS.textMuted,
-  MEDIUM: COLORS.amber,
-  HIGH: COLORS.red,
+function urgencyColor(colors: Record<string, string>): Record<LiveCardUrgency, string> {
+  return {
+    LOW: colors.textMuted,
+    MEDIUM: colors.amber,
+    HIGH: colors.red,
+  }
 }
 
 interface Props {
@@ -37,18 +40,13 @@ interface Props {
   thinking?: boolean
   onMarkAnswered: (id: string) => void
   onMarkActive: (id: string) => void
+  onDismiss: (id: string) => void
 }
 
-// Only this many active cards show expanded at once — the rest queue up
-// behind a "+N more open" row so the stack can't grow into an obtrusive wall.
 const VISIBLE_ACTIVE_CAP = 4
 
 const URGENCY_RANK: Record<LiveCardUrgency, number> = { HIGH: 0, MEDIUM: 1, LOW: 2 }
 
-// Hero slots are expensive attention in a live meeting: HIGH/MEDIUM earn a
-// full card; LOW stays a compact row unless nothing higher is on screen.
-// Cards without an urgency predate the field — treated as hero-eligible so
-// they never silently vanish into the LOW lane.
 function isLowTier(card: SuggestionCard): boolean {
   return card.urgency === 'LOW'
 }
@@ -64,16 +62,13 @@ function formatAge(createdAt: string): string {
   return `${Math.floor(mins / 60)}h`
 }
 
-export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkActive }: Props) {
+export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkActive, onDismiss }: Props) {
+  const { colors, theme } = useTheme()
+  const styles = makeStyles(colors, theme)
   const [answeredOpen, setAnsweredOpen] = useState(false)
   const [queueOpen, setQueueOpen] = useState(false)
-  // Cards the facilitator explicitly opened from the queue jump the line,
-  // regardless of urgency, so "bring this one forward" always works.
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set())
 
-  // "Thinking" can flip true/false rapidly (Web Speech fires per utterance) —
-  // show immediately, but debounce hiding so rapid flips read as one
-  // continuous "reviewing" state instead of the ghost card flickering.
   const [showThinking, setShowThinking] = useState(!!thinking)
   const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
@@ -99,20 +94,15 @@ export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkAct
     const bRank = b.urgency ? URGENCY_RANK[b.urgency] : 3
     if (aRank !== bRank) return aRank - bRank
 
-    // Same urgency — oldest first, so aging cards surface into the visible
-    // slots instead of being perpetually buried behind newer arrivals.
     return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
   }
 
-  // Pinning a LOW card is a facilitator override — it joins the hero pool.
   const heroPool = active.filter(c => !isLowTier(c) || pinnedIds.has(c.id))
   const lowPool = active.filter(c => isLowTier(c) && !pinnedIds.has(c.id))
 
   const orderedHero = [...heroPool].sort(byPinUrgencyAge)
   const orderedLow = [...lowPool].sort(byPinUrgencyAge)
 
-  // Nothing higher-urgency on screen → LOW may expand. An empty gutter
-  // hiding the only open suggestion is worse than one calm card.
   const heroCards = orderedHero.length > 0 ? orderedHero : orderedLow
   const lowRows = orderedHero.length > 0 ? orderedLow : []
 
@@ -142,6 +132,7 @@ export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkAct
           key={card.id}
           card={card}
           onMarkAnswered={() => onMarkAnswered(card.id)}
+          onDismiss={() => onDismiss(card.id)}
         />
       ))}
 
@@ -150,7 +141,8 @@ export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkAct
           ...styles.toggleGroup,
           ...(queuedActive.length > 3 ? styles.toggleGroupBacklog : null),
         }}>
-          <button
+          <Button
+            variant="quiet"
             style={styles.toggleBtn}
             onClick={() => setQueueOpen(o => !o)}
             aria-expanded={queueOpen}
@@ -159,7 +151,7 @@ export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkAct
               {queuedActive.length > 3 && (
                 <span style={{
                   ...styles.dot,
-                  background: COLORS.accent,
+                  background: colors.accent,
                   marginRight: SPACE[1.5],
                   ...(queuedActive.length > 5 ? styles.backlogDotPulse : null),
                 }} />
@@ -173,7 +165,7 @@ export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkAct
             }}>
               ▾
             </span>
-          </button>
+          </Button>
 
           {queueOpen && (
             <div style={styles.answeredList}>
@@ -208,7 +200,8 @@ export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkAct
 
       {answered.length > 0 && (
         <div style={styles.toggleGroup}>
-          <button
+          <Button
+            variant="quiet"
             style={styles.toggleBtn}
             onClick={() => setAnsweredOpen(o => !o)}
             aria-expanded={answeredOpen}
@@ -222,7 +215,7 @@ export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkAct
             }}>
               ▾
             </span>
-          </button>
+          </Button>
 
           {answeredOpen && (
             <div style={styles.answeredList}>
@@ -244,31 +237,55 @@ export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkAct
 function ActiveCard({
   card,
   onMarkAnswered,
+  onDismiss,
 }: {
   card: SuggestionCard
   onMarkAnswered: () => void
+  onDismiss: () => void
 }) {
-  const meta = card.cardType ? TYPE_META[card.cardType] : null
-  const accent = meta?.color ?? COLORS.accent
+  const { colors, shadow } = useTheme()
+  const styles = makeStyles(colors)
+  const urgencyColors = urgencyColor(colors)
+  const meta = card.cardType ? typeMeta(colors)[card.cardType] : null
+  const accent = meta?.color ?? colors.accent
   const stale = isStale(card.createdAt)
 
   return (
+    /* No accent side-stripe and no coloured halo. Four cards each carrying a
+       3px stripe plus a 16px glow put four saturated light sources on the one
+       surface that has to stay calm while someone is mid-sentence. Card type is
+       already carried twice over — by the dot and by the labelled chip directly
+       beneath — so the stripe was redundant as well as loud. */
     <div style={{
       ...styles.card,
-      background: COLORS.surface,
+      background: colors.surface,
+      /* `shadow` from the theme, not the hardcoded SHADOW import: that one is
+         the dark-theme ramp, so in light mode every card carried an
+         rgba(0,0,0,0.4) drop shadow on cream. */
+      boxShadow: shadow.shadFloat2,
     }}>
       {meta && (
         <div style={styles.tagRow}>
           <span style={styles.tag}>
             <span style={{ ...styles.dot, background: accent }} />
-            <span style={{ ...styles.tagLabel, color: accent }}>{meta.label}</span>
+            {/* 8% rather than tint()'s 15% default. At 15% these read as
+                coloured blocks on a surface that has to stay calm mid-meeting;
+                at 8% they're washes that still separate the four types. Text
+                contrast improves too, since less colour sits under it. */}
+            <span style={{
+              ...styles.tagLabel,
+              color: accent,
+              background: tint(accent, colors.surface, 8),
+              padding: '2px 7px',
+              borderRadius: 999,
+            }}>{meta.label}</span>
           </span>
           {card.urgency && (
             <span
               style={{
                 ...styles.urgency,
-                color: URGENCY_COLOR[card.urgency],
-                background: `${URGENCY_COLOR[card.urgency]}1f`,
+                color: urgencyColors[card.urgency],
+                background: tint(urgencyColors[card.urgency], colors.surface, 8),
                 opacity: stale ? 0.7 : 1,
               }}
             >
@@ -279,9 +296,20 @@ function ActiveCard({
       )}
       <p style={styles.question}>{card.question}</p>
       <p style={styles.reason}>{card.reason}</p>
-      <button style={styles.answerBtn} onClick={onMarkAnswered}>
-        Mark answered
-      </button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Button size="sm" variant="ghost" style={styles.answerBtn} onClick={onMarkAnswered}>
+          Mark answered
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          style={styles.dismissBtn}
+          onClick={onDismiss}
+          title="The AI got this one wrong — remove it without recording an answer"
+        >
+          Not relevant
+        </Button>
+      </div>
     </div>
   )
 }
@@ -293,15 +321,16 @@ function CollapsedCard({
   card: SuggestionCard
   onReopen: () => void
 }) {
+  const { colors } = useTheme()
+  const styles = makeStyles(colors)
   return (
-    <button style={styles.collapsedRow} onClick={onReopen} title="Tap to re-open">
+    <Button variant="quiet" style={styles.collapsedRow} onClick={onReopen}>
       <span style={styles.strikethrough}>{card.question}</span>
-    </button>
+      <span style={styles.reopenHint}>Re-open</span>
+    </Button>
   )
 }
 
-// A queued (still-active, not-yet-visible) card, collapsed to one line.
-// Clicking the question brings it to the front; the check answers it in place.
 function QueuedRow({
   card,
   onOpen,
@@ -311,36 +340,38 @@ function QueuedRow({
   onOpen: () => void
   onMarkAnswered: () => void
 }) {
-  const meta = card.cardType ? TYPE_META[card.cardType] : null
-  const accent = meta?.color ?? COLORS.accent
+  const { colors } = useTheme()
+  const styles = makeStyles(colors)
+  const meta = card.cardType ? typeMeta(colors)[card.cardType] : null
+  const accent = meta?.color ?? colors.accent
   const stale = isStale(card.createdAt)
 
   return (
     <div style={styles.queuedRow}>
-      <button style={styles.queuedRowMain} onClick={onOpen} title="Bring to front">
+      <Button variant="quiet" style={styles.queuedRowMain} onClick={onOpen} title="Bring to front">
         <span style={{ ...styles.dot, background: accent, flexShrink: 0, opacity: stale ? 0.6 : 1, marginTop: 5 }} />
         <span style={styles.queuedRowText}>{card.question}</span>
         <span style={styles.queuedRowAge}>{formatAge(card.createdAt)}</span>
-      </button>
-      <button
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
         style={styles.queuedRowAnswer}
         onClick={(e) => {
           e.stopPropagation()
           onMarkAnswered()
         }}
-        title="Mark answered"
         aria-label="Mark answered"
       >
-        ✓
-      </button>
+        ✓ Answered
+      </Button>
     </div>
   )
 }
 
-// Ghost placeholder shown while a transcript chunk is being processed by the
-// live AI — the same request that may produce a new suggestion card. Signals
-// "thinking" without claiming a suggestion is coming.
 function ThinkingCard() {
+  const { colors } = useTheme()
+  const styles = makeStyles(colors)
   return (
     <div style={styles.thinkingCard} role="status" aria-label="Reviewing the conversation">
       <span style={styles.thinkingDots}>
@@ -364,10 +395,9 @@ const SLIDE_UP_STYLE = `
   }
 `
 
-const styles: Record<string, React.CSSProperties> = {
-  // Sticky inside its reserved column (see Meeting.tsx's suggestion-gutter) —
-  // pins near the top as the page scrolls, never overlaps Transcript/AI
-  // notes the way a viewport-fixed overlay could.
+function makeStyles(colors: Record<string, string>, theme: 'dark' | 'light' = 'dark'): Record<string, React.CSSProperties> {
+  const glass = theme === 'light' ? LIGHT_GLASS : GLASS
+  return {
   stack: {
     position: 'sticky',
     top: 0,
@@ -379,24 +409,22 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 8,
     padding: '10px 10px 4px',
     borderRadius: 12,
-    background: GLASS.bg,
-    backdropFilter: GLASS.blur,
-    WebkitBackdropFilter: GLASS.blur,
+    background: glass.bg,
+    backdropFilter: glass.blur,
+    WebkitBackdropFilter: glass.blur,
     boxShadow: SHADOW.float,
     animation: 'slideUp 0.3s ease forwards',
   },
-  // Thin top wash marking this as the live signal zone — silent when there's
-  // nothing active to flag, so it stays a signal rather than decoration.
   stackSignal: {
-    backgroundImage: `linear-gradient(180deg, ${COLORS.accent}33, transparent 40px)`,
+    backgroundImage: `linear-gradient(180deg, ${colors.accent}33, transparent 40px)`,
   },
   card: {
-    borderRadius: 12,
+    borderRadius: 10,
     padding: '14px 16px',
     display: 'flex',
     flexDirection: 'column',
     gap: SPACE[1.5],
-    border: `1px solid ${COLORS.border}`,
+    border: `1px solid ${colors.border}`,
     boxShadow: SHADOW.sm,
     animation: 'cardIn 0.22s ease',
   },
@@ -431,111 +459,132 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '2px 7px',
     borderRadius: 999,
   },
-  // Subheading-size on purpose: the question is the hero of the whole meeting
-  // screen and must outweigh the body-size transcript beside it.
   question: {
     margin: 0,
     fontSize: FONT.size.subheading,
     fontWeight: 600,
-    color: COLORS.textPrimary,
+    color: colors.textPrimary,
     lineHeight: 1.45,
   },
   reason: {
     margin: 0,
     fontSize: FONT.size.label,
-    color: COLORS.textMuted,
+    color: colors.textMuted,
     lineHeight: 1.4,
   },
+  /* `background` and `cursor` are deliberately absent: Button's variant owns
+     them, and re-declaring them here would win the spread and kill the hover. */
   answerBtn: {
-    alignSelf: 'flex-end',
     marginTop: 4,
     padding: '4px 10px',
     fontSize: FONT.size.caption,
     fontWeight: 500,
     borderRadius: 6,
-    border: `1px solid ${COLORS.accent}`,
-    background: 'transparent',
-    color: COLORS.accent,
-    cursor: 'pointer',
+    border: `1px solid ${colors.accent}`,
+    color: colors.accent,
+  },
+  dismissBtn: {
+    marginTop: 4,
+    marginLeft: 'auto',
+    padding: '4px 10px',
+    fontSize: FONT.size.caption,
+    fontWeight: 400,
+    borderRadius: 6,
+    color: colors.textDim,
   },
   toggleGroup: {
     borderRadius: 10,
     overflow: 'hidden',
-    background: COLORS.surfaceMuted,
-    border: `1px solid ${COLORS.border}`,
+    background: colors.surfaceMuted,
+    border: `1px solid ${colors.border}`,
   },
-  // Past a growing-backlog threshold, tint calmly — a cue, not an alarm.
   toggleGroupBacklog: {
-    background: `${COLORS.accent}0d`,
-    border: `1px solid ${COLORS.accent}33`,
+    background: `${colors.accent}0d`,
+    border: `1px solid ${colors.accent}33`,
   },
+  /* Across these row/toggle styles, `background`, `border` and `cursor` are
+     deliberately absent: Button's variant owns them, and re-declaring them here
+     would win the style spread and silently kill the hover state. */
   toggleBtn: {
     width: '100%',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: '8px 14px',
-    background: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
+    borderRadius: 0,
+    fontWeight: 400,
   },
   toggleLabel: {
     display: 'inline-flex',
     alignItems: 'center',
     fontSize: FONT.size.label,
     fontWeight: 500,
-    color: COLORS.textMuted,
+    color: colors.textMuted,
   },
   backlogDotPulse: {
     animation: 'pulse 1.6s ease-in-out infinite',
   },
   chevron: {
     fontSize: FONT.size.label,
-    color: COLORS.textMuted,
+    color: colors.textMuted,
     transition: 'transform 0.15s ease',
   },
   answeredList: {
     display: 'flex',
     flexDirection: 'column',
-    borderTop: `1px solid ${COLORS.border}`,
+    borderTop: `1px solid ${colors.border}`,
   },
   collapsedRow: {
     width: '100%',
     padding: '7px 14px',
-    background: 'transparent',
-    border: 'none',
-    borderBottom: `1px solid ${COLORS.border}`,
-    cursor: 'pointer',
+    borderRadius: 0,
+    borderBottom: `1px solid ${colors.border}`,
     textAlign: 'left',
+    display: 'flex',
+    alignItems: 'baseline',
+    justifyContent: 'flex-start',
+    gap: 8,
+    fontWeight: 400,
   },
   strikethrough: {
+    flex: 1,
+    minWidth: 0,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
     fontSize: FONT.size.label,
-    color: COLORS.textMuted,
+    color: colors.textMuted,
     textDecoration: 'line-through',
+  },
+  reopenHint: {
+    flexShrink: 0,
+    fontSize: FONT.size.caption,
+    color: colors.accent,
+    fontWeight: 500,
   },
   queuedRow: {
     display: 'flex',
     alignItems: 'center',
     gap: SPACE[1.5],
-    borderBottom: `1px solid ${COLORS.border}`,
+    borderBottom: `1px solid ${colors.border}`,
   },
   queuedRowMain: {
     flex: 1,
     minWidth: 0,
     display: 'flex',
     alignItems: 'flex-start',
+    justifyContent: 'flex-start',
     gap: 7,
     padding: '7px 6px 7px 14px',
-    background: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
+    borderRadius: 0,
     textAlign: 'left',
+    fontWeight: 400,
   },
   queuedRowText: {
     flex: 1,
     minWidth: 0,
     fontSize: FONT.size.label,
-    color: COLORS.textMuted,
+    color: colors.textMuted,
     lineHeight: 1.45,
     display: '-webkit-box',
     WebkitLineClamp: 2,
@@ -545,7 +594,7 @@ const styles: Record<string, React.CSSProperties> = {
   queuedRowAge: {
     flexShrink: 0,
     fontSize: FONT.size.caption,
-    color: COLORS.textDim,
+    color: colors.textDim,
     paddingTop: 1,
   },
   lowHeader: {
@@ -554,22 +603,20 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     letterSpacing: LETTER_SPACING.wide,
     textTransform: 'uppercase',
-    color: COLORS.textDim,
+    color: colors.textDim,
   },
   queuedRowAnswer: {
     flexShrink: 0,
-    width: 22,
-    height: 22,
+    padding: '3px 9px',
     marginRight: 8,
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
+    whiteSpace: 'nowrap',
     fontSize: FONT.size.caption,
+    fontWeight: 400,
     borderRadius: 6,
-    border: `1px solid ${COLORS.border}`,
-    background: 'transparent',
-    color: COLORS.teal,
-    cursor: 'pointer',
+    color: colors.teal,
   },
   thinkingCard: {
     borderRadius: 12,
@@ -577,8 +624,8 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: SPACE[2.5],
-    border: `1px solid ${COLORS.border}`,
-    background: COLORS.surfaceMuted,
+    border: `1px solid ${colors.border}`,
+    background: colors.surfaceMuted,
     animation: 'cardIn 0.22s ease',
   },
   thinkingDots: {
@@ -591,11 +638,12 @@ const styles: Record<string, React.CSSProperties> = {
     width: 5,
     height: 5,
     borderRadius: '50%',
-    background: COLORS.accent,
+    background: colors.accent,
     animation: 'thinkingPulse 1.1s ease-in-out infinite',
   },
   thinkingLabel: {
     fontSize: FONT.size.label,
-    color: COLORS.textMuted,
+    color: colors.textMuted,
   },
+  }
 }

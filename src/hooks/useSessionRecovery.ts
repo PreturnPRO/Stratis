@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { API_BASE } from '../lib/api'
+import { apiFetch } from '../lib/http'
 
 const STORAGE_KEY = 'stratis.activeSessionId.v1'
 
@@ -24,14 +24,10 @@ interface RecoverySession {
   duration_minutes?: number | null
 }
 
-interface RecoverResponse {
-  ok: boolean
-  error?: string
-  data?: {
-    recovered: boolean
-    session: RecoverySession | null
-    reason?: string
-  }
+interface RecoverPayload {
+  recovered: boolean
+  session: RecoverySession | null
+  reason?: string
 }
 
 export function useSessionRecovery({ token }: { token: string | null }) {
@@ -63,28 +59,16 @@ export function useSessionRecovery({ token }: { token: string | null }) {
     setError(null)
 
     try {
-      const res = await fetch(`${API_BASE}/api/session/recover`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      })
+      const data = await apiFetch<RecoverPayload>('/api/session/recover')
 
-      const data = (await res.json()) as RecoverResponse
-
-      if (!data.ok) {
-        setError(data.error ?? 'Session recovery failed')
-        setStatus('error')
-        return
-      }
-
-      if (!data.data?.recovered || !data.data.session) {
+      if (!data?.recovered || !data.session) {
         clearRecoveredSession()
         setStatus('none')
         return
       }
 
-      setSession(data.data.session)
-      rememberSession(data.data.session.id)
+      setSession(data.session)
+      rememberSession(data.session.id)
       setStatus('recovered')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Session recovery failed')

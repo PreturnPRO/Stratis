@@ -1,7 +1,3 @@
-// Shared PM-document read helpers — used by both the document review routes
-// (backend/src/routes/document.ts) and the live meeting AI context builder
-// (backend/src/routes/transcript.ts), which needs read-only access to a
-// project's current document without duplicating this logic.
 import { db } from "../db/database";
 import { PM_SECTIONS, type PmDocument, type PmDocumentState } from "@shared/types";
 
@@ -9,13 +5,12 @@ export interface DocumentRow {
   id: string;
   project_id: string;
   org_id: string;
-  state_json: string | any; // Type 'any' to handle pg driver auto-parsing JSONB
+  state_json: string | any;
   version: number;
   created_at: string;
   updated_at: string;
 }
 
-/** Empty PM document state with the canonical sections (schema spec §7.3). */
 export function emptyState(): PmDocumentState {
   const sections = {} as PmDocumentState["sections"];
   for (const s of PM_SECTIONS) sections[s.key] = { title: s.title, content: "" };
@@ -23,8 +18,6 @@ export function emptyState(): PmDocumentState {
 }
 
 export function rowToDocument(row: DocumentRow): PmDocument {
-  // If the pg driver auto-parses the JSONB column, it will be an object.
-  // If it's retrieved as text, we parse it.
   const state = typeof row.state_json === "string" ? JSON.parse(row.state_json) : row.state_json;
   return {
     id: row.id,

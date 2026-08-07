@@ -1,5 +1,3 @@
-// Seed data: one org, one user per role, a couple of meetings,
-// and one ended session with a transcript + summary.
 import bcrypt from "bcryptjs";
 import { db } from "./database";
 import { newId, now } from "../lib/ids";
@@ -25,7 +23,6 @@ async function seed() {
     const hash = bcrypt.hashSync(PASSWORD, 10);
     const ts = now();
 
-    // 1. SEED ORGANIZATIONS
     const orgId = "org_default";
     await db.query(
       `INSERT INTO organizations (id, name, created_at)
@@ -35,12 +32,10 @@ async function seed() {
     );
     console.log("[seed] seeded default organization");
 
-    // 2. SEED USERS WITH DUST-FREE ES6 DESTRUCTURING
     let facilitatorId = "";
     let participantId = "";
     let adminId = "";
 
-    // Resolve or create Facilitator safely
     const existingFac = await db.query<{ id: string }>(
       "SELECT id FROM users WHERE email = $1 LIMIT 1",
       ["facilitator@stratis.dev"]
@@ -59,7 +54,6 @@ async function seed() {
       console.log("[seed] inserted default facilitator account");
     }
 
-    // Resolve or create Participant safely
     const existingPart = await db.query<{ id: string }>(
       "SELECT id FROM users WHERE email = $1 LIMIT 1",
       ["participant@stratis.dev"]
@@ -78,7 +72,6 @@ async function seed() {
       console.log("[seed] inserted default participant account");
     }
 
-    // Resolve or create Admin safely
     const existingAdmin = await db.query<{ id: string }>(
       "SELECT id FROM users WHERE email = $1 LIMIT 1",
       ["admin@stratis.dev"]
@@ -97,7 +90,6 @@ async function seed() {
       console.log("[seed] inserted default admin account");
     }
 
-    // 3. SEED PROJECTS
     const projectId = "pricing-v2";
     await db.query(
       `INSERT INTO projects (id, org_id, name, slug, created_at, updated_at)
@@ -107,7 +99,6 @@ async function seed() {
     );
     console.log("[seed] seeded project relation rows");
 
-    // 4. SEED MEETINGS
     const pastMeetingId = "mtg_past";
     const upcomingMeetingId = "mtg_upcoming";
 
@@ -124,7 +115,6 @@ async function seed() {
     );
     console.log("[seed] seeded historical and scheduled meetings");
 
-    // 5. SEED SESSIONS (Using dynamic facilitatorId mapping)
     const sessionId = "ses_historical";
     await db.query(
       `INSERT INTO sessions (id, meeting_id, facilitator_id, status, rolling_summary, started_at, ended_at, created_at)
@@ -134,7 +124,6 @@ async function seed() {
     );
     console.log("[seed] seeded meeting session records");
 
-    // 6. SEED TRANSCRIPTS
     await db.query(
       `INSERT INTO transcripts (id, session_id, speaker, text, chunk_signal, timestamp, source)
        VALUES 
@@ -150,7 +139,6 @@ async function seed() {
     );
     console.log("[seed] seeded meeting audio transcript logs");
 
-    // 7. SEED LIVE CARDS
     await db.query(
       `INSERT INTO live_cards (id, session_id, card_type, title, brief_description, suggested_question, urgency, state, confidence, answered, created_at)
        VALUES 

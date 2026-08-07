@@ -1,7 +1,3 @@
-// Document patch gateway (schema spec §7) — the PM document is the project's
-// source of truth. After a meeting the AI proposes section patches; the
-// facilitator approves/edits/rejects them; approved patches commit the next
-// document version. document_versions is the git-style change log.
 import { Router } from "express";
 import { requireAuth } from "../auth/middleware";
 import { db } from "../db/database";
@@ -30,11 +26,10 @@ interface VersionRow {
   id: string;
   version: number;
   session_id: string | null;
-  patch_json: string | any | null; // Handle pg JSONB auto-parsing
+  patch_json: string | any | null;
   created_at: string;
 }
 
-/** Apply approved patches to a document state (schema spec §7.5). */
 function applyPatches(state: PmDocumentState, patches: DocumentPatchDTO[]): PmDocumentState {
   const next: PmDocumentState = { sections: { ...state.sections } };
   for (const p of patches) {
@@ -95,11 +90,6 @@ function canAccess(meta: SessionMetaRow, role: string, userId: string, orgId: st
   return meta.facilitator_id === userId;
 }
 
-/**
- * POST /api/document/session/:sessionId/generate
- * Propose PM-document patches from this session's transcript. Transient — does
- * not commit; the facilitator reviews before /commit.
- */
 documentRouter.post("/session/:sessionId/generate", requireAuth, async (req, res, next) => {
   try {
     const meta = await getSessionMeta(req.params.sessionId);
@@ -146,11 +136,18 @@ documentRouter.post("/session/:sessionId/generate", requireAuth, async (req, res
       });
     }
 
+    // The history has to ship with the generate response too. The post-meeting
+    // review arrives here, not through GET /:projectId, so without it the
+    // Versions rail renders empty and the facilitator cannot open a single
+    // earlier version of the document they are being asked to amend.
+    const versions = existing ? await getVersions(existing.id) : [];
+
     res.json({
       ok: true,
       data: {
         projectId: meta.project_id,
         document: { ...currentState, version: baseVersion },
+        versions,
         proposed: result.data,
         provider: result.provider,
       },
@@ -160,11 +157,6 @@ documentRouter.post("/session/:sessionId/generate", requireAuth, async (req, res
   }
 });
 
-/**
- * POST /api/document/session/:sessionId/commit
- * Apply the facilitator-approved (possibly edited) patches → next version.
- * body: { patches: DocumentPatchDTO[], overall_change_summary: string }
- */
 documentRouter.post("/session/:sessionId/commit", requireAuth, async (req, res, next) => {
   try {
     const meta = await getSessionMeta(req.params.sessionId);
@@ -186,7 +178,6 @@ documentRouter.post("/session/:sessionId/commit", requireAuth, async (req, res, 
     const nextState = applyPatches(currentState, patches);
     const nextVersion = (existing?.version ?? 0) + 1;
 
-    // Explicitly stringify for the PG query to insert into JSONB
     const stateJson = JSON.stringify(nextState);
 
     let documentId: string;
@@ -205,7 +196,6 @@ documentRouter.post("/session/:sessionId/commit", requireAuth, async (req, res, 
       );
     }
 
-    // git-style version log: store the committed state + the patch payload.
     await db.query(
       `INSERT INTO document_versions (id, document_id, session_id, version, state_json, patch_json, created_by, created_at) 
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
@@ -221,16 +211,13 @@ documentRouter.post("/session/:sessionId/commit", requireAuth, async (req, res, 
       ]
     );
 
-    // 1. Fetch all users belonging to the project organization (meta.org_id)
     const orgUsers = await db.query<{ id: string }>(
       "SELECT id FROM users WHERE org_id = $1",
       [meta.org_id]
     );
 
-    // Inline import of real-time hub delivery helper to prevent circular dependency races
     const { pushNotification } = await import("../realtime/hub");
 
-    // 2. Loop and insert notification row for each organizational member, triggering dynamic real-time WebSocket push
     for (const u of orgUsers.rows) {
       const notificationId = newId("ntf");
       const notificationPayload = {
@@ -257,7 +244,6 @@ documentRouter.post("/session/:sessionId/commit", requireAuth, async (req, res, 
         ]
       );
 
-      // Trigger the real-time WebSocket push helper for active sockets
       pushNotification(u.id, notificationPayload);
     }
 
@@ -270,12 +256,6 @@ documentRouter.post("/session/:sessionId/commit", requireAuth, async (req, res, 
   }
 });
 
-/**
- * PATCH /api/document/:projectId/section
- * Manual facilitator edit of a single section's content. Does not create a new
- * version (a meeting commit does that) — it's an in-place correction.
- * body: { sectionKey: PmSectionKey, content: string }
- */
 documentRouter.patch("/:projectId/section", requireAuth, async (req, res, next) => {
   try {
     if (req.auth!.role === "participant") {
@@ -312,7 +292,6 @@ documentRouter.patch("/:projectId/section", requireAuth, async (req, res, next) 
   }
 });
 
-/** DELETE /api/document/:projectId — remove the PM document + version history. */
 documentRouter.delete("/:projectId", requireAuth, async (req, res, next) => {
   try {
     if (req.auth!.role === "participant") {
@@ -322,7 +301,6 @@ documentRouter.delete("/:projectId", requireAuth, async (req, res, next) => {
     const row = await getDocumentRow(req.auth!.orgId, req.params.projectId);
     if (!row) return res.status(404).json({ ok: false, error: "No document for this project" });
 
-    // document_versions has ON DELETE CASCADE, so versions go with the document.
     await db.query(`DELETE FROM documents WHERE id = $1`, [row.id]);
 
     res.json({ ok: true, data: { deleted: true, projectId: req.params.projectId } });
@@ -331,7 +309,6 @@ documentRouter.delete("/:projectId", requireAuth, async (req, res, next) => {
   }
 });
 
-/** GET /api/document/:projectId/version/:version — a historical version's full state. */
 documentRouter.get("/:projectId/version/:version", requireAuth, async (req, res, next) => {
   try {
     const row = await getDocumentRow(req.auth!.orgId, req.params.projectId);
@@ -352,11 +329,6 @@ documentRouter.get("/:projectId/version/:version", requireAuth, async (req, res,
   }
 });
 
-/**
- * POST /api/document/:projectId/restore — facilitator reverts the document to a
- * past version. Git-style: writes the old state as a NEW version, keeping history.
- * body: { version: number }
- */
 documentRouter.post("/:projectId/restore", requireAuth, async (req, res, next) => {
   try {
     if (req.auth!.role === "participant") {
@@ -410,7 +382,6 @@ documentRouter.post("/:projectId/restore", requireAuth, async (req, res, next) =
   }
 });
 
-/** GET /api/document/:projectId — current PM document + version history. */
 documentRouter.get("/:projectId", requireAuth, async (req, res, next) => {
   try {
     const row = await getDocumentRow(req.auth!.orgId, req.params.projectId);

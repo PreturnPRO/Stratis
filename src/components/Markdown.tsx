@@ -1,23 +1,21 @@
 import React from "react";
-import { COLORS, FONT, RADIUS, SPACE } from "../tokens/colors";
+import { FONT, RADIUS, SPACE } from "../tokens/colors";
+import { useTheme } from "../hooks/useTheme";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Minimal, dependency-free Markdown renderer for the PM document article view.
-// Supports: # / ## / ### headings, - / * bullet lists, 1. ordered lists,
-// > blockquotes, **bold**, *italic*, `code`, and paragraphs. Good enough for the
-// long-form "Medium style" layout without pulling in a markdown library.
-// ─────────────────────────────────────────────────────────────────────────────
+type Colors = ReturnType<typeof useTheme>["colors"];
 
-const codeStyle: React.CSSProperties = {
-  fontFamily: "'SF Mono', ui-monospace, Menlo, monospace",
-  fontSize: "0.88em",
-  background: COLORS.surfaceMuted,
-  border: `1px solid ${COLORS.border}`,
-  borderRadius: RADIUS.sm,
-  padding: "1px 5px",
-};
+function codeStyleFor(colors: Colors): React.CSSProperties {
+  return {
+    fontFamily: "'SF Mono', ui-monospace, Menlo, monospace",
+    fontSize: "0.88em",
+    background: colors.surfaceMuted,
+    border: `1px solid ${colors.border}`,
+    borderRadius: RADIUS.sm,
+    padding: "1px 5px",
+  };
+}
 
-function renderInline(text: string): React.ReactNode[] {
+function renderInline(text: string, colors: Colors): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
   const regex = /(\*\*([^*]+)\*\*|`([^`]+)`|\*([^*]+)\*)/g;
   let last = 0;
@@ -27,9 +25,9 @@ function renderInline(text: string): React.ReactNode[] {
   while ((m = regex.exec(text)) !== null) {
     if (m.index > last) nodes.push(text.slice(last, m.index));
     if (m[2] !== undefined) {
-      nodes.push(<strong key={key++} style={{ color: COLORS.textPrimary, fontWeight: 600 }}>{m[2]}</strong>);
+      nodes.push(<strong key={key++} style={{ color: colors.textPrimary, fontWeight: 600 }}>{m[2]}</strong>);
     } else if (m[3] !== undefined) {
-      nodes.push(<code key={key++} style={codeStyle}>{m[3]}</code>);
+      nodes.push(<code key={key++} style={codeStyleFor(colors)}>{m[3]}</code>);
     } else if (m[4] !== undefined) {
       nodes.push(<em key={key++}>{m[4]}</em>);
     }
@@ -116,35 +114,39 @@ function parseBlocks(src: string): Block[] {
   return blocks;
 }
 
-const H_STYLE: Record<number, React.CSSProperties> = {
-  1: { fontSize: FONT.size.heading, fontWeight: 700, color: COLORS.textPrimary, margin: "22px 0 10px" },
-  2: { fontSize: FONT.size.subheading, fontWeight: 600, color: COLORS.textPrimary, margin: "20px 0 8px" },
-  3: { fontSize: FONT.size.body, fontWeight: 600, color: COLORS.textPrimary, margin: "16px 0 6px" },
-};
+function hStyleFor(colors: Colors): Record<number, React.CSSProperties> {
+  return {
+    1: { fontSize: FONT.size.heading, fontWeight: 700, color: colors.textPrimary, margin: "22px 0 10px" },
+    2: { fontSize: FONT.size.subheading, fontWeight: 600, color: colors.textPrimary, margin: "20px 0 8px" },
+    3: { fontSize: FONT.size.body, fontWeight: 600, color: colors.textPrimary, margin: "16px 0 6px" },
+  };
+}
 
 export function Markdown({ children }: { children: string }) {
+  const { colors } = useTheme();
   const blocks = parseBlocks(children ?? "");
+  const hStyle = hStyleFor(colors);
 
   if (blocks.length === 0) {
-    return <p style={{ color: COLORS.textMuted, fontSize: FONT.size.body, margin: 0 }}>(empty)</p>;
+    return <p style={{ color: colors.textMuted, fontSize: FONT.size.body, margin: 0 }}>(empty)</p>;
   }
 
   return (
-    <div style={{ fontSize: FONT.size.body, lineHeight: 1.75, color: COLORS.textMuted }}>
+    <div style={{ fontSize: FONT.size.body, lineHeight: 1.75, color: colors.textMuted }}>
       {blocks.map((b, i) => {
         switch (b.kind) {
           case "h":
-            return <div key={i} style={H_STYLE[b.level] ?? H_STYLE[3]}>{renderInline(b.text)}</div>;
+            return <div key={i} style={hStyle[b.level] ?? hStyle[3]}>{renderInline(b.text, colors)}</div>;
           case "ul":
             return (
               <ul key={i} style={{ margin: "8px 0", paddingLeft: SPACE[6], display: "flex", flexDirection: "column", gap: SPACE[1.5] }}>
-                {b.items.map((it, j) => <li key={j}>{renderInline(it)}</li>)}
+                {b.items.map((it, j) => <li key={j}>{renderInline(it, colors)}</li>)}
               </ul>
             );
           case "ol":
             return (
               <ol key={i} style={{ margin: "8px 0", paddingLeft: SPACE[6], display: "flex", flexDirection: "column", gap: SPACE[1.5] }}>
-                {b.items.map((it, j) => <li key={j}>{renderInline(it)}</li>)}
+                {b.items.map((it, j) => <li key={j}>{renderInline(it, colors)}</li>)}
               </ol>
             );
           case "quote":
@@ -154,18 +156,18 @@ export function Markdown({ children }: { children: string }) {
                 style={{
                   margin: "12px 0",
                   padding: "8px 16px",
-                  borderLeft: `3px solid ${COLORS.accent}`,
-                  background: COLORS.surfaceMuted,
+                  borderLeft: `3px solid ${colors.accent}`,
+                  background: colors.surfaceMuted,
                   borderRadius: 6,
-                  color: COLORS.textMuted,
+                  color: colors.textMuted,
                 }}
               >
-                {b.lines.map((l, j) => <div key={j}>{renderInline(l)}</div>)}
+                {b.lines.map((l, j) => <div key={j}>{renderInline(l, colors)}</div>)}
               </blockquote>
             );
           case "p":
           default:
-            return <p key={i} style={{ margin: "0 0 12px" }}>{renderInline(b.text)}</p>;
+            return <p key={i} style={{ margin: "0 0 12px" }}>{renderInline(b.text, colors)}</p>;
         }
       })}
     </div>

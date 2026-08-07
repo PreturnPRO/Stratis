@@ -1,12 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
-import { COLORS, FONT, SHADOW, TRANSITION, GRADIENT, SPACE } from "../constants";
+import { useCallback, useMemo, useState } from "react";
+import { FONT, LETTER_SPACING, RADIUS, SPACE } from "../tokens/colors";
 import { Button } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { NewMeetingModal } from "../components/NewMeetingModal";
 import { useAuth } from "../context/AuthContext";
 import { useCreateMeeting, ACTIVE_SESSION_KEY, projectIdFromTitle } from "../hooks/useCreateMeeting";
+import { useTheme } from "../hooks/useTheme";
+import AmbientBackground from "../components/AmbientBackground";
 
-import { API_BASE } from "../lib/api";
+import { useCachedQuery } from "../lib/cache";
+import { apiFetch } from "../lib/http";
+
+type Colors = ReturnType<typeof useTheme>["colors"];
 
 interface DashboardProps {
   onNav?: (id: string, params?: Record<string, string>) => void;
@@ -77,109 +82,337 @@ function formatDate(value?: string | null): string {
   }).format(d);
 }
 
-// Small hover-lift for otherwise-flat interactive rows — same hover-via-state
-// idiom as Button/IconButton in ui.tsx, just applied locally here.
-function HoverLift({
-  as = "div",
-  style,
-  children,
-  ...rest
+// Color encodes PROJECT, nothing else: same project, same hue, everywhere on
+// the page. Hashing the record id (as this once did) produced color that
+// looked categorical but meant nothing — and taught users to distrust the
+// palette in places where it does mean something.
+function projectAccent(project: string | undefined | null, colors: Colors): string {
+  const key = (project ?? "").trim().toLowerCase();
+  if (!key) return colors.textDim;
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = key.charCodeAt(i) + ((hash << 5) - hash);
+  const palette = [colors.accent, colors.cyan, colors.teal, colors.amber];
+  return palette[Math.abs(hash) % palette.length];
+}
+
+function SectionHeader({
+  colors,
+  label,
+  count,
+  action,
 }: {
-  as?: "div" | "button";
-  style?: React.CSSProperties;
-  children: React.ReactNode;
-} & React.HTMLAttributes<HTMLElement>) {
-  const [hovered, setHovered] = useState(false);
-  const Comp = as as any;
+  colors: Colors;
+  label: string;
+  count: number;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span
+          style={{
+            fontFamily: FONT.mono,
+            fontSize: FONT.size.caption,
+            letterSpacing: LETTER_SPACING.wide,
+            color: colors.textMuted,
+            textTransform: "uppercase",
+          }}
+        >
+          {label}
+        </span>
+        <span style={{ fontFamily: FONT.mono, fontSize: FONT.size.caption, color: colors.textDim }}>
+          {String(count).padStart(2, "0")}
+        </span>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function meetingTime(m: DashboardMeeting): string | null {
+  return m.scheduledAt ?? m.time ?? null;
+}
+
+/** Live first, then scheduled soonest-first, then the undated ones in backend order. */
+function orderMeetings(meetings: DashboardMeeting[]): DashboardMeeting[] {
+  const rank = (m: DashboardMeeting) => (m.activeSession ? 0 : meetingTime(m) ? 1 : 2);
+  return meetings
+    .map((m, i) => ({ m, i }))
+    .sort((a, b) => {
+      const byRank = rank(a.m) - rank(b.m);
+      if (byRank !== 0) return byRank;
+
+      const at = meetingTime(a.m);
+      const bt = meetingTime(b.m);
+      if (at && bt && at !== bt) return String(at).localeCompare(String(bt));
+
+      return a.i - b.i;
+    })
+    .map((entry) => entry.m);
+}
+
+function MeetingRow({
+  colors,
+  meeting,
+  first,
+  last,
+  onStart,
+}: {
+  colors: Colors;
+  meeting: DashboardMeeting;
+  first: boolean;
+  last: boolean;
+  onStart: () => void;
+}) {
+  const live = !!meeting.activeSession;
+  const when = meetingTime(meeting);
+  const dot = live ? colors.accent : projectAccent(meeting.project ?? meeting.projectId, colors);
 
   return (
-    <Comp
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+    <div>
+      <div style={{ position: "relative", paddingLeft: 26 }}>
+        {!first && (
+          <span style={{ position: "absolute", left: 5, top: 0, height: "50%", width: 1, background: colors.border }} />
+        )}
+        {!last && (
+          <span style={{ position: "absolute", left: 5, top: "50%", height: "50%", width: 1, background: colors.border }} />
+        )}
+        <span
+          style={{
+            position: "absolute",
+            left: 0,
+            top: "50%",
+            transform: "translateY(-50%)",
+            width: 11,
+            height: 11,
+            borderRadius: "50%",
+            background: colors.surfaceElevated,
+            border: `2px solid ${dot}`,
+            boxShadow: `0 0 0 3px ${colors.bg}`,
+          }}
+        />
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={onStart}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onStart();
+            }
+          }}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            background: colors.surface,
+            border: `1px solid ${live ? colors.accentDim : colors.border}`,
+            borderRadius: RADIUS.md,
+            padding: "10px 12px",
+            cursor: "pointer",
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            {live && (
+              <div
+                style={{
+                  fontFamily: FONT.mono,
+                  fontSize: FONT.size.caption,
+                  fontWeight: 700,
+                  letterSpacing: LETTER_SPACING.wide,
+                  color: colors.accent,
+                  marginBottom: 2,
+                }}
+              >
+                LIVE NOW
+              </div>
+            )}
+            <div style={{ color: colors.text, fontSize: FONT.size.body, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {meeting.title}
+            </div>
+            <div style={{ fontFamily: FONT.mono, color: colors.textMuted, fontSize: FONT.size.caption, marginTop: 2 }}>
+              {meeting.project ?? meeting.projectId ?? "Project"}
+              {when ? ` · ${formatDate(when)}` : ""}
+            </div>
+          </div>
+          <Button variant="primary" onClick={(e) => { e.stopPropagation(); onStart(); }}>
+            {live ? "Resume" : "Start"}
+          </Button>
+        </div>
+      </div>
+      {!last && (
+        <div style={{ position: "relative", height: 22 }}>
+          <span style={{ position: "absolute", left: 31, top: 0, bottom: 0, width: 1, background: colors.border }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DashboardPanels({
+  colors,
+  loading,
+  meetings,
+  summaries,
+  onRefresh,
+  onStartMeeting,
+  onOpenSummary,
+  onNav,
+}: {
+  colors: Colors;
+  loading: boolean;
+  meetings: DashboardMeeting[];
+  summaries: DashboardSummary[];
+  onRefresh: () => void;
+  onStartMeeting: (m: DashboardMeeting) => void;
+  onOpenSummary: (s: DashboardSummary) => void;
+  onNav?: (id: string, params?: Record<string, string>) => void;
+}) {
+  const ordered = useMemo(() => orderMeetings(meetings), [meetings]);
+
+  return (
+    <div
+      className="dashboard-panels"
       style={{
-        ...style,
-        borderColor: hovered ? COLORS.borderLight : COLORS.border,
-        boxShadow: hovered ? SHADOW.xs : "none",
-        transform: hovered ? "translateY(-1px)" : "translateY(0)",
-        transition: `transform ${TRANSITION.springSoft}, box-shadow ${TRANSITION.base}, border-color ${TRANSITION.base}`,
+        marginBottom: 32,
+        display: "grid",
+        gridTemplateColumns: "minmax(320px, 520px) minmax(300px, 440px)",
+        gap: 40,
       }}
-      {...rest}
     >
-      {children}
-    </Comp>
+      <div>
+        <SectionHeader
+          colors={colors}
+          label="Ready to start"
+          count={ordered.length}
+          action={<Button variant="ghost" onClick={onRefresh}>Refresh</Button>}
+        />
+        {loading ? (
+          <LoadingState count={3} />
+        ) : ordered.length === 0 ? (
+          <EmptyState message="No meetings yet. Create your first meeting." />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {ordered.map((m, i) => (
+              <MeetingRow
+                key={m.id}
+                colors={colors}
+                meeting={m}
+                first={i === 0}
+                last={i === ordered.length - 1}
+                onStart={() => onStartMeeting(m)}
+              />
+            ))}
+          </div>
+        )}
+        <div style={{ marginTop: 18 }}>
+          <Button variant="ghost" size="sm" onClick={() => onNav?.("docket")}>
+            Open the docket
+          </Button>
+        </div>
+      </div>
+
+      <div>
+        <SectionHeader colors={colors} label="Recent summaries" count={summaries.length} />
+        {loading ? (
+          <LoadingState count={3} />
+        ) : summaries.length === 0 ? (
+          <EmptyState message="No summaries yet. End a meeting to generate one." />
+        ) : (
+          <div
+            className="dashboard-summary-cards"
+            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+          >
+            {summaries.map((s) => {
+              const edge = projectAccent(s.project, colors);
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => onOpenSummary(s)}
+                  style={{
+                    textAlign: "left",
+                    background: colors.surface,
+                    border: `1px solid ${colors.border}`,
+                    borderLeft: `3px solid ${edge}`,
+                    borderRadius: RADIUS.md,
+                    padding: "12px 14px",
+                    cursor: "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 6,
+                    minWidth: 0,
+                  }}
+                >
+                  <div style={{ color: colors.text, fontSize: FONT.size.body, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {s.title}
+                  </div>
+                  <div style={{ fontSize: FONT.size.label, color: colors.textMuted }}>{s.project ?? "Project summary"}</div>
+                  <div style={{ fontFamily: FONT.mono, color: colors.textDim, fontSize: FONT.size.caption }}>
+                    {formatDate(s.date)}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
 export default function Dashboard({ onNav }: DashboardProps) {
   const { token, user } = useAuth();
+  const { theme, colors } = useTheme();
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [meetings, setMeetings] = useState<DashboardMeeting[]>([]);
-  const [summaries, setSummaries] = useState<DashboardSummary[]>([]);
+  const [startError, setStartError] = useState<string | null>(null);
   const [showNewMeeting, setShowNewMeeting] = useState(false);
-
-  const authHeaders = useMemo((): Record<string, string> => {
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }, [token]);
 
   const create = useCreateMeeting(onNav);
 
-  const loadDashboard = async () => {
-    if (!token) return;
+  // Last night's dashboard is a better first frame than an empty one: it paints
+  // immediately and is replaced the moment the server answers.
+  const dashboard = useCachedQuery<DashboardPayload>(
+    "dashboard",
+    useCallback(() => apiFetch<DashboardPayload>("/api/meeting/dashboard"), []),
+    { scope: user?.id, enabled: Boolean(token) },
+  );
 
-    setLoading(true);
-    setError(null);
+  const loadDashboard = dashboard.refresh;
 
-    try {
-      const res = await fetch(`${API_BASE}/api/meeting/dashboard`, {
-        headers: authHeaders,
-      });
+  const meetings = useMemo<DashboardMeeting[]>(() => {
+    const payload = dashboard.data;
+    return payload?.upcomingMeetings ?? payload?.upcoming ?? payload?.meetings ?? [];
+  }, [dashboard.data]);
 
-      const data: {
-        ok: boolean;
-        error?: string;
-        data?: DashboardPayload;
-      } = await res.json();
+  const summaries = useMemo<DashboardSummary[]>(() => {
+    const payload = dashboard.data;
+    return (
+      payload?.summaries ??
+      (payload?.recentSummaries ?? []).map((summary) => ({
+        id: summary.id,
+        sessionId: summary.session_id ?? undefined,
+        title: summary.title,
+        project: summary.project_id ?? summary.meeting_title ?? "Project summary",
+        date: summary.created_at,
+      }))
+    );
+  }, [dashboard.data]);
 
-      if (!data.ok) {
-        setError(data.error ?? "Could not load dashboard");
-        return;
-      }
+  const loading = dashboard.loading;
+  const error = startError ?? dashboard.error;
 
-      const dashboardData = data.data;
-
-      setMeetings(
-        dashboardData?.upcomingMeetings ??
-          dashboardData?.upcoming ??
-          dashboardData?.meetings ??
-          [],
-      );
-
-      setSummaries(
-        dashboardData?.summaries ??
-          (dashboardData?.recentSummaries ?? []).map((summary) => ({
-            id: summary.id,
-            sessionId: summary.session_id ?? undefined,
-            title: summary.title,
-            project:
-              summary.project_id ?? summary.meeting_title ?? "Project summary",
-            date: summary.created_at,
-          })),
-      );
-    } catch {
-      setError("Could not reach backend");
-    } finally {
-      setLoading(false);
-    }
+  // No `?? s.id` fallback here: s.id is the SUMMARY's id, and passing it as a
+  // sessionId guarantees a 404 on the page we just navigated to. A card with no
+  // session has nowhere to go, so it does not navigate.
+  const handleOpenSummary = (s: DashboardSummary) => {
+    if (!s.sessionId) return;
+    onNav?.("summary", { sessionId: s.sessionId });
   };
 
-  useEffect(() => {
-    void loadDashboard();
-  }, [token]);
-
   const handleStartExisting = async (meeting: DashboardMeeting) => {
-    setError(null);
+    setStartError(null);
 
     try {
       if (meeting.activeSession?.id) {
@@ -193,7 +426,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
 
       await create.startSessionForMeeting(meeting.id, 60);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not start meeting");
+      setStartError(err instanceof Error ? err.message : "Could not start meeting");
     }
   };
 
@@ -203,6 +436,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
     durationMinutes: number;
     goal: string;
     brief: string;
+    scheduledAt: string | null;
   }) => {
     const sessionId = await create.createMeeting({
       title: input.title,
@@ -210,226 +444,94 @@ export default function Dashboard({ onNav }: DashboardProps) {
       goal: input.goal,
       brief: input.brief,
       durationMinutes: input.durationMinutes,
+      scheduledAt: input.scheduledAt,
     });
     if (sessionId) setShowNewMeeting(false);
   };
 
+  const todayLabel = new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  }).format(new Date());
+
   return (
-    <div className="page-padding" style={{ overflowY: "auto", flex: 1 }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 40,
-          padding: "8px 12px",
-          margin: "-8px -12px 32px",
-          borderRadius: 12,
-          backgroundImage: GRADIENT.accentGlow(COLORS.accent),
-        }}
-      >
-        <div>
-          <h1
+    <div style={{ flex: 1, position: "relative", height: "100%", overflow: "hidden" }}>
+      <AmbientBackground theme={theme} />
+
+      <div className="page-padding" style={{ position: "relative", zIndex: 1, height: "100%", overflowY: "auto" }}>
+        <div style={{ marginBottom: 32 }}>
+          <div
             style={{
-              color: COLORS.text,
-              fontSize: FONT.size.title,
-              fontWeight: 600,
-              margin: 0,
-              marginBottom: 4,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "flex-end",
+              marginBottom: 12,
+              fontFamily: FONT.mono,
+              fontSize: FONT.size.caption,
+              letterSpacing: LETTER_SPACING.eyebrow,
+              color: colors.textMuted,
+              textTransform: "uppercase",
             }}
           >
-            Dashboard
-          </h1>
-          <span style={{ color: COLORS.textMuted, fontSize: FONT.size.body }}>
-            Welcome back, {user?.name ?? "facilitator"}
-          </span>
+            <span>{todayLabel}</span>
+          </div>
+          {/* Greeting stays subordinate to the work: the meeting list is what
+              this page is for, and it must be visible without scrolling. */}
+          <div
+            style={{
+              fontSize: "clamp(24px, 2.6vw, 34px)",
+              fontWeight: 600,
+              letterSpacing: "-.024em",
+              lineHeight: 1.15,
+              color: colors.text,
+            }}
+          >
+            Welcome back, <span style={{ color: colors.textDim }}>{user?.name ?? "facilitator"}</span>
+          </div>
         </div>
 
-        <Button variant="primary" onClick={() => setShowNewMeeting(true)}>
-          + New meeting
-        </Button>
+        <div style={{ display: "inline-block", marginBottom: 20 }}>
+          <Button variant="primary" onClick={() => setShowNewMeeting(true)}>
+            + NEW MEETING
+          </Button>
+        </div>
+
+        {error && (
+          <div
+            style={{
+              background: colors.redBg,
+              border: `1px solid ${colors.red}`,
+              color: colors.red,
+              borderRadius: 8,
+              padding: "10px 12px",
+              marginBottom: SPACE[5],
+              fontSize: FONT.size.body,
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        <DashboardPanels
+          colors={colors}
+          loading={loading}
+          meetings={meetings}
+          summaries={summaries}
+          onRefresh={loadDashboard}
+          onStartMeeting={(m) => void handleStartExisting(m)}
+          onOpenSummary={handleOpenSummary}
+          onNav={onNav}
+        />
+
+        <NewMeetingModal
+          open={showNewMeeting}
+          onClose={() => setShowNewMeeting(false)}
+          onSubmit={handleCreateMeeting}
+          submitting={create.creating}
+          error={create.error}
+        />
       </div>
-
-      {error && (
-        <div
-          style={{
-            background: COLORS.redBg,
-            border: `1px solid ${COLORS.red}`,
-            color: COLORS.red,
-            borderRadius: 8,
-            padding: "10px 12px",
-            marginBottom: SPACE[5],
-            fontSize: FONT.size.body,
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      {loading ? (
-        <LoadingState count={4} />
-      ) : (
-        <div
-          className="dashboard-grid"
-          style={{
-            display: "grid",
-            gap: 32,
-            alignItems: "start",
-          }}
-        >
-          {/* Upcoming Meetings */}
-          <div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                marginBottom: 16,
-              }}
-            >
-              <h2
-                style={{
-                  color: COLORS.text,
-                  fontSize: FONT.size.subheading,
-                  fontWeight: 600,
-                  margin: 0,
-                }}
-              >
-                Upcoming meetings
-              </h2>
-              <Button variant="ghost" onClick={loadDashboard}>
-                Refresh
-              </Button>
-            </div>
-            {meetings.length === 0 ? (
-              <EmptyState message="No meetings yet. Create your first meeting." />
-            ) : (
-              <div
-                style={{ display: "flex", flexDirection: "column", gap: SPACE[2.5] }}
-              >
-                {meetings.map((m) => (
-                  <HoverLift
-                    key={m.id}
-                    style={{
-                      background: COLORS.surface,
-                      border: `1px solid ${COLORS.border}`,
-                      borderRadius: 10,
-                      padding: "16px 18px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "flex-start",
-                        justifyContent: "space-between",
-                        gap: 16,
-                      }}
-                    >
-                      <div>
-                        <div
-                          style={{
-                            color: COLORS.text,
-                            fontSize: FONT.size.body,
-                            fontWeight: 500,
-                            marginBottom: SPACE[1.5],
-                          }}
-                        >
-                          {m.title}
-                        </div>
-                        <div style={{ color: COLORS.textMuted, fontSize: FONT.size.label }}>
-                          {m.project ?? m.projectId ?? "Project"} ·{" "}
-                          {formatDate(m.scheduledAt ?? m.time)}
-                        </div>
-                      </div>
-
-                      <Button
-                        variant="primary"
-                        onClick={() => void handleStartExisting(m)}
-                      >
-                        {m.activeSession ? "Resume" : "Start"}
-                      </Button>
-                    </div>
-                  </HoverLift>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Recent Summaries */}
-          <div>
-            <h2
-              style={{
-                color: COLORS.text,
-                fontSize: FONT.size.subheading,
-                fontWeight: 600,
-                margin: "0 0 16px",
-              }}
-            >
-              Recent summaries
-            </h2>
-
-            {summaries.length === 0 ? (
-              <EmptyState message="No summaries yet. End a meeting to generate one." />
-            ) : (
-              <div
-                style={{ display: "flex", flexDirection: "column", gap: SPACE[2.5] }}
-              >
-                {summaries.map((s) => (
-                  <HoverLift
-                    as="button"
-                    key={s.id}
-                    style={{
-                      width: "100%",
-                      textAlign: "left",
-                      background: COLORS.surface,
-                      border: `1px solid ${COLORS.border}`,
-                      borderRadius: 10,
-                      padding: "16px 18px",
-                      cursor: "pointer",
-                    }}
-                    onClick={() =>
-                      onNav?.("summary", { sessionId: s.sessionId ?? s.id })
-                    }
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "flex-start",
-                        justifyContent: "space-between",
-                        marginBottom: 8,
-                      }}
-                    >
-                      <span
-                        style={{
-                          color: COLORS.text,
-                          fontSize: FONT.size.body,
-                          fontWeight: 500,
-                        }}
-                      >
-                        {s.title}
-                      </span>
-                      <span style={{ color: COLORS.textMuted, fontSize: FONT.size.label }}>
-                        {formatDate(s.date)}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: FONT.size.label, color: COLORS.textMuted }}>
-                      {s.project ?? "Project summary"}
-                    </div>
-                  </HoverLift>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      <NewMeetingModal
-        open={showNewMeeting}
-        onClose={() => setShowNewMeeting(false)}
-        onSubmit={handleCreateMeeting}
-        submitting={create.creating}
-        error={create.error}
-      />
     </div>
   );
 }

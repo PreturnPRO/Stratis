@@ -1,11 +1,9 @@
-// Ollama provider (S1-T03-B) — fully local, free, and the model you can
-// fine-tune yourself later. Talks to a local Ollama server's /api/chat.
 import { env } from "../../../backend/src/config/env";
-import { fetchWithTimeout, type AIProvider, type ChatMessage, type CompletionResult } from "./types";
+import { fetchWithTimeout, type AIProvider, type ChatMessage, type CompletionResult, type CompleteOptions } from "./types";
 
 export const ollamaProvider: AIProvider = {
   name: "ollama",
-  async complete(messages: ChatMessage[]): Promise<CompletionResult> {
+  async complete(messages: ChatMessage[], opts?: CompleteOptions): Promise<CompletionResult> {
     const { baseUrl, model } = env.ai.ollama;
     const res = await fetchWithTimeout(
       `${baseUrl}/api/chat`,
@@ -14,7 +12,7 @@ export const ollamaProvider: AIProvider = {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model, messages, stream: false }),
       },
-      env.ai.timeoutMs
+      opts?.timeoutMs ?? env.ai.timeoutMs
     );
 
     const raw: any = await res.json();

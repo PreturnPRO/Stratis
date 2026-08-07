@@ -11,8 +11,9 @@
     "start": "tsx src/index.ts",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
+    "db:backfill-plans": "tsx src/db/backfillPlans.ts",
     "db:reset": "tsx src/db/migrate.ts --reset && tsx src/db/seed.ts",
-    "test": "node --experimental-strip-types --test src/lib/sttStreamPolicy.test.ts src/lib/withRetry.test.ts src/realtime/liveness.test.ts",
+    "test": "node --experimental-strip-types --test src/lib/sttStreamPolicy.test.ts src/lib/sttLanguage.test.ts src/lib/withRetry.test.ts src/lib/textSimilarity.test.ts src/realtime/liveness.test.ts ../ai-service/src/schema.test.ts ../ai-service/src/providers/rateLimit.test.ts ../src/lib/decisionStatus.test.ts ../src/lib/docketCarry.test.ts src/lib/rollingMemory.test.ts ../ai-service/src/untrusted.test.ts ../src/lib/checkpointReview.test.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit"
   },

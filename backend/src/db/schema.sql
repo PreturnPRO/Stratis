@@ -2,6 +2,17 @@
 -- STRATIS DATABASE UPGRADE — FINAL ER DIAGRAM (SUPABASE)
 -- ==========================================================
 
+<<<<<<< HEAD
+=======
+-- This file is ADDITIVE and safe to re-run against a live database: every
+-- statement is CREATE TABLE IF NOT EXISTS, ADD COLUMN IF NOT EXISTS, or CREATE
+-- INDEX IF NOT EXISTS. Keep it that way.
+--
+-- The DROP TABLE block that used to sit here now lives in reset.sql and runs
+-- only under `db:migrate --reset`. It made `db:migrate` — the command you reach
+-- for when a column is missing — destroy every row in the database first.
+
+>>>>>>> 52344f33d88b878311925b6cc781b1ce24e742fd
 -- 1. ORGANIZATIONS
 CREATE TABLE IF NOT EXISTS organizations (
     id TEXT PRIMARY KEY,
@@ -292,6 +303,202 @@ CREATE TABLE IF NOT EXISTS decisions (
 
 -- Additive upgrade for databases that created the table before `dismissed`.
 ALTER TABLE decisions ADD COLUMN IF NOT EXISTS dismissed BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Set when a facilitator rewrites a generated summary block. Its presence is
+-- the provenance signal the summary renders: this line is human-ratified, not
+-- model output. NULL means the AI's wording is untouched.
+ALTER TABLE summary_blocks ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
+
+-- Set when the facilitator releases the summary to participants (or the
+-- auto-send countdown does). NULL means still facilitator-only. The UI's
+-- "sent" state must derive from this row, never from client state alone.
+ALTER TABLE participant_summaries ADD COLUMN IF NOT EXISTS sent_at TIMESTAMPTZ;
+
+-- ==========================================================
+-- BETA GUARD RAILS — plans, roles, invites, telemetry
+-- Everything below is additive. Added for the paid/beta launch: plan
+-- entitlements per workspace, account lifecycle (suspend/revoke), invite
+-- links, guest session access, usage telemetry, feedback, and the release
+-- record that force-logs-out stale sessions after a deploy.
+-- ==========================================================
+
+-- Workspace plan. The org is the billing unit — one plan covers the team, no
+-- per-seat maths. `plan_status` is separate from `plan` so a lapsed Pro org
+-- keeps its tier on record while being served Free limits.
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS plan TEXT NOT NULL DEFAULT 'free';
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS plan_status TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS plan_started_at TIMESTAMPTZ;
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS plan_expires_at TIMESTAMPTZ;
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS plan_note TEXT;
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS is_beta BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Profile + account lifecycle.
+-- password_hash is dropped to nullable: a Google-only account never has one.
+ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS job_title TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS timezone TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS locale TEXT NOT NULL DEFAULT 'en';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS settings_json JSONB;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider TEXT NOT NULL DEFAULT 'password';
+-- active | suspended (temporary, admin can restore) | revoked (permanent).
+-- Anything other than 'active' fails requireAuth on the next request.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS status_reason TEXT;
+-- Any token issued at or before this instant is refused. Set on revoke,
+-- suspend, password change, and role change so a permission edit takes effect
+-- immediately instead of at the 7-day JWT expiry.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS token_valid_after TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS invited_by TEXT REFERENCES users(id) ON DELETE SET NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id) WHERE google_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
+
+-- 23. INVITES
+-- kind='workspace' pulls someone into the org with a pre-set role.
+-- kind='session'   grants access to one meeting session only.
+-- Only the hash is stored — the raw token exists solely in the link.
+CREATE TABLE IF NOT EXISTS invites (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('workspace', 'session')),
+    token_hash TEXT NOT NULL UNIQUE,
+    role TEXT NOT NULL DEFAULT 'participant' CHECK (role IN ('facilitator', 'participant', 'admin')),
+    session_id TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+    meeting_id TEXT REFERENCES meetings(id) ON DELETE CASCADE,
+    email TEXT,
+    label TEXT,
+    allow_guest BOOLEAN NOT NULL DEFAULT FALSE,
+    max_uses INTEGER,
+    used_count INTEGER NOT NULL DEFAULT 0,
+    expires_at TIMESTAMPTZ,
+    revoked_at TIMESTAMPTZ,
+    created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_invites_org_id ON invites(org_id);
+CREATE INDEX IF NOT EXISTS idx_invites_session_id ON invites(session_id);
+
+-- 24. INVITE REDEMPTIONS — audit trail; one row per accept, account or guest.
+CREATE TABLE IF NOT EXISTS invite_redemptions (
+    id TEXT PRIMARY KEY,
+    invite_id TEXT NOT NULL REFERENCES invites(id) ON DELETE CASCADE,
+    user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    guest_id TEXT,
+    display_name TEXT,
+    redeemed_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_invite_redemptions_invite_id ON invite_redemptions(invite_id);
+
+-- 25. SESSION GUESTS — link-only participants who never register.
+-- Deliberately NOT rows in `users`: a guest has no org membership, no role, and
+-- no login. Their token is scoped to the one session and dies with it.
+CREATE TABLE IF NOT EXISTS session_guests (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    invite_id TEXT REFERENCES invites(id) ON DELETE SET NULL,
+    display_name TEXT NOT NULL,
+    email TEXT,
+    revoked_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL,
+    last_seen_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_guests_session_id ON session_guests(session_id);
+
+-- 26. SESSION PARTICIPANTS — who was actually in the room, account or guest.
+CREATE TABLE IF NOT EXISTS session_participants (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+    guest_id TEXT REFERENCES session_guests(id) ON DELETE CASCADE,
+    display_name TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'participant',
+    joined_at TIMESTAMPTZ NOT NULL,
+    left_at TIMESTAMPTZ,
+    CHECK (user_id IS NOT NULL OR guest_id IS NOT NULL)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_session_participants_user
+  ON session_participants(session_id, user_id) WHERE user_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_session_participants_guest
+  ON session_participants(session_id, guest_id) WHERE guest_id IS NOT NULL;
+
+-- 27. ANALYTICS EVENTS — self-hosted beta telemetry. No third party.
+-- Append-only. `props_json` is free-form per event name; keep it small and
+-- never put transcript text or anything a participant said in it.
+CREATE TABLE IF NOT EXISTS analytics_events (
+    id TEXT PRIMARY KEY,
+    org_id TEXT REFERENCES organizations(id) ON DELETE CASCADE,
+    user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    guest_id TEXT REFERENCES session_guests(id) ON DELETE SET NULL,
+    session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+    event TEXT NOT NULL,
+    surface TEXT,
+    props_json JSONB,
+    app_version TEXT,
+    created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_events_org_created ON analytics_events(org_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_event ON analytics_events(event);
+CREATE INDEX IF NOT EXISTS idx_analytics_events_user ON analytics_events(user_id);
+
+-- 28. FEEDBACK — beta team's own words, kept next to the numbers.
+CREATE TABLE IF NOT EXISTS feedback (
+    id TEXT PRIMARY KEY,
+    org_id TEXT REFERENCES organizations(id) ON DELETE CASCADE,
+    user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+    kind TEXT NOT NULL DEFAULT 'general' CHECK (kind IN ('bug', 'idea', 'praise', 'nps', 'general')),
+    rating INTEGER,
+    message TEXT NOT NULL,
+    surface TEXT,
+    app_version TEXT,
+    status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'triaged', 'resolved', 'wontfix')),
+    created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_org_created ON feedback(org_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status);
+
+-- 29. APP RELEASES — the update system's record.
+-- A row with force_logout = TRUE invalidates every token issued before
+-- `released_at`, which is how a deploy ends stale sessions carrying an old
+-- client build. The frontend polls /api/system/version for the same row.
+CREATE TABLE IF NOT EXISTS app_releases (
+    id TEXT PRIMARY KEY,
+    version TEXT NOT NULL,
+    notes TEXT,
+    force_logout BOOLEAN NOT NULL DEFAULT FALSE,
+    released_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    released_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_app_releases_released_at ON app_releases(released_at DESC);
+
+-- 30. PLAN REQUESTS — beta has no payment gateway, so an upgrade is a request
+-- an admin approves by hand. Keeps intent-to-pay measurable without charging.
+CREATE TABLE IF NOT EXISTS plan_requests (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    requested_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    from_plan TEXT NOT NULL,
+    to_plan TEXT NOT NULL,
+    billing_period TEXT NOT NULL DEFAULT 'monthly' CHECK (billing_period IN ('monthly', 'yearly')),
+    note TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+    reviewed_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_plan_requests_org ON plan_requests(org_id, created_at DESC);
 
 -- ==========================================================
 -- PERFORMANCE TUNING INDEX SCALE

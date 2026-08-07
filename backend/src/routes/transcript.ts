@@ -9,6 +9,7 @@ import { detectAnswered } from "../realtime/autodetect";
 import { pushSuggestion, pushAnswered, pushNotes, registerStreamIngest } from "../realtime/hub";
 import { getDocumentRow, rowToDocument, renderDocument } from "../lib/pmDocument";
 import { withRetry } from "../lib/withRetry";
+import { dedupeMemory, shouldReplaceMemory } from "../lib/rollingMemory";
 import { env } from "../config/env";
 
 export const transcriptRouter = Router();
@@ -54,7 +55,6 @@ async function saveTranscriptChunk(input: {
   const id = newId("tx");
   const timestamp = input.timestamp ?? now();
 
-  // Crucially awaited. Throws to the caller if the DB constraints fail.
   await db.query(
     `
     INSERT INTO transcripts (id, session_id, speaker, text, timestamp)
@@ -72,17 +72,8 @@ async function saveTranscriptChunk(input: {
   };
 }
 
-// Recent transcript window the live AI sees each chunk (schema spec §6.4 — the
-// last 1-3 minutes, not the whole meeting). Capped to the most recent rows.
-// Sized to comfortably span more than one AI_MIN_CALL_INTERVAL_MS worth of rows
-// so a paced (batched) call still sees everything said since the previous one.
 const RECENT_WINDOW_ROWS = 24;
 
-// A project's PM document can only change via the post-meeting commit flow
-// (document.ts), which can't happen mid-session — so it's safe (and avoids a
-// DB round-trip per transcript chunk) to fetch it once per session and reuse
-// it for every live AI call in that session. Mirrors the bySession cache
-// pattern in backend/src/realtime/suggestions.ts.
 const projectDocCache = new Map<string, string | null>();
 
 async function getProjectDocumentForSession(
@@ -98,19 +89,12 @@ async function getProjectDocumentForSession(
   return text;
 }
 
-/** Called when a session ends so a stale/absent cache entry can't leak into a
- * future session reusing the same id space, and to bound cache growth. Also
- * drops any queued background AI routing so an ended session can't receive a
- * late suggestion card. */
 export function clearProjectDocCache(sessionId: string): void {
   projectDocCache.delete(sessionId);
   const running = aiRoutingBySession.get(sessionId);
   if (running) running.queued = null;
 }
 
-/** Build the live AI context for a session: meeting goal/brief, rolling memory,
- * open questions, the project's existing PM document (if this meeting
- * continues a prior project), and the recent transcript window. */
 async function buildLiveContext(sessionId: string, latestText: string): Promise<LiveContext> {
   const metaResult = await db.query<{
     rolling_summary: string | null;
@@ -162,17 +146,14 @@ async function buildLiveContext(sessionId: string, latestText: string): Promise<
   };
 }
 
-/**
- * Route a fresh transcript chunk through the live meeting AI (schema spec §6):
- * auto-detect answered cards, call the live_card gateway with rolling context,
- * persist the chunk signal + updated rolling memory, and push new cards.
- */
 async function routeTextToAi(
   sessionId: string,
   text: string,
   role: string,
   transcriptId?: string,
 ) {
+  await suggestions.hydrate(sessionId);
+
   const open = suggestions.openCards(sessionId);
   const answeredIds = detectAnswered(text, open);
 
@@ -202,7 +183,6 @@ async function routeTextToAi(
 
   const out = result.data;
 
-  // Persist the chunk classification on the saved transcript row.
   if (transcriptId) {
     await db.query(
       `UPDATE transcripts SET chunk_signal = $1 WHERE id = $2`, 
@@ -210,15 +190,20 @@ async function routeTextToAi(
     );
   }
 
-  // IMPORTANT chunks update rolling memory (schema spec §6.4); others skipped.
   if (out.chunk_signal === "IMPORTANT" && out.rolling_memory_update?.trim()) {
-    const notes = out.rolling_memory_update.trim();
-    await db.query(
-      `UPDATE sessions SET rolling_summary = $1 WHERE id = $2`,
-      [notes, sessionId]
-    );
-    // Live notes panel: the rolling memory IS the AI's running notes.
-    pushNotes(sessionId, notes);
+    // The model is asked to merge and keep it tight; this enforces it. Without
+    // the cap the memory grows a near-copy of each point, and every later
+    // prompt — live cards, decision extract, document patch — pays for it.
+    const notes = dedupeMemory(out.rolling_memory_update.trim());
+    const previous = ctx.rollingSummary;
+
+    if (shouldReplaceMemory(previous, notes)) {
+      await db.query(
+        `UPDATE sessions SET rolling_summary = $1 WHERE id = $2`,
+        [notes, sessionId]
+      );
+      pushNotes(sessionId, notes);
+    }
   }
 
   const cards =
@@ -243,16 +228,6 @@ async function routeTextToAi(
   };
 }
 
-// Live-AI routing runs OFF the HTTP request path. The client gets its
-// transcript row back as soon as STT + the DB insert finish; cards and
-// answered-detections still reach the facilitator over the WebSocket hub.
-// (Holding the response on the Groq call — which the rate-limit gate can
-// stall for tens of seconds under 429 backoff — made the live transcript
-// lag minutes behind the meeting.)
-// At most one call runs per session with one queued behind it; intermediate
-// chunks are skipped. Nothing is lost: each call re-reads the recent
-// transcript window from the DB, so skipped chunks still inform the next
-// call — they just miss their per-row chunk_signal classification.
 interface PendingAiChunk {
   text: string;
   role: string;
@@ -261,7 +236,6 @@ interface PendingAiChunk {
 
 interface AiRoutingState {
   queued: PendingAiChunk | null;
-  /** Epoch ms the last live-card call STARTED — the rate gate paces off this. */
   lastStartedAt: number;
 }
 
@@ -278,9 +252,6 @@ function scheduleAiRouting(
 ): void {
   const running = aiRoutingBySession.get(sessionId);
   if (running) {
-    // A call is in flight or cooling down — coalesce. Only the freshest chunk is
-    // kept; the call re-reads the recent window from the DB, so superseded rows
-    // are still covered, they just don't each trigger their own request.
     running.queued = { text, role, transcriptId };
     return;
   }
@@ -291,16 +262,11 @@ function scheduleAiRouting(
   void (async () => {
     let next: PendingAiChunk | null = { text, role, transcriptId };
     while (next) {
-      // Rate gate: pace calls to at most one per minCallIntervalMs so a busy
-      // meeting can't outrun the provider's requests-per-minute quota. The
-      // first call of a session fires immediately (lastStartedAt === 0).
       const wait = state.lastStartedAt
         ? env.ai.minCallIntervalMs - (Date.now() - state.lastStartedAt)
         : 0;
       if (wait > 0) {
         await sleep(wait);
-        // Rows that arrived during the wait supersede the pending chunk — run
-        // the freshest so the batched call reflects the latest transcript.
         if (state.queued) {
           next = state.queued;
           state.queued = null;
@@ -323,26 +289,13 @@ function scheduleAiRouting(
   })();
 }
 
-// Google STT inserts spaces between Thai tokens; Thai has no spaces between
-// words, so strip whitespace that sits between two Thai characters.
 function cleanSttText(raw: string): string {
   return raw.replace(/([฀-๿])\s+(?=[฀-๿])/g, "$1").trim();
 }
 
-// ── Streaming STT ingest (S-EXP) ─────────────────────────────────────────────
-// Final text arriving over the WebSocket streaming path lands here — the same
-// save + live-AI routing the REST audio-chunk route runs, minus the HTTP
-// request/response wrapping. Registered with the hub (which this module
-// already sits downstream of) to avoid an import cycle.
-// Dead-letter buffer: finalized utterances whose DB insert failed even after
-// retries. Flushed on the next ingest attempt for the same session so a
-// transient DB blip never silently drops a decision. In-memory only — a full
-// process crash still loses these (see meeting-reliability spec, component 2).
 const ingestDeadLetter = new Map<string, Array<{ speaker: string; text: string }>>();
 const INGEST_RETRY = { retries: 3, baseMs: 300 } as const;
 
-/** Best-effort retry of any previously buffered utterances for this session.
- * Rows that still fail are re-buffered; successful ones resume AI routing. */
 async function flushIngestDeadLetter(sessionId: string, role: string): Promise<void> {
   const buffered = ingestDeadLetter.get(sessionId);
   if (!buffered || buffered.length === 0) return;
@@ -370,12 +323,9 @@ registerStreamIngest(async ({ sessionId, speaker, text, role }) => {
   const clean = cleanSttText(text);
   if (!clean) return null;
 
-  // The WS handshake authorized this user for the session; re-check only the
-  // parts that can change mid-connection (session deleted or ended).
   const session = await getSession(sessionId);
   if (!session || session.status === "ended") return null;
 
-  // Retry any earlier buffered utterances before this one so order is preserved.
   await flushIngestDeadLetter(sessionId, role);
 
   let row: TranscriptRow;
@@ -385,9 +335,6 @@ registerStreamIngest(async ({ sessionId, speaker, text, role }) => {
       INGEST_RETRY,
     );
   } catch (err) {
-    // Retries exhausted: buffer the utterance instead of losing it. Returning
-    // null keeps the hub quiet (no stt:error alarm for a transient blip we're
-    // handling); the row lands on a later flush and the client's next refetch.
     const buffer = ingestDeadLetter.get(sessionId) ?? [];
     buffer.push({ speaker, text: clean });
     ingestDeadLetter.set(sessionId, buffer);
@@ -443,10 +390,6 @@ transcriptRouter.get("/", requireAuth, (_req, res) => {
   });
 });
 
-/**
- * GET /api/transcript/session/:sessionId
- * Load saved transcript after refresh.
- */
 transcriptRouter.get("/session/:sessionId", requireAuth, async (req, res) => {
   try {
     const sessionId = req.params.sessionId;
@@ -485,9 +428,6 @@ transcriptRouter.get("/session/:sessionId", requireAuth, async (req, res) => {
   }
 });
 
-/**
- * POST /api/transcript/chunk
- */
 transcriptRouter.post("/chunk", requireAuth, async (req, res, next) => {
   try {
     const sessionId =
@@ -515,7 +455,6 @@ transcriptRouter.post("/chunk", requireAuth, async (req, res, next) => {
 
     let row: TranscriptRow;
     
-    // Strict block: Abort AI integration if the database insert fails
     try {
       row = await saveTranscriptChunk({
         sessionId,
@@ -550,9 +489,6 @@ transcriptRouter.post("/chunk", requireAuth, async (req, res, next) => {
   }
 });
 
-/**
- * POST /api/transcript/audio-chunk
- */
 transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
   try {
     const sessionId =
@@ -675,7 +611,6 @@ transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
 
     let row: TranscriptRow;
 
-    // Strict block: Abort AI integration if the database insert fails
     try {
       row = await saveTranscriptChunk({
         sessionId,

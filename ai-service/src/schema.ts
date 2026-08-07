@@ -1,14 +1,3 @@
-// AI structured-output contract (S1-T03-C).
-//
-// Goal: the model must return JSON ONLY — no markdown, no prose — matching
-// `AIStructuredResponse`. This file owns three things:
-//   1. SYSTEM_PROMPT_JSON — instructs the model to emit only that shape.
-//   2. parseStructured()   — strips stray fences, JSON.parses, validates.
-//   3. helpers the route uses to turn raw model text into typed blocks.
-//
-// No external validator (zod/ajv) — the repo carries zero extra deps, so the
-// check is hand-written and total. Same spirit as the old prototype's
-// aiService.parse step, but the shape is locked and validation is strict.
 import type {
   AIBlock,
   AIBlockType,
@@ -35,7 +24,6 @@ const BLOCK_TYPES: readonly AIBlockType[] = [
   "QuestionSuggestion",
 ];
 
-/** System prompt that forces JSON-only output in the locked shape. */
 export const SYSTEM_PROMPT_JSON = `You are Stratis, a meeting decision assistant.
 You output STRUCTURED DATA ONLY. Never write markdown, prose, or commentary.
 
@@ -60,17 +48,49 @@ Rules:
 - Use QuestionSuggestion to surface the single most useful unanswered question.
 - Keep title under 80 chars; keep content tight.`;
 
-/** Result of validating raw model text against the contract. */
 export type ParseResult =
   | { ok: true; data: AIStructuredResponse }
   | { ok: false; error: string };
 
-/** Remove markdown code fences the model may add despite instructions. */
 function stripFences(raw: string): string {
   return raw.replace(/```(?:json)?/gi, "").trim();
 }
 
-/** Narrow an unknown value to a validated AIBlock, or explain why not. */
+// Models routinely wrap valid JSON in a sentence ("Here are the decisions: {...}")
+// or a code fence, which made JSON.parse throw on the WHOLE response — and the
+// callers then dropped the result silently, so the alignment checkpoint could
+// show zero decisions from one stray sentence. This scans for the outermost
+// balanced {...}, string-literal aware so a brace inside decision text or
+// markdown can never unbalance it. It must not weaken validation: the recovered
+// substring still goes through the same strict field checks.
+export function extractJsonObject(raw: string): string {
+  const cleaned = stripFences(raw);
+  if (cleaned.startsWith("[")) return cleaned;
+
+  const start = cleaned.indexOf("{");
+  if (start === -1) return cleaned;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < cleaned.length; i++) {
+    const ch = cleaned[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return cleaned.slice(start, i + 1);
+    }
+  }
+  return cleaned.slice(start);
+}
+
 function validateBlock(value: unknown, index: number): AIBlock | string {
   if (typeof value !== "object" || value === null) {
     return `blocks[${index}] is not an object`;
@@ -104,12 +124,8 @@ function validateBlock(value: unknown, index: number): AIBlock | string {
   return block;
 }
 
-/**
- * Parse + validate raw model text into the locked structure.
- * Returns a discriminated result — callers must check `ok` before passing on.
- */
 export function parseStructured(raw: string): ParseResult {
-  const cleaned = stripFences(raw);
+  const cleaned = extractJsonObject(raw);
   if (cleaned === "") return { ok: false, error: "model returned empty output" };
 
   let parsed: unknown;
@@ -141,10 +157,6 @@ export function parseStructured(raw: string): ParseResult {
   return { ok: true, data: { blocks } };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// LIVE CARD OUTPUT (schema spec §6) — the live meeting gateway.
-// ─────────────────────────────────────────────────────────────────────────────
-
 const LIVE_CARD_TYPES: readonly LiveCardType[] = [
   "QUESTION_SUGGESTION",
   "DRIFT_ALERT",
@@ -154,7 +166,6 @@ const LIVE_CARD_TYPES: readonly LiveCardType[] = [
 const URGENCIES: readonly LiveCardUrgency[] = ["LOW", "MEDIUM", "HIGH"];
 const CHUNK_SIGNALS: readonly ChunkSignal[] = ["IMPORTANT", "LOW_SIGNAL", "IGNORE"];
 
-/** System prompt forcing JSON-only `live_card_output` for the live meeting AI. */
 export const SYSTEM_PROMPT_LIVE_CARD = `You are Stratis, an AI co-facilitator listening live to a team meeting. Output STRUCTURED DATA ONLY — one JSON object, no markdown, no prose.
 
 LANGUAGE: The meeting may be in Thai, English, or mixed. Detect the transcript's dominant language. ALL card text fields — "title", "brief_description", "suggested_question", "reason_now" — MUST be written in that language: a mainly-Thai transcript gets fully Thai cards, like the example below. Keep embedded English product names and technical terms as-is. "rolling_memory_update" follows the meeting's language too. Never answer in English when the meeting is in Thai.
@@ -259,10 +270,8 @@ function validateLiveCard(value: unknown, index: number): LiveCardDTO | string {
   return card;
 }
 
-/** Parse + validate raw model text into a `live_card_output` (minus session_id,
- *  which the backend injects). Cards may be empty. */
 export function parseLiveCard(raw: string): LiveCardParseResult {
-  const cleaned = stripFences(raw);
+  const cleaned = extractJsonObject(raw);
   if (cleaned === "") return { ok: false, error: "model returned empty output" };
 
   let parsed: unknown;
@@ -304,10 +313,6 @@ export function parseLiveCard(raw: string): LiveCardParseResult {
   };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DOCUMENT PATCH OUTPUT (schema spec §7) — the post-meeting PM-document gateway.
-// ─────────────────────────────────────────────────────────────────────────────
-
 const PATCH_OPERATIONS: readonly PatchOperation[] = [
   "replace_section",
   "append_to_section",
@@ -323,7 +328,6 @@ const PM_SECTION_KEYS: readonly PmSectionKey[] = [
 ];
 const REVIEW_PRIORITIES: readonly ReviewPriority[] = ["LOW", "MEDIUM", "HIGH"];
 
-/** System prompt forcing JSON-only `document_patch_output` after a meeting. */
 export const SYSTEM_PROMPT_DOC_PATCH = `You are Stratis, updating a project's PM document after a meeting. You output ONE JSON object only — no code fences, no prose or commentary around it. The "new_content" field of each patch MUST itself be Markdown-formatted text.
 
 You receive the current PM document (its sections) and the meeting transcript + rolling memory. Propose section-based patches that bring the document to the current project state. The PM document is the living source of truth.
@@ -404,10 +408,8 @@ function validatePatch(value: unknown, index: number): DocumentPatchDTO | string
   return patch;
 }
 
-/** Parse + validate raw model text into document patches (backend injects
- *  session_id / project_id / base_document_version). Patches may be empty. */
 export function parseDocumentPatch(raw: string): DocPatchParseResult {
-  const cleaned = stripFences(raw);
+  const cleaned = extractJsonObject(raw);
   if (cleaned === "") return { ok: false, error: "model returned empty output" };
 
   let parsed: unknown;
@@ -452,14 +454,8 @@ export function parseDocumentPatch(raw: string): DocPatchParseResult {
   };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DECISION EXTRACT OUTPUT (alignment checkpoint) — reads the whole meeting and
-// returns the concrete decisions, each tagged complete / incomplete / open.
-// ─────────────────────────────────────────────────────────────────────────────
-
 const DECISION_STATUSES: readonly DecisionStatus[] = ["complete", "incomplete", "open"];
 
-/** System prompt forcing JSON-only `decision_extract_output` at meeting wrap-up. */
 export const SYSTEM_PROMPT_DECISION_EXTRACT = `You are Stratis, reviewing a finished (or nearly finished) team meeting to pin down exactly what the room DECIDED. You output STRUCTURED DATA ONLY — one JSON object, no markdown, no prose.
 
 LANGUAGE: Detect the transcript's dominant language. Write every "text", "scope", "revisit", and "missing" field in that language (Thai if the meeting is mainly Thai). Keep embedded product names and technical terms as-is. Never answer in English when the meeting is in Thai.
@@ -542,10 +538,8 @@ function validateDecision(value: unknown, index: number): DecisionDTO | string {
   return decision;
 }
 
-/** Parse + validate raw model text into a `decision_extract_output` (minus
- *  session_id, which the backend injects). Decisions may be empty. */
 export function parseDecisionExtract(raw: string): DecisionExtractParseResult {
-  const cleaned = stripFences(raw);
+  const cleaned = extractJsonObject(raw);
   if (cleaned === "") return { ok: false, error: "model returned empty output" };
 
   let parsed: unknown;

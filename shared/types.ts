@@ -1,14 +1,10 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// SHARED TYPES — single source of truth, imported by frontend + backend
-// Path alias: "@shared/types"
-//
-// Scope: foundation only (S1-T01-A … S1-T00-B). Feature types (sessions,
-// transcript, AI blocks, dashboard, websocket events) are added in later tasks.
-// ─────────────────────────────────────────────────────────────────────────────
 
-// ── Roles & users (S1-T00-B) ─────────────────────────────────────────────────
 
 export type Role = "facilitator" | "participant" | "admin";
+
+export type AccountStatus = "active" | "suspended" | "revoked";
+
+export type AuthProvider = "password" | "google";
 
 export interface User {
   id: string;
@@ -17,7 +13,40 @@ export interface User {
   name: string;
   role: Role;
   createdAt: string;
+  status?: AccountStatus;
+  authProvider?: AuthProvider;
+  avatarUrl?: string | null;
+  jobTitle?: string | null;
+  bio?: string | null;
+  timezone?: string | null;
+  locale?: string;
+  settings?: UserSettings;
+  lastActiveAt?: string | null;
 }
+
+/**
+ * Per-user preferences. Stored as one JSONB blob rather than columns because
+ * the set changes with the UI and none of it is ever queried across users.
+ */
+export interface UserSettings {
+  theme?: "dark" | "light" | "system";
+  transcriptLanguage?: string;
+  emailSummary?: boolean;
+  inAppNotifications?: boolean;
+  suggestionSound?: boolean;
+  autoSendSummary?: boolean;
+  reduceMotion?: boolean;
+}
+
+export const DEFAULT_USER_SETTINGS: Required<UserSettings> = {
+  theme: "system",
+  transcriptLanguage: "th-TH",
+  emailSummary: true,
+  inAppNotifications: true,
+  suggestionSound: false,
+  autoSendSummary: false,
+  reduceMotion: false,
+};
 
 export interface AuthResponse {
   token: string;
@@ -28,7 +57,7 @@ export interface SignupRequest {
   email: string;
   password: string;
   name: string;
-  role?: Role; // defaults to "facilitator"
+  role?: Role;
   orgName?: string;
 }
 
@@ -37,30 +66,21 @@ export interface LoginRequest {
   password: string;
 }
 
-// ── Generic API envelope ──────────────────────────────────────────────────────
-
 export interface ApiResponse<T> {
   ok: boolean;
   data?: T;
   error?: string;
 }
 
-// ── AI structured output (S1-T03-C) ───────────────────────────────────────────
-// The AI must reply with JSON only — no markdown, no prose. Every reply is one
-// envelope carrying an array of typed blocks. Block types mirror the `nodes`
-// table (backend/src/db/schema.sql) so a block maps 1:1 to a node row later.
-
 export type AIBlockType =
-  | "TextBlock" // plain narrative / note
-  | "DecisionNode" // a decision with options + status
-  | "SummaryBlock" // condensed recap
-  | "QuestionSuggestion"; // a question the AI surfaces to the room
+  | "TextBlock"
+  | "DecisionNode"
+  | "SummaryBlock"
+  | "QuestionSuggestion";
 
-// Free-form per-type metadata; serialized into nodes.metadata (JSON) later.
-// Kept loose on purpose — the validator only checks the envelope + block core.
 export interface AIBlockMetadata {
-  status?: string; // e.g. VALIDATED | HIGH_EFFORT | FALSE | BLOCKED
-  options?: string[]; // DecisionNode choices
+  status?: string;
+  options?: string[];
   priority?: "low" | "med" | "high";
   [key: string]: unknown;
 }
@@ -72,17 +92,9 @@ export interface AIBlock {
   metadata?: AIBlockMetadata;
 }
 
-/** The exact JSON shape the model is required to emit. */
 export interface AIStructuredResponse {
   blocks: AIBlock[];
 }
-
-// ── Live card output gateway (schema spec §6) ─────────────────────────────────
-// The live meeting AI emits ONE `live_card_output` envelope per transcript
-// chunk: it classifies the chunk, updates rolling memory, and may surface
-// facilitator-only cards. DTOs are snake_case — they map 1:1 to the AI JSON and
-// the SQLite columns. The frontend/internal view types below stay camelCase and
-// are mapped at the boundary.
 
 export type LiveCardType =
   | "QUESTION_SUGGESTION"
@@ -124,7 +136,6 @@ export interface LiveCardDTO {
   suggested_state?: LiveCardState;
 }
 
-/** The exact JSON shape the live meeting AI is required to emit. */
 export interface LiveCardOutput {
   output_type: "live_card_output";
   session_id: string;
@@ -133,12 +144,6 @@ export interface LiveCardOutput {
   rolling_memory_update?: string;
   cards: LiveCardDTO[];
 }
-
-// ── Document patch gateway (schema spec §7) ───────────────────────────────────
-// After a meeting the AI proposes section-based patches to the PM document — the
-// project's source of truth. The facilitator approves/edits/rejects each patch;
-// approved patches commit the next document version (git-style history lives in
-// document_versions). DTOs snake_case (AI JSON + DB); view types camelCase.
 
 export type PmSectionKey =
   | "project_brief"
@@ -169,7 +174,6 @@ export interface RejectedSuggestion {
   reason_rejected: string;
 }
 
-/** The exact JSON shape the post-meeting document AI is required to emit. */
 export interface DocumentPatchOutput {
   output_type: "document_patch_output";
   session_id: string;
@@ -180,41 +184,25 @@ export interface DocumentPatchOutput {
   rejected_suggestions?: RejectedSuggestion[];
 }
 
-// ── Decision extraction gateway (alignment checkpoint) ───────────────────────
-// At wrap-up and session end the AI reads the whole transcript + rolling memory
-// and returns the concrete decisions the room made — each tagged with whether it
-// left the meeting specific enough to act on. This feeds the closing checkpoint,
-// the honest summary, and the completeness metric. DTOs snake_case (AI JSON + DB).
-
-// complete   — has what it needs (a due date; an owner too when owner-tracking on).
-// incomplete — a real decision missing a due date (or owner when tracked): a gap.
-// open       — deliberately parked/undecided; carries a revisit note, not a gap.
 export type DecisionStatus = "complete" | "incomplete" | "open";
 
 export interface DecisionDTO {
-  // The decision restated concretely enough that two people could disagree with it.
   text: string;
-  // ISO date (YYYY-MM-DD) or a short phrase the room actually said ("end of month").
   due_date?: string | null;
   owner?: string | null;
-  // What is IN vs OUT — where false consensus hides ("phased rollout" = which phases).
   scope?: string | null;
   status: DecisionStatus;
-  // For status "open": what/when reopens it, so a parked item can't vanish.
   revisit?: string | null;
-  // Why the model marked it incomplete — shown to the facilitator on the card.
   missing?: string | null;
   confidence?: number;
 }
 
-/** The exact JSON shape the decision-extraction AI is required to emit. */
 export interface DecisionExtractOutput {
   output_type: "decision_extract_output";
   session_id: string;
   decisions: DecisionDTO[];
 }
 
-// Persisted decision row (view type, camelCase). One row per decision per session.
 export interface DecisionRecord {
   id: string;
   sessionId: string;
@@ -227,16 +215,11 @@ export interface DecisionRecord {
   revisit: string | null;
   missing: string | null;
   confidence: number | null;
-  // "ai" when extracted, "facilitator" once the checkpoint edits/confirms it.
   source: "ai" | "facilitator";
-  // Soft-dismissed at the checkpoint: kept for Undo and dedupe, excluded from
-  // the metric and the summary.
   dismissed: boolean;
   createdAt: string;
   updatedAt: string;
 }
-
-// PM document persisted state + version history (view types, camelCase).
 
 export interface PmSection {
   title: string;
@@ -265,7 +248,6 @@ export interface PmDocumentVersion {
   createdAt: string;
 }
 
-/** Canonical PM document section order + default titles (schema spec §7.3). */
 export const PM_SECTIONS: { key: PmSectionKey; title: string }[] = [
   { key: "project_brief", title: "Project Brief" },
   { key: "current_status", title: "Current Status" },
@@ -275,30 +257,21 @@ export const PM_SECTIONS: { key: PmSectionKey; title: string }[] = [
   { key: "context_needed_for_next_meeting", title: "Context for Next Meeting" },
 ];
 
-// ── Realtime suggestion cards (S1-T03-E) ──────────────────────────────────────
-// A live card becomes a card in the facilitator's suggestion stack. Cards are
-// pushed over WebSocket to the facilitator's session ONLY — participants never
-// receive suggestion events. A card is struck through when answered, either
-// auto-detected from the transcript or marked manually.
-
 export type AnsweredSource = "auto" | "manual";
 
 export interface SuggestionCard {
   id: string;
   sessionId: string;
-  question: string; // suggested_question (or title fallback)
-  reason: string; // brief_description
+  question: string;
+  reason: string;
   answered: boolean;
   answeredBy?: AnsweredSource;
   createdAt: string;
-  // Phase 2 — live_card_output enrichment. Optional so pre-Phase-2 cards (and
-  // the legacy block path) still validate.
   cardType?: LiveCardType;
   urgency?: LiveCardUrgency;
   confidence?: number;
 }
 
-/** A saved transcript row as broadcast over /ws (matches the transcripts table). */
 export interface WsTranscriptRow {
   id: string;
   session_id: string;
@@ -307,27 +280,241 @@ export interface WsTranscriptRow {
   timestamp: string;
 }
 
-/** Events the server pushes to a connected facilitator over /ws. */
 export type WsServerEvent =
   | { type: "connected"; sessionId: string; role: Role }
   | { type: "suggestion:new"; card: SuggestionCard }
   | { type: "suggestion:answered"; sessionId: string; cardId: string; source: AnsweredSource }
-  // Streaming STT (S-EXP): interim goes only to the socket that streams audio;
-  // finals broadcast to the session so every open tab stays in sync.
   | { type: "stt:interim"; sessionId: string; text: string }
   | { type: "transcript:final"; sessionId: string; transcript: WsTranscriptRow }
   | { type: "stt:error"; sessionId: string; message: string }
-  // Live meeting notes: the AI's rolling memory, re-broadcast on rewrite.
   | { type: "notes:update"; sessionId: string; text: string };
 
-/** Control messages a client may send over /ws. Binary frames on the same
- * socket carry raw PCM16LE mono audio for the active STT stream. */
 export type WsClientEvent =
   | { type: "stt:start"; sampleRate: number; speaker?: string }
-  /** Half-close the STT stream so pending finals land (checkpoint opens
-   * mid-recording); audio keeps flowing and the stream reopens on next frame. */
   | { type: "stt:flush" }
   | { type: "stt:stop" };
 
-/** Placeholder until S1-T03-F provides real session IDs from the meeting lifecycle. */
 export const DEMO_SESSION_ID = "session_demo";
+
+// ============================================================
+// PLANS & ENTITLEMENTS
+// ============================================================
+
+export type PlanId = "free" | "pro" | "beta";
+
+export type PlanStatus = "active" | "past_due" | "cancelled" | "expired";
+
+export type BillingPeriod = "monthly" | "yearly";
+
+/**
+ * A capability a route can be gated on. Kept as named features rather than
+ * `if (plan === 'pro')` checks so the tier table is the only place that has to
+ * change when the packaging does.
+ */
+export type FeatureKey =
+  | "live_suggestions"
+  | "checkpoint"
+  | "pm_document"
+  | "transcript_export"
+  | "session_invites"
+  | "guest_access"
+  | "analytics_dashboard";
+
+export interface PlanLimits {
+  /** Meetings that may be created per calendar month. null = unlimited. Enforced. */
+  meetingsPerMonth: number | null;
+  /** Active accounts in the workspace. null = unlimited. Enforced. */
+  seats: number | null;
+  /**
+   * NOT ENFORCED YET. Intended cap on a single session's recording length —
+   * needs a check in the session sweeper before it means anything. Shown on the
+   * pricing page, so do not advertise it as a hard limit until it is wired.
+   */
+  sessionMinutes: number | null;
+  /**
+   * NOT ENFORCED YET. Intended transcript retention in days; needs a purge job.
+   * null = forever.
+   */
+  retentionDays: number | null;
+}
+
+export interface PlanDefinition {
+  id: PlanId;
+  name: string;
+  /** Marketing blurb. Never quote a number here — pricing is unvalidated. */
+  tagline: string;
+  limits: PlanLimits;
+  features: FeatureKey[];
+  /** Hidden from the public pricing page; assigned by an admin. */
+  internal?: boolean;
+}
+
+export interface OrgPlanState {
+  orgId: string;
+  plan: PlanId;
+  status: PlanStatus;
+  isBeta: boolean;
+  startedAt: string | null;
+  expiresAt: string | null;
+  note: string | null;
+}
+
+export interface PlanUsage {
+  meetingsThisMonth: number;
+  seatsUsed: number;
+  sessionsThisMonth: number;
+}
+
+export interface SubscriptionView {
+  plan: PlanDefinition;
+  state: OrgPlanState;
+  usage: PlanUsage;
+  limits: PlanLimits;
+  features: FeatureKey[];
+  pendingRequest: PlanRequest | null;
+}
+
+export interface PlanRequest {
+  id: string;
+  orgId: string;
+  requestedBy: string | null;
+  fromPlan: PlanId;
+  toPlan: PlanId;
+  billingPeriod: BillingPeriod;
+  note: string | null;
+  status: "pending" | "approved" | "rejected";
+  createdAt: string;
+  reviewedAt: string | null;
+}
+
+// ============================================================
+// INVITES & GUESTS
+// ============================================================
+
+export type InviteKind = "workspace" | "session";
+
+export interface InviteRecord {
+  id: string;
+  orgId: string;
+  kind: InviteKind;
+  role: Role;
+  sessionId: string | null;
+  meetingId: string | null;
+  email: string | null;
+  label: string | null;
+  allowGuest: boolean;
+  maxUses: number | null;
+  usedCount: number;
+  expiresAt: string | null;
+  revokedAt: string | null;
+  createdBy: string | null;
+  createdAt: string;
+}
+
+/** An invite plus its one-time raw token — only ever returned on create. */
+export interface InviteWithLink extends InviteRecord {
+  token: string;
+  url: string;
+}
+
+/** The unauthenticated preview a link shows before anyone commits to joining. */
+export interface InvitePreview {
+  kind: InviteKind;
+  role: Role;
+  orgName: string;
+  meetingTitle: string | null;
+  sessionStatus: "created" | "active" | "ended" | null;
+  allowGuest: boolean;
+  requiresAccount: boolean;
+  expiresAt: string | null;
+  valid: boolean;
+  reason?: string;
+}
+
+export interface GuestSession {
+  guestId: string;
+  sessionId: string;
+  displayName: string;
+  token: string;
+}
+
+// ============================================================
+// TELEMETRY & FEEDBACK
+// ============================================================
+
+export interface TrackedEvent {
+  event: string;
+  surface?: string;
+  sessionId?: string;
+  props?: Record<string, unknown>;
+}
+
+export type FeedbackKind = "bug" | "idea" | "praise" | "nps" | "general";
+
+export interface FeedbackRecord {
+  id: string;
+  orgId: string | null;
+  userId: string | null;
+  userName?: string | null;
+  sessionId: string | null;
+  kind: FeedbackKind;
+  rating: number | null;
+  message: string;
+  surface: string | null;
+  appVersion: string | null;
+  status: "new" | "triaged" | "resolved" | "wontfix";
+  createdAt: string;
+}
+
+export interface BetaMetrics {
+  activeUsers: { daily: number; weekly: number; monthly: number };
+  /** Members of this workspace. Admin metrics are workspace-scoped, not global. */
+  members: { total: number };
+  sessions: { total: number; last7d: number; avgMinutes: number | null };
+  meetings: { total: number; last7d: number };
+  checkpoint: { sessionsWithDecisions: number; decisions: number; completeRate: number | null };
+  feedback: { total: number; open: number; avgRating: number | null };
+  topEvents: { event: string; count: number }[];
+  dailyActive: { day: string; users: number }[];
+}
+
+export interface AdminUserRow {
+  id: string;
+  orgId: string;
+  orgName: string;
+  email: string;
+  name: string;
+  role: Role;
+  status: AccountStatus;
+  authProvider: AuthProvider;
+  plan: PlanId;
+  createdAt: string;
+  lastActiveAt: string | null;
+  sessionCount: number;
+}
+
+// ============================================================
+// RELEASES / UPDATE SYSTEM
+// ============================================================
+
+export interface ReleaseInfo {
+  version: string;
+  releasedAt: string | null;
+  notes: string | null;
+  /**
+   * Epoch seconds. A token whose `iat` is at or below this is refused — that is
+   * how a release ends every session that predates it.
+   */
+  minTokenIssuedAt: number;
+}
+
+/** Error codes the client keys off, so copy is not parsed from prose. */
+export const AUTH_ERROR_CODES = {
+  tokenRevoked: "TOKEN_REVOKED",
+  accountSuspended: "ACCOUNT_SUSPENDED",
+  accountRevoked: "ACCOUNT_REVOKED",
+  planRequired: "PLAN_REQUIRED",
+  quotaExceeded: "QUOTA_EXCEEDED",
+} as const;
+
+export type AuthErrorCode = (typeof AUTH_ERROR_CODES)[keyof typeof AUTH_ERROR_CODES];

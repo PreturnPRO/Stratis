@@ -18,13 +18,11 @@ export interface TranscribeResult {
 let googleClient: SpeechV2Client | null = null;
 let resolvedProjectId: string | null = null;
 
-// Corrected index type access  to extract the first element of the parameter tuple (ClientOptions)
  type SpeechClientOptions = NonNullable<ConstructorParameters<typeof v2.SpeechClient>[0]>;
 
 function buildClientOptions(): SpeechClientOptions {
   const { keyFile, serviceAccountJson, location } = env.stt.google;
   
-  // Initialize with the correct regional endpoint
   const opts: SpeechClientOptions = {
     apiEndpoint: `${location}-speech.googleapis.com`,
   };
@@ -87,7 +85,7 @@ async function googleTranscribe(input: TranscribeInput): Promise<TranscribeResul
     const request = {
       recognizer: `projects/${projectId}/locations/${location}/recognizers/_`,
       config: {
-        autoDecodingConfig: {}, // Dynamically handles browser WebM/Opus audio
+        autoDecodingConfig: {},
         languageCodes: languageCodes,
         model: model,
       },
@@ -96,7 +94,6 @@ async function googleTranscribe(input: TranscribeInput): Promise<TranscribeResul
 
     const [response] = await client.recognize(request);
     
-    // Process and merge the transcribed audio segments safely (bracket-free)
     const textParts: string[] = [];
     const results = response.results || [];
     
@@ -116,8 +113,6 @@ async function googleTranscribe(input: TranscribeInput): Promise<TranscribeResul
       raw: response,
     };
   } catch (error) {
-    // The gRPC INVALID_ARGUMENT wraps the real cause in BadRequest.fieldViolations
-    // (which field, and why). String(error) hides it — surface it explicitly.
     const anyErr = error as {
       details?: string;
       statusDetails?: Array<{ fieldViolations?: unknown }>;
@@ -150,11 +145,6 @@ export async function transcribeAudio(
   }
 }
 
-// ── Streaming STT (S-EXP) ────────────────────────────────────────────────────
-// Shared context for lib/sttStream.ts, which drives Speech v2 StreamingRecognize
-// over the same client, recognizer path, and language/model config as the
-// batch path above.
-
 export interface GoogleStreamingContext {
   client: SpeechV2Client;
   recognizer: string;
@@ -162,9 +152,9 @@ export interface GoogleStreamingContext {
   languageCodes: string[];
 }
 
-/** Null when STT_PROVIDER is not "google" or the client cannot initialize —
- * callers should fall back to mock streaming. */
-export async function getGoogleStreamingContext(): Promise<GoogleStreamingContext | null> {
+export async function getGoogleStreamingContext(
+  languageOverride?: string[],
+): Promise<GoogleStreamingContext | null> {
   if (env.stt.provider !== "google") return null;
   const client = getGoogleClient();
   if (!client) return null;
@@ -181,6 +171,6 @@ export async function getGoogleStreamingContext(): Promise<GoogleStreamingContex
     client,
     recognizer: `projects/${projectId}/locations/${location}/recognizers/_`,
     model,
-    languageCodes,
+    languageCodes: languageOverride?.length ? languageOverride : languageCodes,
   };
 }

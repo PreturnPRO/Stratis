@@ -1,28 +1,99 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { COLORS, FONT, RADIUS, SPACE } from "./constants";
+import { COLORS, FONT, LETTER_SPACING, RADIUS, SPACE } from "./constants";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Sidebar from "./components/Sidebar";
-import MeetingTransition from "./components/MeetingTransition";
-import Landing from "./pages/Landing";
-import Login from "./pages/Login";
-import Register from "./pages/Register";
-import Projects from "./pages/Projects";
-import Meeting from "./pages/Meeting";
-import Dashboard from "./pages/Dashboard";
-import SummaryView from "./pages/SummaryView";
-import DocumentView from "./pages/DocumentView";
+import CurtainTransition, { type CurtainState } from "./components/CurtainTransition";
+import ErrorBoundary from "./components/ErrorBoundary";
+import { useTheme, ThemeProvider } from "./hooks/useTheme";
+import { useUpdateGuard } from "./hooks/useUpdateGuard";
+import { installTrackFlush, track } from "./lib/track";
+import { apiFetch } from "./lib/http";
+import type { User } from "@shared/types";
+
+const Landing = lazy(() => import("./pages/Landing"));
+const Login = lazy(() => import("./pages/Login"));
+const Register = lazy(() => import("./pages/Register"));
+const Projects = lazy(() => import("./pages/Projects"));
+const Meeting = lazy(() => import("./pages/Meeting"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Docket = lazy(() => import("./pages/Docket"));
+const SummaryView = lazy(() => import("./pages/SummaryView"));
+const DocumentView = lazy(() => import("./pages/DocumentView"));
+const Settings = lazy(() => import("./pages/Settings"));
+const Admin = lazy(() => import("./pages/Admin"));
+const Pricing = lazy(() => import("./pages/Pricing"));
+const Join = lazy(() => import("./pages/Join"));
+const FeedbackModal = lazy(() => import("./components/FeedbackModal"));
+
+function RouteFallback({ colors }: { colors: { textDim: string } }) {
+  return (
+    <div
+      style={{
+        flex: 1,
+        minHeight: 160,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: colors.textDim,
+        fontSize: 13,
+      }}
+    >
+      Loading…
+    </div>
+  );
+}
 
 type AuthPage = "landing" | "login" | "register" | "app";
-type AppPage = "dashboard" | "projects" | "meeting" | "summary" | "document";
+type AppPage =
+  | "dashboard"
+  | "docket"
+  | "projects"
+  | "meeting"
+  | "summary"
+  | "document"
+  | "settings"
+  | "admin"
+  | "pricing";
 
 const PAGE_LABELS: Record<string, string> = {
   dashboard: "Dashboard",
+  docket: "Docket",
   projects: "Projects",
   meeting: "Meeting",
   summary: "Summary",
   document: "Document",
+  settings: "Settings",
+  admin: "Admin",
+  pricing: "Plans",
 };
+
+function LiveClock({ colors }: { colors: { accent: string } }) {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const align = setTimeout(() => {
+      setNow(new Date());
+      interval = setInterval(() => setNow(new Date()), 60_000);
+    }, (60 - new Date().getSeconds()) * 1000);
+    return () => {
+      clearTimeout(align);
+      if (interval) clearInterval(interval);
+    };
+  }, []);
+
+  const time = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(now);
+  const tz = new Intl.DateTimeFormat(undefined, { timeZoneName: "short" })
+    .formatToParts(now)
+    .find((p) => p.type === "timeZoneName")?.value ?? "";
+
+  return (
+    <span>
+      {tz} <span style={{ color: colors.accent }}>→</span> {time}
+    </span>
+  );
+}
 
 function renderPage(
   active: string,
@@ -30,6 +101,8 @@ function renderPage(
   handleNav: (id: string, params?: Record<string, string>) => void,
 ) {
   switch (active) {
+    case "docket":
+      return <Docket onNav={handleNav} />;
     case "projects":
       return <Projects onNav={handleNav} />;
     case "meeting":
@@ -48,9 +121,76 @@ function renderPage(
           onNav={handleNav}
         />
       );
+    case "settings":
+      return <Settings onNav={handleNav} />;
+    case "admin":
+      return <Admin />;
+    case "pricing":
+      return <Pricing onNav={handleNav} />;
     default:
       return <Dashboard onNav={handleNav} />;
   }
+}
+
+/**
+ * Routes that exist outside the signed-in shell.
+ *
+ * `join` has to render for someone with no account at all, and `oauth` is the
+ * landing strip for a Google redirect — neither can sit behind the auth gate,
+ * and both are read straight from the hash rather than from nav state because
+ * the user arrives on them cold, from a link.
+ */
+function readEntryRoute(): { page: string; params: Record<string, string> } {
+  const hash = window.location.hash.replace(/^#\/?/, "");
+  const [page, query] = hash.split("?");
+  const params: Record<string, string> = {};
+  if (query) new URLSearchParams(query).forEach((v, k) => { params[k] = v; });
+  return { page: page || "", params };
+}
+
+/**
+ * Completes a Google sign-in. The backend redirects here with the token in the
+ * URL fragment; this exchanges it for the user record, hands both to
+ * AuthContext, and scrubs the fragment so the token does not sit in the address
+ * bar or in history.
+ */
+function OAuthLanding({
+  params,
+  onDone,
+}: {
+  params: Record<string, string>;
+  onDone: (error: string | null) => void;
+}) {
+  const { login } = useAuth();
+  const doneRef = useRef(false);
+
+  useEffect(() => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+
+    const token = params.token;
+    if (!token) {
+      onDone(params.error || "Google sign-in did not complete");
+      return;
+    }
+
+    // The token is the one we were just handed, not a stored session, so a
+    // rejection here is a failed sign-in — not a session to end.
+    void apiFetch<User>("/api/auth/me", { token })
+      .then((user) => {
+        if (!user) throw new Error("Could not finish signing in");
+        login(token, user);
+        window.history.replaceState(null, "", "#/dashboard");
+        onDone(null);
+      })
+      .catch((err: Error) => onDone(err.message));
+  }, [params, login, onDone]);
+
+  return (
+    <div style={{ padding: 40, color: COLORS.textMuted, fontSize: FONT.size.body }}>
+      Finishing sign-in…
+    </div>
+  );
 }
 
 function hashToEntry(): { page: AppPage; params: Record<string, string> } {
@@ -66,29 +206,137 @@ function entryToHash(page: AppPage, params: Record<string, string>): string {
   return `#/${page}${query ? `?${query}` : ""}`;
 }
 
+/**
+ * A single strip across the top of the app for things the server told us:
+ * a new build is available, or this session was ended. Deliberately one
+ * component in one place — these messages must never compete with the meeting
+ * surface or appear twice.
+ */
+function SystemNotice({
+  tone,
+  message,
+  actionLabel,
+  onAction,
+  onDismiss,
+}: {
+  tone: "info" | "danger";
+  message: string;
+  actionLabel?: string;
+  onAction?: () => void;
+  onDismiss?: () => void;
+}) {
+  const { colors } = useTheme();
+  const isDanger = tone === "danger";
+  return (
+    <div
+      role={isDanger ? "alert" : "status"}
+      style={{
+        // In the flow, not fixed. A fixed strip sat on top of the app header
+        // and hid the breadcrumb underneath it; this pushes the page down
+        // instead of covering it.
+        flexShrink: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 12,
+        padding: "8px 14px",
+        background: isDanger ? colors.dangerBg : colors.surfaceElevated,
+        borderBottom: `1px solid ${isDanger ? colors.danger : colors.border}`,
+        color: isDanger ? colors.danger : colors.text,
+        fontSize: FONT.size.label,
+      }}
+    >
+      <span>{message}</span>
+      {actionLabel && onAction && (
+        <button
+          onClick={onAction}
+          style={{
+            padding: "4px 12px",
+            borderRadius: RADIUS.pill,
+            border: `1px solid ${colors.accent}`,
+            background: "transparent",
+            color: colors.accent,
+            fontSize: FONT.size.label,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          {actionLabel}
+        </button>
+      )}
+      {onDismiss && (
+        <button
+          onClick={onDismiss}
+          aria-label="Dismiss"
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "inherit",
+            opacity: 0.7,
+            cursor: "pointer",
+            fontSize: FONT.size.body,
+            lineHeight: 1,
+          }}
+        >
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
+
 function AppShell() {
-  const { isAuthed, logout } = useAuth();
+  const { isAuthed, logout, isAdmin, endedReason, clearEndedReason } = useAuth();
   const [authPage, setAuthPage] = useState<AuthPage>("landing");
   const initialEntry = hashToEntry();
   const [active, setActive] = useState<AppPage>(initialEntry.page);
   const [navParams, setNavParams] = useState<Record<string, string>>(initialEntry.params);
-  const [showTransition, setShowTransition] = useState(false);
+  const { theme, toggleTheme, colors } = useTheme();
+
+  const [entryRoute, setEntryRoute] = useState(() => readEntryRoute());
+  const [oauthError, setOauthError] = useState<string | null>(null);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+
+  useEffect(() => {
+    const onHashChange = () => setEntryRoute(readEntryRoute());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  // The update check is paused during a meeting: a reload prompt over a live
+  // recording is the one place this feature could do harm.
+  const { update, reload, dismiss } = useUpdateGuard({ pause: active === "meeting" });
+
+  useEffect(() => {
+    installTrackFlush();
+    track("app_opened");
+  }, []);
+
+  const [authCurtain, setAuthCurtain] = useState<CurtainState>("idle");
+  const prevAuthedRef = useRef(isAuthed);
+  useEffect(() => {
+    if (!prevAuthedRef.current && isAuthed) setAuthCurtain("in");
+    prevAuthedRef.current = isAuthed;
+  }, [isAuthed]);
+
+  useEffect(() => {
+    if (authCurtain === "in") {
+      const t = setTimeout(() => setAuthCurtain("out"), 240);
+      return () => clearTimeout(t);
+    }
+    if (authCurtain === "out") {
+      const t = setTimeout(() => setAuthCurtain("idle"), 300);
+      return () => clearTimeout(t);
+    }
+  }, [authCurtain]);
 
   type HistoryEntry = { page: AppPage; params: Record<string, string> };
   const [history, setHistory] = useState<HistoryEntry[]>([initialEntry]);
   const [historyIndex, setHistoryIndex] = useState(0);
 
-  const handleNav = (id: string, params?: Record<string, string>) => {
+  const commitNav = (id: string, params?: Record<string, string>) => {
     const page = id as AppPage;
     const resolvedParams = params ?? {};
-
-    const current = history[historyIndex];
-    const isSamePage = current?.page === page;
-    const isSameParams =
-      JSON.stringify(current?.params) === JSON.stringify(resolvedParams);
-    if (isSamePage && isSameParams) return;
-
-    if (page === "meeting" && active !== "meeting") setShowTransition(true);
 
     const visibleHistory = history.slice(0, historyIndex + 1);
     const existingIndex = visibleHistory.findIndex(
@@ -110,6 +358,19 @@ function AppShell() {
     setHistoryIndex(newHistory.length - 1);
     setActive(page);
     setNavParams(resolvedParams);
+  };
+
+  const handleNav = (id: string, params?: Record<string, string>) => {
+    const page = id as AppPage;
+    const resolvedParams = params ?? {};
+
+    const current = history[historyIndex];
+    const isSamePage = current?.page === page;
+    const isSameParams =
+      JSON.stringify(current?.params) === JSON.stringify(resolvedParams);
+    if (isSamePage && isSameParams) return;
+
+    commitNav(id, params);
   };
 
   useEffect(() => {
@@ -149,6 +410,7 @@ function AppShell() {
   const canBack = historyIndex > 0;
   const canForward = historyIndex < history.length - 1;
 
+<<<<<<< HEAD
   // Sign out clears auth AND resets navigation to the dashboard — otherwise the
   // stale `active`/history/hash survive and the next login lands on whatever
   // page was open when logging out.
@@ -161,32 +423,112 @@ function AppShell() {
     setAuthPage("landing");
     window.history.replaceState(null, "", "#/dashboard");
   };
+=======
+  // An invite link and an OAuth return both have to render before, and
+  // independently of, the signed-in shell.
+  if (entryRoute.page === "join" && entryRoute.params.token) {
+    return (
+      <ErrorBoundary area="join">
+        <Suspense fallback={<RouteFallback colors={colors} />}>
+          <Join
+            token={entryRoute.params.token}
+            onNav={(id, params) => {
+              window.location.hash = entryToHash(id as AppPage, params ?? {});
+              setEntryRoute(readEntryRoute());
+              handleNav(id, params);
+            }}
+            onNavigateAuth={(page) => {
+              window.history.replaceState(null, "", "#/");
+              setEntryRoute({ page: "", params: {} });
+              setAuthPage(page);
+            }}
+          />
+        </Suspense>
+      </ErrorBoundary>
+    );
+  }
+
+  // Pricing is public. Someone deciding whether Stratis is worth paying for
+  // should not have to make an account to read the plans.
+  if (!isAuthed && entryRoute.page === "pricing") {
+    return (
+      <div style={{ height: "100dvh", overflow: "auto", background: COLORS.bg, color: COLORS.text }}>
+        <ErrorBoundary area="pricing">
+          <Suspense fallback={<RouteFallback colors={colors} />}>
+            <Pricing
+              onNav={() => {
+                window.history.replaceState(null, "", "#/");
+                setEntryRoute({ page: "", params: {} });
+                setAuthPage("register");
+              }}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      </div>
+    );
+  }
+
+  if (entryRoute.page === "oauth") {
+    return (
+      <ErrorBoundary area="oauth">
+        <Suspense fallback={<RouteFallback colors={colors} />}>
+          <OAuthLanding
+            params={entryRoute.params}
+            onDone={(error) => {
+              setOauthError(error);
+              setEntryRoute({ page: "", params: {} });
+              if (error) setAuthPage("login");
+            }}
+          />
+        </Suspense>
+      </ErrorBoundary>
+    );
+  }
+>>>>>>> 52344f33d88b878311925b6cc781b1ce24e742fd
 
   if (!isAuthed) {
     return (
       <div
         style={{
-          height: "100vh",
+          height: "100dvh",
           background: COLORS.bg,
           color: COLORS.text,
-          fontFamily: "'Helvetica Neue', Arial, sans-serif",
+          display: "flex",
+          flexDirection: "column",
         }}
       >
-        {authPage === "landing" && <Landing onNavigate={setAuthPage} />}
-        {authPage === "login" && (
-          <Login
-            onNavigate={(p) =>
-              p === "app" ? setAuthPage("app") : setAuthPage(p)
-            }
+        <CurtainTransition state={authCurtain} routeLabel="DASHBOARD" onMidpoint={() => {}} theme={theme} />
+        {(endedReason || oauthError) && (
+          <SystemNotice
+            tone="danger"
+            message={oauthError ?? endedReason?.message ?? ""}
+            onDismiss={() => {
+              clearEndedReason();
+              setOauthError(null);
+            }}
           />
         )}
-        {authPage === "register" && (
-          <Register
-            onNavigate={(p) =>
-              p === "app" ? setAuthPage("app") : setAuthPage(p)
-            }
-          />
-        )}
+        <main style={{ flex: 1, minHeight: 0 }}>
+          <ErrorBoundary key={authPage} area={authPage}>
+            <Suspense fallback={<RouteFallback colors={colors} />}>
+              {authPage === "landing" && <Landing onNavigate={setAuthPage} />}
+              {authPage === "login" && (
+                <Login
+                  onNavigate={(p) =>
+                    p === "app" ? setAuthPage("app") : setAuthPage(p)
+                  }
+                />
+              )}
+              {authPage === "register" && (
+                <Register
+                  onNavigate={(p) =>
+                    p === "app" ? setAuthPage("app") : setAuthPage(p)
+                  }
+                />
+              )}
+            </Suspense>
+          </ErrorBoundary>
+        </main>
       </div>
     );
   }
@@ -195,18 +537,38 @@ function AppShell() {
     <div
       style={{
         display: "flex",
-        height: "100vh",
-        background: COLORS.bg,
-        fontFamily: "'Helvetica Neue', Arial, sans-serif",
+        height: "100dvh",
+        background: colors.bg,
         overflow: "hidden",
-        color: COLORS.text,
+        color: colors.text,
       }}
     >
+<<<<<<< HEAD
       {showTransition && (
         <MeetingTransition onDone={() => setShowTransition(false)} />
       )}
 
       <Sidebar active={active} onNav={handleSidebarNav} onLogout={handleLogout} />
+=======
+      <CurtainTransition
+        state={authCurtain}
+        routeLabel="DASHBOARD"
+        onMidpoint={() => {}}
+        theme={theme}
+      />
+      <Sidebar
+        active={active}
+        onNav={handleSidebarNav}
+        onLogout={() => {
+          logout();
+          setAuthPage("landing");
+        }}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        isAdmin={isAdmin}
+        onFeedback={() => setFeedbackOpen(true)}
+      />
+>>>>>>> 52344f33d88b878311925b6cc781b1ce24e742fd
 
       <div
         style={{
@@ -217,6 +579,16 @@ function AppShell() {
           position: "relative",
         }}
       >
+        {update && (
+          <SystemNotice
+            tone="info"
+            message={`Stratis ${update.version} is available. Reload to pick it up.`}
+            actionLabel="Reload"
+            onAction={reload}
+            onDismiss={dismiss}
+          />
+        )}
+
         <header
           style={{
             height: 40,
@@ -226,6 +598,7 @@ function AppShell() {
             padding: "0 12px",
             gap: SPACE[1.5],
             flexShrink: 0,
+            overflow: "hidden",
           }}
         >
           <button
@@ -278,6 +651,8 @@ function AppShell() {
               alignItems: "center",
               gap: 4,
               marginLeft: 4,
+              minWidth: 0,
+              overflow: "hidden",
             }}
           >
             {history.slice(0, historyIndex + 1).map((entry, i) => {
@@ -324,24 +699,65 @@ function AppShell() {
               );
             })}
           </div>
+
+          <span
+            style={{
+              marginLeft: "auto",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 10,
+              color: colors.textDim,
+              fontFamily: FONT.mono,
+              fontSize: FONT.size.caption,
+              letterSpacing: LETTER_SPACING.wide,
+              flexShrink: 0,
+            }}
+          >
+            <LiveClock colors={colors} />
+          </span>
         </header>
 
         <main
           style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}
         >
-          <div style={{ flex: 1, overflow: "hidden", height: "100%" }}>
-            {renderPage(active, navParams, handleNav)}
+          <div
+            key={active}
+            style={{
+              flex: 1,
+              overflow: "hidden",
+              height: "100%",
+            }}
+          >
+            <ErrorBoundary key={active} area={active}>
+              <Suspense fallback={<RouteFallback colors={colors} />}>
+                {renderPage(active, navParams, handleNav)}
+              </Suspense>
+            </ErrorBoundary>
           </div>
         </main>
       </div>
+
+      {feedbackOpen && (
+        <Suspense fallback={null}>
+          <FeedbackModal
+            surface={active}
+            sessionId={navParams.sessionId}
+            onClose={() => setFeedbackOpen(false)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppShell />
-    </AuthProvider>
+    <ErrorBoundary area="app shell">
+      <ThemeProvider>
+        <AuthProvider>
+          <AppShell />
+        </AuthProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }
