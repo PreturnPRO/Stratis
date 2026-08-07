@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { FONT, LETTER_SPACING, RADIUS, SPACE } from "../tokens/colors";
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
 import { API_BASE } from "../lib/api";
+import { useCachedQuery } from "../lib/cache";
+import { apiFetch } from "../lib/http";
 import { Button } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { NewMeetingModal, type MeetingSeed, type NewMeetingFormValues } from "../components/NewMeetingModal";
@@ -38,6 +40,12 @@ interface WaitingItem {
   sourceAt: string;
   projectId: string | null;
   since: string;
+}
+
+interface DocketPayload {
+  meetings?: DocketMeeting[];
+  waiting?: WaitingItem[];
+  waitingTotal?: number;
 }
 
 type Band = "now" | "week" | "later";
@@ -81,47 +89,29 @@ export default function Docket({
   onNav?: (id: string, params?: Record<string, string>) => void;
 }) {
   const { colors } = useTheme();
-  const { token, logout } = useAuth();
+  const { token, user } = useAuth();
   const create = useCreateMeeting(onNav);
 
-  const [meetings, setMeetings] = useState<DocketMeeting[]>([]);
-  const [waiting, setWaiting] = useState<WaitingItem[]>([]);
-  const [waitingTotal, setWaitingTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [seed, setSeed] = useState<MeetingSeed | undefined>(undefined);
   const [starting, setStarting] = useState<string | null>(null);
   const [lockedProject, setLockedProject] = useState<{ id: string; name: string } | undefined>();
 
-  const load = useCallback(async () => {
-    if (!token) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/meeting/docket`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.status === 401) {
-        logout();
-        return;
-      }
-      const data = await res.json();
-      if (!data.ok) throw new Error(data.error ?? "Could not load the docket");
-      const items: WaitingItem[] = data.data?.waiting ?? [];
-      setMeetings(data.data?.meetings ?? []);
-      setWaiting(items);
-      setWaitingTotal(data.data?.waitingTotal ?? items.length);
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load the docket");
-    } finally {
-      setLoading(false);
-    }
-  }, [token, logout]);
+  const query = useCachedQuery<DocketPayload>(
+    "docket",
+    useCallback(() => apiFetch<DocketPayload>("/api/meeting/docket"), []),
+    { scope: user?.id, enabled: Boolean(token) },
+  );
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const load = query.refresh;
+  const loading = query.loading;
+  const error = localError ?? query.error;
+
+  const meetings = useMemo(() => query.data?.meetings ?? [], [query.data]);
+  const waiting = useMemo(() => query.data?.waiting ?? [], [query.data]);
+  const waitingTotal = query.data?.waitingTotal ?? waiting.length;
 
   const grouped = useMemo(() => {
     const out: Record<Band, DocketMeeting[]> = { now: [], week: [], later: [] };
@@ -168,6 +158,8 @@ export default function Docket({
 
   const downloadIcs = (m: DocketMeeting) => {
     if (!token) return;
+    // Raw fetch on purpose: this endpoint answers text/calendar, not the JSON
+    // envelope apiFetch unwraps.
     void fetch(`${API_BASE}/api/meeting/${m.id}/ics`, {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -180,7 +172,7 @@ export default function Docket({
         a.click();
         URL.revokeObjectURL(url);
       })
-      .catch(() => setError("Could not build the calendar file for that meeting."));
+      .catch(() => setLocalError("Could not build the calendar file for that meeting."));
   };
 
   const styles = makeStyles(colors);

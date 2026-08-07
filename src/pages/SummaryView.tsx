@@ -6,7 +6,7 @@ import type { DecisionRecord } from '../../shared/types';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../hooks/useTheme';
 
-import { API_BASE } from '../lib/api';
+import { apiFetch } from '../lib/http';
 
 type UserRole = 'facilitator' | 'participant';
 type ThemeColors = ReturnType<typeof useTheme>['colors'];
@@ -472,40 +472,30 @@ const SummaryView: React.FC<SummaryViewProps> = ({
       setError(null);
 
       try {
-        const res = await fetch(`${API_BASE}/api/summary/${sessionId}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-
-        const data: {
-          ok: boolean;
-          error?: string;
-          data?: {
-            summary: ParticipantSummaryOutput;
-            decisions?: DecisionRecord[];
-            metric?: { completenessRate: number | null };
-            provider?: string;
-            transcriptCount?: number;
-            sentAt?: string | null;
-          };
-        } = await res.json();
+        const data = await apiFetch<{
+          summary: ParticipantSummaryOutput;
+          decisions?: DecisionRecord[];
+          metric?: { completenessRate: number | null };
+          provider?: string;
+          transcriptCount?: number;
+          sentAt?: string | null;
+        }>(`/api/summary/${sessionId}`);
 
         if (cancelled) return;
 
-        if (!res.ok || !data.ok || !data.data?.summary) {
-          setError(data.error ?? 'Could not load summary');
+        if (!data?.summary) {
+          setError('Could not load summary');
           return;
         }
 
-        setSummary(data.data.summary);
-        setDecisions(data.data.decisions ?? []);
-        setCompletenessRate(data.data.metric?.completenessRate ?? null);
-        setProvider(data.data.provider ?? null);
-        setSent(!!data.data.sentAt);
-      } catch {
+        setSummary(data.summary);
+        setDecisions(data.decisions ?? []);
+        setCompletenessRate(data.metric?.completenessRate ?? null);
+        setProvider(data.provider ?? null);
+        setSent(!!data.sentAt);
+      } catch (err) {
         if (!cancelled) {
-          setError('Could not reach summary endpoint');
+          setError(err instanceof Error ? err.message : 'Could not reach summary endpoint');
         }
       } finally {
         if (!cancelled) {
@@ -525,19 +515,11 @@ const SummaryView: React.FC<SummaryViewProps> = ({
     if (sending || sent || !sessionId || !token) return;
     setSending(true);
     try {
-      const res = await fetch(`${API_BASE}/api/summary/${sessionId}/send`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data: { ok: boolean; error?: string; data?: { sentAt: string } } = await res.json();
-      if (!res.ok || !data.ok) {
-        setError(data.error ?? 'Could not send the summary');
-        return;
-      }
+      await apiFetch<{ sentAt: string }>(`/api/summary/${sessionId}/send`, { method: 'POST' });
       setSent(true);
       setError(null);
-    } catch {
-      setError('Could not reach the server to send the summary');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not send the summary');
     } finally {
       setSending(false);
     }
@@ -563,22 +545,17 @@ const SummaryView: React.FC<SummaryViewProps> = ({
     }
 
     try {
-      const res = await fetch(`${API_BASE}/api/summary/${sessionId}/block/${blockId}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ content }),
-      });
-      const data: { ok: boolean; error?: string; data?: { block: SummaryBlock } } = await res.json();
+      const data = await apiFetch<{ block: SummaryBlock }>(
+        `/api/summary/${sessionId}/block/${blockId}`,
+        { method: 'PATCH', body: { content } },
+      );
 
-      if (!res.ok || !data.ok || !data.data?.block) {
-        setError(data.error ?? 'Could not save that edit');
+      if (!data?.block) {
+        setError('Could not save that edit');
         return false;
       }
 
-      const saved = data.data.block;
+      const saved = data.block;
       setSummary(prev =>
         prev
           ? {
@@ -589,8 +566,8 @@ const SummaryView: React.FC<SummaryViewProps> = ({
       );
       setError(null);
       return true;
-    } catch {
-      setError('Could not reach the server to save that edit');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save that edit');
       return false;
     }
   };

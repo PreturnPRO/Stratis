@@ -1,6 +1,5 @@
-import { useMemo, useState } from "react";
-import { useAuth } from "../context/AuthContext";
-import { API_BASE } from "../lib/api";
+import { useState } from "react";
+import { apiFetch } from "../lib/http";
 
 export const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 
@@ -28,53 +27,24 @@ export interface CreateMeetingInput {
 }
 
 export function useCreateMeeting(onNav?: (id: string, params?: Record<string, string>) => void) {
-  const { token, logout } = useAuth();
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const authHeaders = useMemo((): Record<string, string> => {
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }, [token]);
-
-  const guardAuth = (res: Response) => {
-    if (res.status === 401) {
-      logout();
-      throw new Error("Session expired — please log in again");
-    }
-  };
-
   const startSessionForMeeting = async (meetingId: string, durationMin: number): Promise<string> => {
-    const createRes = await fetch(`${API_BASE}/api/session`, {
+    // apiFetch signs out on a 401 by itself, so there is no local auth guard
+    // here any more — a dead session is handled the same way on every screen.
+    const created = await apiFetch<{ session?: { id?: string }; id?: string }>("/api/session", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...authHeaders,
-      },
-      body: JSON.stringify({
-        meetingId,
-        meeting_id: meetingId,
-      }),
+      body: { meetingId, meeting_id: meetingId },
     });
 
-    guardAuth(createRes);
-    const createData = await createRes.json();
-
-    if (!createData.ok) {
-      throw new Error(createData.error ?? "Could not create session");
-    }
-
-    const session = createData.data?.session ?? createData.data;
-    const sessionId = session?.id;
+    const sessionId = created?.session?.id ?? created?.id;
 
     if (!sessionId) {
       throw new Error("Session id missing from backend response");
     }
 
-    await fetch(`${API_BASE}/api/session/${sessionId}/start`, {
-      method: "POST",
-      headers: authHeaders,
-    }).catch(() => {
-    });
+    await apiFetch(`/api/session/${sessionId}/start`, { method: "POST" }).catch(() => {});
 
     window.localStorage.setItem(ACTIVE_SESSION_KEY, sessionId);
     if (durationMin > 0) {
@@ -92,13 +62,9 @@ export function useCreateMeeting(onNav?: (id: string, params?: Record<string, st
     const scheduledAt = input.scheduledAt ?? null;
 
     try {
-      const res = await fetch(`${API_BASE}/api/meeting`, {
+      const data = await apiFetch<{ meeting?: { id?: string }; id?: string }>("/api/meeting", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...authHeaders,
-        },
-        body: JSON.stringify({
+        body: {
           title: input.title,
           projectId: input.projectId,
           project_id: input.projectId,
@@ -108,18 +74,10 @@ export function useCreateMeeting(onNav?: (id: string, params?: Record<string, st
           brief: input.brief?.trim() || null,
           durationMinutes: input.durationMinutes,
           duration_minutes: input.durationMinutes,
-        }),
+        },
       });
 
-      guardAuth(res);
-      const data = await res.json();
-
-      if (!data.ok) {
-        throw new Error(data.error ?? "Could not create meeting");
-      }
-
-      const meeting = data.data?.meeting ?? data.data;
-      const meetingId = meeting?.id;
+      const meetingId = data?.meeting?.id ?? data?.id;
 
       if (!meetingId) {
         throw new Error("Meeting id missing from backend response");

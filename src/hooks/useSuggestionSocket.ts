@@ -9,7 +9,8 @@ import type {
 } from '../../shared/types'
 import type { SuggestionCard as UICard } from '../components/SuggestionCardStack'
 
-import { API_BASE, WS_BASE } from '../lib/api'
+import { WS_BASE } from '../lib/api'
+import { announceSessionEnded, apiFetch } from '../lib/http'
 
 function isRealSessionId(sessionId: string | null | undefined): sessionId is string {
   if (!sessionId) return false
@@ -92,16 +93,8 @@ export function useSuggestionSocket(
   const fetchCards = useCallback(async () => {
     if (!token || !validSessionId) return;
     try {
-      const res = await fetch(`${API_BASE}/api/ai/suggest/${validSessionId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      const data = await res.json();
-      if (res.ok && data.ok) {
-        const serverCards: ServerCard[] = data.data.cards ?? [];
-        setCards(serverCards.map(toUICard));
-      }
+      const data = await apiFetch<{ cards?: ServerCard[] }>(`/api/ai/suggest/${validSessionId}`);
+      setCards((data.cards ?? []).map(toUICard));
     } catch (err) {
       console.error('[ws:rest] Failed to sync suggestion stack:', err);
     }
@@ -115,21 +108,12 @@ export function useSuggestionSocket(
     );
 
     try {
-      const res = await fetch(`${API_BASE}/api/ai/suggest/answer`, {
+      await apiFetch('/api/ai/suggest/answer', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ sessionId: validSessionId, cardId: id }),
+        body: { sessionId: validSessionId, cardId: id },
       });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        console.warn('[ws:manual] Answer sync rejected by server, rolling back state:', data.error);
-        void fetchCards();
-      }
     } catch (err) {
-      console.error('[ws:manual] Error marking card answered:', err);
+      console.warn('[ws:manual] Answer sync rejected, rolling back state:', err);
       void fetchCards();
     }
   }, [validSessionId, token, fetchCards]);
@@ -142,21 +126,12 @@ export function useSuggestionSocket(
     setCards((prev) => prev.filter((c) => c.id !== id));
 
     try {
-      const res = await fetch(`${API_BASE}/api/ai/suggest/dismiss`, {
+      await apiFetch('/api/ai/suggest/dismiss', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ sessionId: validSessionId, cardId: id }),
+        body: { sessionId: validSessionId, cardId: id },
       });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        console.warn('[ws:manual] Dismiss rejected by server, rolling back state:', data.error);
-        void fetchCards();
-      }
     } catch (err) {
-      console.error('[ws:manual] Error dismissing card:', err);
+      console.warn('[ws:manual] Dismiss rejected, rolling back state:', err);
       void fetchCards();
     }
   }, [validSessionId, token, fetchCards]);
@@ -240,8 +215,21 @@ export function useSuggestionSocket(
       socket.onclose = (event) => {
         if (isCleanup) return;
         setConnected(false);
+
+        // The hub closes with these when the token no longer stands up: the
+        // account was revoked or a release drew a logout line under this
+        // session. Reconnecting would loop forever against an answer that is
+        // not going to change, so end the session instead.
+        if (event.code === 4401 || event.code === 4403) {
+          announceSessionEnded({
+            reason: event.code === 4403 ? 'revoked' : 'updated',
+            message: event.reason || 'Your session has ended — please sign in again',
+          });
+          return;
+        }
+
         console.warn(`[ws] Suggestion stream closed: ${event.code} ${event.reason}. Reconnecting in 3s...`);
-        
+
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current);
         }

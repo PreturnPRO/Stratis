@@ -223,9 +223,6 @@ export default function Landing({ onNavigate }: Props) {
 
           <div
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 18,
               color: colors.textDim,
               fontFamily: FONT.mono,
               fontSize: FONT.size.caption,
@@ -233,11 +230,7 @@ export default function Landing({ onNavigate }: Props) {
               marginBottom: SPACE[6],
             }}
           >
-            <span>SYS.01 - INTRODUCTION</span>
-            <span style={{ width: 1, height: 10, background: colors.border }} />
-            <span>THAI + ENGLISH</span>
-            <span style={{ width: 1, height: 10, background: colors.border }} />
-            <span>STRATIS : ONLINE</span>
+            THAI + ENGLISH
           </div>
 
           <h1
@@ -394,14 +387,9 @@ export default function Landing({ onNavigate }: Props) {
       </section>
 
       <section id="how-it-works" style={{ padding: '40px 32px 110px', maxWidth: 1040, margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 14, marginBottom: 40 }}>
-          <h2 style={{ color: colors.text, fontSize: FONT.size.title, fontWeight: 700, margin: 0 }}>
-            How Stratis works
-          </h2>
-          <span style={{ color: colors.textDim, fontFamily: FONT.mono, fontSize: FONT.size.caption, letterSpacing: LETTER_SPACING.wide }}>
-            01 — 03
-          </span>
-        </div>
+        <h2 style={{ color: colors.text, fontSize: FONT.size.title, fontWeight: 700, margin: '0 0 40px' }}>
+          How Stratis works
+        </h2>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)' }}>
           {HOW_IT_WORKS.map((col, i) => (

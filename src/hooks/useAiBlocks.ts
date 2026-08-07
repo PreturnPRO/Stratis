@@ -16,7 +16,7 @@ export interface UseAiBlocksReturn {
   append: (blocks: AIBlock[], provider?: string | null) => void;
 }
 
-import { API_BASE } from "../lib/api";
+import { apiFetch } from "../lib/http";
 
 const TIMEOUT_MS = 10_000;
 
@@ -53,42 +53,22 @@ export function useAiBlocks(): UseAiBlocksReturn {
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
     try {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-      };
-
-      if (opts?.token) {
-        headers.Authorization = `Bearer ${opts.token}`;
-      }
-
-      const res = await fetch(`${API_BASE}/api/ai/structure`, {
+      const data = await apiFetch<{ provider?: string; blocks?: AIBlock[] }>("/api/ai/structure", {
         method: "POST",
-        headers,
-        body: JSON.stringify({ input: clean }),
+        body: { input: clean },
         signal: controller.signal,
+        ...(opts?.token ? { token: opts.token } : {}),
       });
-
-      const data = (await res.json()) as {
-        ok: boolean;
-        error?: string;
-        data?: { provider: string; blocks: AIBlock[] };
-      };
 
       if (requestId !== requestIdRef.current) return;
 
-      if (!data.ok) {
-        setError(data.error ?? "AI call failed");
-        setStatus("error");
-        return;
-      }
-
-      const allBlocks: AIBlock[] = data.data?.blocks ?? [];
+      const allBlocks: AIBlock[] = data?.blocks ?? [];
 
       const renderBlocks = allBlocks.filter(
         (b) => b.type !== "QuestionSuggestion",
       );
 
-      setProvider(data.data?.provider ?? null);
+      setProvider(data?.provider ?? null);
       setBlocks((prev) => [...prev, ...renderBlocks]);
       setStatus("ok");
     } catch (err) {
