@@ -37,6 +37,20 @@ const HOW_IT_WORKS = [
   { n: '03', title: 'Record', body: 'Afterward, Stratis writes the participant summary and proposes changes to the living PM document — decisions, assumptions, risks.' },
 ]
 
+const TEAM: {
+  name: string
+  role: string
+  email: string
+  tel: string
+  photo: string
+  photoZoom: number
+  photoPos: string
+}[] = [
+  { name: 'Naphat Nirunsitirut', role: 'Interface Designer', email: 'KaifyProduction@gmail.com', tel: '+66 98 101 3409', photo: 'https://i.ibb.co/9mvscLW2/image-1.jpg', photoZoom: 1.5, photoPos: '32.5% 25%' },
+  { name: 'Thananarin Saisornthananant', role: 'Software Architect', email: 's.thananarin@gmail.com', tel: '+66 64 478 8545', photo: 'https://i.ibb.co/279tD5s4/FB-IMG-1783759688169.jpg', photoZoom: 1.5, photoPos: '55% 45%' },
+  { name: 'Phuwich Khamteja', role: 'Project Lead', email: 'subphuwich@gmail.com', tel: '+66 62 875 6868', photo: 'https://i.ibb.co/DP8FSnzS/fqs-2569-01-14-144852-111.jpg', photoZoom: 2, photoPos: '75% 45%' },
+]
+
 const STEP_COUNT = 8
 const STEP_MS = 1700
 const SETTLED_STEP = STEP_COUNT - 1
@@ -430,9 +444,116 @@ export default function Landing({ onNavigate }: Props) {
           </Button>
         </div>
       </section>
+
+      <section
+        id="about"
+        style={{
+          padding: '80px 32px 96px',
+          maxWidth: 1040,
+          margin: '0 auto',
+          borderTop: `1px solid ${colors.border}`,
+        }}
+      >
+        <h2
+          style={{
+            textAlign: 'center',
+            color: colors.textDim,
+            fontSize: FONT.size.label,
+            fontWeight: FONT.weight.medium,
+            letterSpacing: LETTER_SPACING.eyebrow,
+            textTransform: 'uppercase',
+            margin: '0 0 40px',
+          }}
+        >
+          About us
+        </h2>
+
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+            gap: 36,
+          }}
+        >
+          {TEAM.map((person) => (
+            <TeamCard key={person.email} colors={colors} shadow={shadow} person={person} />
+          ))}
+        </div>
+      </section>
     </div>
   )
 }
+
+function TeamCard({
+  colors, shadow, person,
+}: {
+  colors: Colors
+  shadow: Shadow
+  person: (typeof TEAM)[number]
+}) {
+  return (
+    <div>
+      <div
+        role="img"
+        aria-label={person.name}
+        style={{
+          width: '100%',
+          height: 300,
+          borderRadius: 18,
+          marginBottom: 22,
+          border: `1px solid ${colors.border}`,
+          background: colors.border,
+          backgroundImage: `url('${person.photo}')`,
+          backgroundRepeat: 'no-repeat',
+          backgroundSize: `${person.photoZoom * 100}%`,
+          backgroundPosition: person.photoPos,
+        }}
+      />
+
+      <div
+        style={{
+          height: 200,
+          borderRadius: 14,
+          padding: 22,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          background: colors.surface,
+          border: `1px solid ${colors.border}`,
+          boxShadow: shadow.shadCard,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, color: colors.accent }}>
+          <Zap size={18} strokeWidth={2} />
+          <span style={{ color: colors.text, fontSize: FONT.size.label, fontWeight: FONT.weight.bold, letterSpacing: 2.6 }}>
+            STRATIS
+          </span>
+        </div>
+
+        <div>
+          <div style={{ width: 32, height: 2, background: colors.accent, borderRadius: 1, margin: '14px 0' }} />
+          <div style={{ color: colors.text, fontSize: FONT.size.subheading, fontWeight: FONT.weight.bold, letterSpacing: -0.3 }}>
+            {person.name}
+          </div>
+          <div style={{ color: colors.textMuted, fontSize: FONT.size.label, marginTop: 3 }}>
+            {person.role}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 14, color: colors.textMuted, fontSize: FONT.size.caption }}>
+          <a href={`mailto:${person.email}`} style={contactLinkStyle}>
+            {person.email}
+          </a>
+          <a href={`tel:${person.tel.replace(/[^+\d]/g, '')}`} style={contactLinkStyle}>
+            {person.tel}
+          </a>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const contactLinkStyle = { color: 'inherit', textDecoration: 'none' } as const
 
 function navLinkStyle(colors: Colors) {
   return {
