@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { Zap, ChevronDown, Sun, Moon } from 'lucide-react'
+import { Zap, ChevronDown, Sun, Moon, Languages } from 'lucide-react'
 import { FONT, LETTER_SPACING, RADIUS, SPACE } from '../tokens/colors'
 import { Button } from '../components/ui'
 import { useTheme } from '../hooks/useTheme'
+import { useLang, OTHER_LANG_LABEL } from '../hooks/useLang'
 import AmbientBackground from '../components/AmbientBackground'
 
 type Colors = ReturnType<typeof useTheme>['colors']
@@ -83,6 +84,7 @@ function scrollToId(id: string) {
 
 export default function Landing({ onNavigate }: Props) {
   const { theme, toggleTheme, colors, shadow } = useTheme()
+  const { lang, toggleLang } = useLang()
   const reducedMotion = usePrefersReducedMotion()
   const [step, setStep] = useState(0)
 
@@ -205,6 +207,28 @@ export default function Landing({ onNavigate }: Props) {
           >
             {theme === 'dark' ? <Sun size={15} strokeWidth={2} /> : <Moon size={15} strokeWidth={2} />}
           </button>
+          <button
+            onClick={toggleLang}
+            aria-label="Switch language"
+            title="Switch language"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 5,
+              height: 30,
+              padding: '0 6px',
+              borderRadius: RADIUS.sm,
+              background: 'transparent',
+              border: 'none',
+              color: colors.textMuted,
+              fontSize: FONT.size.label,
+              fontWeight: FONT.weight.bold,
+              cursor: 'pointer',
+            }}
+          >
+            <Languages size={15} strokeWidth={2} />
+            {OTHER_LANG_LABEL[lang]}
+          </button>
           <div style={{ display: 'inline-block' }}>
             <Button variant="primary" size="sm" onClick={() => onNavigate('register')}>
               Get started
@@ -248,6 +272,9 @@ export default function Landing({ onNavigate }: Props) {
           </div>
 
           <h1
+            // Stays English in both languages, and it is split into per-word
+            // spans for the reveal animation, so the translator must skip it.
+            data-no-translate
             style={{
               color: colors.text,
               fontSize: 'clamp(34px, 5.2vw, 56px)',
