@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { RADIUS, FONT, LETTER_SPACING, SPACE } from "../tokens/colors";
 import { Button, Modal } from "../components/ui";
 import { NewMeetingModal } from "../components/NewMeetingModal";
@@ -6,7 +6,8 @@ import { useAuth } from "../context/AuthContext";
 import { useCreateMeeting } from "../hooks/useCreateMeeting";
 import { useTheme } from "../hooks/useTheme";
 import AmbientBackground from "../components/AmbientBackground";
-import { API_BASE } from "../lib/api";
+import { useCachedQuery } from "../lib/cache";
+import { apiFetch } from "../lib/http";
 
 interface Props {
   onNav?: (id: string, params?: Record<string, string>) => void;
@@ -37,14 +38,7 @@ export default function Projects({ onNav }: Props) {
   const { token, user } = useAuth();
   const dotColors = [colors.accent, colors.teal, colors.cyan, colors.orange, colors.red];
 
-  const authHeaders = useMemo(
-    (): Record<string, string> => (token ? { Authorization: `Bearer ${token}` } : {}),
-    [token],
-  );
-
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [writeError, setWriteError] = useState<string | null>(null);
 
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState("");
@@ -53,48 +47,29 @@ export default function Projects({ onNav }: Props) {
   const [newMeetingProject, setNewMeetingProject] = useState<Project | null>(null);
   const create = useCreateMeeting(onNav);
 
-  const load = useCallback(async () => {
-    if (!token) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`${API_BASE}/api/meeting/projects`, { headers: authHeaders });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        setError(data.error ?? "Could not load projects");
-        return;
-      }
-      setProjects(data.data?.projects ?? []);
-    } catch {
-      setError("Could not reach the server");
-    } finally {
-      setLoading(false);
-    }
-  }, [token, authHeaders]);
+  const query = useCachedQuery<{ projects?: Project[] }>(
+    "projects",
+    useCallback(() => apiFetch<{ projects?: Project[] }>("/api/meeting/projects"), []),
+    { scope: user?.id, enabled: Boolean(token) },
+  );
 
-  useEffect(() => { void load(); }, [load]);
+  const projects = useMemo(() => query.data?.projects ?? [], [query.data]);
+  const load = query.refresh;
+  const loading = query.loading;
+  const error = writeError ?? query.error;
 
   const handleCreate = async () => {
     const name = newName.trim();
     if (!name) return;
     setCreating(true);
-    setError(null);
+    setWriteError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/meeting/projects`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders },
-        body: JSON.stringify({ name }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) {
-        setError(data.error ?? "Could not create project");
-        return;
-      }
+      await apiFetch("/api/meeting/projects", { method: "POST", body: { name } });
       setShowNew(false);
       setNewName("");
       await load();
-    } catch {
-      setError("Could not reach the server");
+    } catch (err) {
+      setWriteError(err instanceof Error ? err.message : "Could not create project");
     } finally {
       setCreating(false);
     }

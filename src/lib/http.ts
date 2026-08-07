@@ -58,6 +58,11 @@ export interface ApiFetchOptions extends Omit<RequestInit, "body"> {
   anonymous?: boolean;
   /** Use this token instead of the stored one (guest links). */
   token?: string | null;
+  /**
+   * Treat a rejection as this call's problem rather than the session's. Set by
+   * the boot check, which decides for itself what to do with a dead token.
+   */
+  silentSessionEnd?: boolean;
 }
 
 /**
@@ -68,8 +73,13 @@ export interface ApiFetchOptions extends Omit<RequestInit, "body"> {
  * session the server has ended — are handled in one place.
  */
 export async function apiFetch<T = unknown>(path: string, options: ApiFetchOptions = {}): Promise<T> {
-  const { body, anonymous, token: explicitToken, headers, ...rest } = options;
+  const { body, anonymous, token: explicitToken, silentSessionEnd, headers, ...rest } = options;
   const token = anonymous ? null : explicitToken ?? readToken();
+
+  // Only a call that carried *our* stored token can tell us anything about our
+  // session. A rejected login attempt and an expired guest link are both 401s,
+  // and neither is a reason to sign the account holder out.
+  const speaksForSession = !anonymous && !explicitToken && !silentSessionEnd && token !== null;
 
   const response = await fetch(`${API_BASE}${path}`, {
     ...rest,
@@ -88,20 +98,22 @@ export async function apiFetch<T = unknown>(path: string, options: ApiFetchOptio
     payload = null;
   }
 
-  if (!response.ok) {
+  if (!response.ok || payload?.ok === false) {
     const code = payload?.code;
     const message = payload?.error ?? `Request failed (${response.status})`;
 
-    if (response.status === 401 || code === "TOKEN_REVOKED") {
-      announceSessionEnded({
-        reason: code === "TOKEN_REVOKED" ? "updated" : "expired",
-        message,
-      });
-    } else if (code === "ACCOUNT_REVOKED" || code === "ACCOUNT_SUSPENDED") {
-      announceSessionEnded({
-        reason: code === "ACCOUNT_REVOKED" ? "revoked" : "suspended",
-        message,
-      });
+    if (speaksForSession) {
+      if (response.status === 401 || code === "TOKEN_REVOKED") {
+        announceSessionEnded({
+          reason: code === "TOKEN_REVOKED" ? "updated" : "expired",
+          message,
+        });
+      } else if (code === "ACCOUNT_REVOKED" || code === "ACCOUNT_SUSPENDED") {
+        announceSessionEnded({
+          reason: code === "ACCOUNT_REVOKED" ? "revoked" : "suspended",
+          message,
+        });
+      }
     }
 
     throw new ApiError(message, response.status, code, payload?.data);

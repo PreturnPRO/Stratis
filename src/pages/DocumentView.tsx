@@ -12,9 +12,16 @@ import {
   type PmDocumentState,
   type PmDocumentVersion,
 } from '../../shared/types'
-import { API_BASE } from '../lib/api'
+import { apiFetch } from '../lib/http'
 
 type Decision = 'pending' | 'approved' | 'rejected'
+
+interface DocumentPayload {
+  document: { state: PmDocumentState; sections?: PmDocumentState['sections']; version: number }
+  versions?: PmDocumentVersion[]
+  projectId?: string | null
+  proposed?: DocumentPatchOutput
+}
 
 interface PatchReview {
   patch: DocumentPatchDTO
@@ -45,16 +52,11 @@ function humanizeProjectId(id?: string | null): string {
 export default function DocumentView({ sessionId, projectId, onNav }: Props) {
   const { colors } = useTheme()
   const styles = useMemo(() => makeStyles(colors), [colors])
-  const { token, user } = useAuth()
+  const { user } = useAuth()
   const isFacilitator = user?.role === 'facilitator' || user?.role === 'admin'
 
   const onNavRef = useRef(onNav)
   useEffect(() => { onNavRef.current = onNav }, [onNav])
-
-  const authHeaders = useMemo(
-    (): Record<string, string> => (token ? { Authorization: `Bearer ${token}` } : {}),
-    [token],
-  )
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -86,27 +88,20 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
       setLoading(true)
       setError(null)
       try {
-        const res = await fetch(`${API_BASE}/api/document/${pid}`, { headers: authHeaders })
-        const data = await res.json()
-        if (!res.ok || !data.ok) {
-          setError(data.error ?? 'No document yet for this project')
-          setDocState(null)
-          setActiveProjectId(pid)
-          onNavRef.current?.('document', { projectId: pid })
-          return
-        }
-        setDocState(data.data.document.state)
-        setVersion(data.data.document.version)
-        setVersions(data.data.versions ?? [])
+        const data = await apiFetch<DocumentPayload>(`/api/document/${pid}`)
+        setDocState(data.document.state)
+        setVersion(data.document.version)
+        setVersions(data.versions ?? [])
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'No document yet for this project')
+        setDocState(null)
+      } finally {
         setActiveProjectId(pid)
         onNavRef.current?.('document', { projectId: pid })
-      } catch {
-        setError('Could not reach the server')
-      } finally {
         setLoading(false)
       }
     },
-    [authHeaders],
+    [],
   )
 
   const generate = useCallback(
@@ -114,48 +109,45 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
       setLoading(true)
       setError(null)
       try {
-        const res = await fetch(`${API_BASE}/api/document/session/${sid}/generate`, {
+        const data = await apiFetch<DocumentPayload>(`/api/document/session/${sid}/generate`, {
           method: 'POST',
-          headers: authHeaders,
         })
-        const data = await res.json()
-        if (!res.ok || !data.ok) {
-          setError(data.error ?? 'Could not generate document update')
-          return
-        }
-        setDocState({ sections: data.data.document.sections })
-        setVersion(data.data.document.version ?? 0)
-        setVersions(data.data.versions ?? [])
-        setActiveProjectId(data.data.projectId ?? null)
-        const out: DocumentPatchOutput = data.data.proposed
-        setProposed(out)
+        setDocState(
+          data.document.sections
+            ? { sections: data.document.sections }
+            : data.document.state ?? null,
+        )
+        setVersion(data.document.version ?? 0)
+        setVersions(data.versions ?? [])
+        setActiveProjectId(data.projectId ?? null)
+        const out = data.proposed
+        setProposed(out ?? null)
         setReviews(
-          out.patches.map((p) => ({
+          (out?.patches ?? []).map((p) => ({
             patch: p, decision: 'pending', content: p.new_content, editing: false,
           })),
         )
-      } catch {
-        setError('Could not reach the server')
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not generate document update')
       } finally {
         setLoading(false)
       }
     },
-    [authHeaders],
+    [],
   )
 
   const loadPicker = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`${API_BASE}/api/meeting/projects`, { headers: authHeaders })
-      const data = await res.json()
-      setPicker(res.ok && data.ok ? (data.data?.projects ?? []) : [])
-    } catch {
-      setError('Could not reach the server')
+      const data = await apiFetch<{ projects?: typeof picker }>('/api/meeting/projects')
+      setPicker(data?.projects ?? [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not reach the server')
     } finally {
       setLoading(false)
     }
-  }, [authHeaders])
+  }, [])
 
   useEffect(() => {
     if (sessionId) void generate(sessionId)
@@ -193,24 +185,21 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
       const patches = reviews
         .filter((r) => r.decision === 'approved')
         .map((r) => ({ ...r.patch, new_content: r.content }))
-      const res = await fetch(`${API_BASE}/api/document/session/${sessionId}/commit`, {
+      const data = await apiFetch<DocumentPayload>(`/api/document/session/${sessionId}/commit`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders },
-        body: JSON.stringify({
+        body: {
           patches,
           overall_change_summary: proposed?.overall_change_summary ?? '',
-        }),
+        },
       })
-      const data = await res.json()
-      if (!res.ok || !data.ok) { setError(data.error ?? 'Could not save the document'); return }
-      setDocState(data.data.document.state)
-      setVersion(data.data.document.version)
-      setVersions(data.data.versions ?? [])
+      setDocState(data.document.state)
+      setVersion(data.document.version)
+      setVersions(data.versions ?? [])
       const remaining = reviews.filter((r) => r.decision !== 'approved')
       setReviews(remaining)
       if (remaining.length === 0) setProposed(null)
-    } catch {
-      setError('Could not reach the server')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the document')
     } finally {
       setBusy(false)
     }
@@ -226,17 +215,14 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
     setSavingDoc(true)
     setError(null)
     try {
-      const res = await fetch(`${API_BASE}/api/document/${activeProjectId}/section`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', ...authHeaders },
-        body: JSON.stringify({ sectionKey: editSectionKey, content: editContent }),
-      })
-      const data = await res.json()
-      if (!res.ok || !data.ok) { setError(data.error ?? 'Could not save section'); return }
-      if (data.data?.document?.state) setDocState(data.data.document.state)
+      const data = await apiFetch<Partial<DocumentPayload>>(
+        `/api/document/${activeProjectId}/section`,
+        { method: 'PATCH', body: { sectionKey: editSectionKey, content: editContent } },
+      )
+      if (data?.document?.state) setDocState(data.document.state)
       setEditSectionKey(null)
-    } catch {
-      setError('Could not reach the server')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save section')
     } finally {
       setSavingDoc(false)
     }
@@ -247,12 +233,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
     setRemovingDoc(true)
     setError(null)
     try {
-      const res = await fetch(`${API_BASE}/api/document/${activeProjectId}`, {
-        method: 'DELETE',
-        headers: authHeaders,
-      })
-      const data = await res.json()
-      if (!res.ok || !data.ok) { setError(data.error ?? 'Could not delete document'); return }
+      await apiFetch(`/api/document/${activeProjectId}`, { method: 'DELETE' })
       setShowRemoveDoc(false)
       setDocState(null)
       setVersions([])
@@ -261,8 +242,8 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
       setActiveProjectId(null)
       if (sessionId) onNavRef.current?.('dashboard')
       else onNavRef.current?.('projects')
-    } catch {
-      setError('Could not reach the server')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete document')
     } finally {
       setRemovingDoc(false)
     }
@@ -277,16 +258,16 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
       if (!activeProjectId) return
       setError(null)
       try {
-        const res = await fetch(`${API_BASE}/api/document/${activeProjectId}/version/${v}`, { headers: authHeaders })
-        const data = await res.json()
-        if (!res.ok || !data.ok) { setError(data.error ?? 'Could not load that version'); return }
-        setViewState(data.data.state)
+        const data = await apiFetch<{ state: PmDocumentState }>(
+          `/api/document/${activeProjectId}/version/${v}`,
+        )
+        setViewState(data.state)
         setViewingVersion(v)
-      } catch {
-        setError('Could not reach the server')
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not load that version')
       }
     },
-    [activeProjectId, authHeaders],
+    [activeProjectId],
   )
 
   const exitVersionView = () => {
@@ -299,20 +280,17 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
     setRestoring(true)
     setError(null)
     try {
-      const res = await fetch(`${API_BASE}/api/document/${activeProjectId}/restore`, {
+      const data = await apiFetch<DocumentPayload>(`/api/document/${activeProjectId}/restore`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders },
-        body: JSON.stringify({ version: v }),
+        body: { version: v },
       })
-      const data = await res.json()
-      if (!res.ok || !data.ok) { setError(data.error ?? 'Could not restore that version'); return }
-      setDocState(data.data.document.state)
-      setVersion(data.data.document.version)
-      setVersions(data.data.versions ?? [])
+      setDocState(data.document.state)
+      setVersion(data.document.version)
+      setVersions(data.versions ?? [])
       setShowRestore(null)
       exitVersionView()
-    } catch {
-      setError('Could not reach the server')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not restore that version')
     } finally {
       setRestoring(false)
     }

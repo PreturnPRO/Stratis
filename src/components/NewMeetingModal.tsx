@@ -4,7 +4,7 @@ import { FONT, LETTER_SPACING, RADIUS, SPACE, tint } from "../tokens/colors";
 import { Button, Chip, Modal } from "./ui";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
-import { API_BASE } from "../lib/api";
+import { apiFetch } from "../lib/http";
 import { DURATION_PRESETS } from "../hooks/useCreateMeeting";
 
 export interface LockedProject {
@@ -238,13 +238,10 @@ export function NewMeetingModal({
     if (!open || lockedProject || !token) return;
 
     let cancelled = false;
-    fetch(`${API_BASE}/api/meeting/projects`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => (res.ok ? res.json() : null))
+    apiFetch<{ projects?: ProjectMatch[] }>("/api/meeting/projects")
       .then((data) => {
-        if (cancelled || !data?.ok) return;
-        setProjects(data.data?.projects ?? []);
+        if (cancelled) return;
+        setProjects(data?.projects ?? []);
       })
       .catch(() => {
         if (!cancelled) setProjects([]);
@@ -259,13 +256,10 @@ export function NewMeetingModal({
     if (!open || !lockedProject || !token) return;
 
     let cancelled = false;
-    fetch(`${API_BASE}/api/document/${lockedProject.id}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => (res.ok ? res.json() : null))
+    apiFetch<{ document?: { version?: number | null } }>(`/api/document/${lockedProject.id}`)
       .then((data) => {
         if (cancelled) return;
-        setDocVersion(data?.ok ? (data.data?.document?.version ?? null) : null);
+        setDocVersion(data?.document?.version ?? null);
       })
       .catch(() => {
         if (!cancelled) setDocVersion(null);

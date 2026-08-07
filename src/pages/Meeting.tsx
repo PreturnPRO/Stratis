@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Mic, Square, ChevronDown, ClipboardCheck } from "lucide-react";
+import type { AIBlock } from "../../shared/types";
 import { FONT, SHADOW, LETTER_SPACING, RADIUS, SPACE } from "../tokens/colors";
 import { useTheme } from "../hooks/useTheme";
 import { Button, Chip, Modal } from "../components/ui";
@@ -23,7 +24,7 @@ import { useMediaRecorder } from "../hooks/useMediaRecorder";
 import { usePcmStream } from "../hooks/usePcmStream";
 import { mergeTranscripts } from "../lib/mergeTranscripts";
 import { loadSeen, saveSeen, shouldInterruptEnd, unreviewedIds } from "../lib/checkpointReview";
-import { API_BASE } from "../lib/api";
+import { apiFetch } from "../lib/http";
 
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 
@@ -64,6 +65,11 @@ interface TranscriptRow {
   speaker: string;
   text: string;
   timestamp: string;
+}
+
+interface AudioChunkResult {
+  transcript?: TranscriptRow;
+  ai?: { blocks?: AIBlock[]; provider?: string | null };
 }
 
 function isRealSessionId(value: string | null | undefined): value is string {
@@ -204,10 +210,6 @@ export default function Meeting({ onNav }: MeetingProps) {
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
   const [stickToBottom, setStickToBottom] = useState(true);
 
-  const authHeaders = useMemo((): Record<string, string> => {
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }, [token]);
-
   const transcriptGroups = useMemo(() => {
     const groups: Array<{ id: string; speaker: string; timestamp: string; text: string }> = [];
     let prevMs = NaN;
@@ -339,33 +341,26 @@ export default function Meeting({ onNav }: MeetingProps) {
     setPendingText("Transcribing…");
     try {
       const audioBase64 = await blobToBase64(blob);
-      const response = await fetch(`${API_BASE}/api/transcript/audio-chunk`, {
+      const payload = await apiFetch<AudioChunkResult>("/api/transcript/audio-chunk", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...authHeaders,
-        },
-        body: JSON.stringify({
+        body: {
           sessionId,
           session_id: sessionId,
           audioBase64,
           mimeType: blob.type || "audio/webm",
           speaker: user?.name || "Facilitator",
-        }),
+        },
       });
 
-      const payload = await response.json();
-      if (response.ok && payload.ok && payload.data?.transcript) {
-        appendTranscript(payload.data.transcript);
+      if (payload?.transcript) {
+        appendTranscript(payload.transcript);
         setLastSpeechMs(Date.now());
-        if (payload.data.ai?.blocks) {
-          ai.append(payload.data.ai.blocks, payload.data.ai.provider);
+        if (payload.ai?.blocks) {
+          ai.append(payload.ai.blocks, payload.ai.provider);
         }
-      } else if (!payload.ok) {
-        console.warn("[speech:audio] Pipeline rejected chunk:", payload.error);
       }
     } catch (err) {
-      console.error("[speech:audio] Connection fault:", err);
+      console.warn("[speech:audio] Chunk rejected:", err);
     } finally {
       inFlightChunksRef.current -= 1;
       if (inFlightChunksRef.current === 0) {
@@ -373,7 +368,7 @@ export default function Meeting({ onNav }: MeetingProps) {
         setPendingText("");
       }
     }
-  }, [token, sessionId, authHeaders, user?.name, appendTranscript, ai]);
+  }, [token, sessionId, user?.name, appendTranscript, ai]);
   
   const {
     error: recError,
@@ -447,22 +442,18 @@ export default function Meeting({ onNav }: MeetingProps) {
     setLoadingTranscript(true);
     setError(null);
     try {
-      const response = await fetch(`${API_BASE}/api/transcript/session/${sessionId}`, {
-        headers: authHeaders,
-      });
-      const payload = await response.json();
-      if (response.ok && payload.ok) {
-        setTranscripts(payload.data?.transcripts || []);
-      } else {
-        setError(payload.error || "Failed to restore previous session transcript rows.");
-      }
+      const payload = await apiFetch<{ transcripts?: TranscriptRow[] }>(
+        `/api/transcript/session/${sessionId}`,
+      );
+      setTranscripts(payload?.transcripts || []);
     } catch (err) {
-      console.error("[meeting] Error recovery loading transcripts:", err);
-      setError("Network error fetching past transcript data.");
+      setError(
+        err instanceof Error ? err.message : "Failed to restore previous session transcript rows.",
+      );
     } finally {
       setLoadingTranscript(false);
     }
-  }, [sessionId, token, authHeaders]);
+  }, [sessionId, token]);
 
   useEffect(() => {
     if (sessionId) {
@@ -473,18 +464,14 @@ export default function Meeting({ onNav }: MeetingProps) {
   const backfillTranscript = useCallback(async () => {
     if (!token || !sessionId) return;
     try {
-      const response = await fetch(`${API_BASE}/api/transcript/session/${sessionId}`, {
-        headers: authHeaders,
-      });
-      const payload = await response.json();
-      if (response.ok && payload.ok) {
-        const rows: TranscriptRow[] = payload.data?.transcripts || [];
-        setTranscripts((prev) => mergeTranscripts(prev, rows));
-      }
+      const payload = await apiFetch<{ transcripts?: TranscriptRow[] }>(
+        `/api/transcript/session/${sessionId}`,
+      );
+      setTranscripts((prev) => mergeTranscripts(prev, payload?.transcripts || []));
     } catch (err) {
       console.error("[meeting] Transcript backfill on reconnect failed:", err);
     }
-  }, [sessionId, token, authHeaders]);
+  }, [sessionId, token]);
 
   const hadConnectionRef = useRef(false);
   useEffect(() => {
@@ -500,16 +487,13 @@ export default function Meeting({ onNav }: MeetingProps) {
     if (!sessionId || !token) return;
     const pingStartEndpoint = async () => {
       try {
-        await fetch(`${API_BASE}/api/session/${sessionId}/start`, {
-          method: "POST",
-          headers: authHeaders,
-        });
+        await apiFetch(`/api/session/${sessionId}/start`, { method: "POST" });
       } catch (e) {
         console.warn("[meeting] Start ping synchronization failed:", e);
       }
     };
     void pingStartEndpoint();
-  }, [sessionId, token, authHeaders]);
+  }, [sessionId, token]);
 
   useEffect(() => {
     if (!sessionId) {
@@ -576,23 +560,14 @@ useEffect(() => {
     setEnding(true);
     stopListening();
     try {
-      const response = await fetch(`${API_BASE}/api/session/${sessionId}/end`, {
-        method: "POST",
-        headers: authHeaders,
-      });
-      const payload = await response.json();
-      if (response.ok && payload.ok) {
-        window.localStorage.removeItem(ACTIVE_SESSION_KEY);
-        recovery.clearRecoveredSession();
-        if (onNav) {
-          onNav("document", { sessionId });
-        }
-      } else {
-        setError(payload.error || "Failed to finalize session.");
+      await apiFetch(`/api/session/${sessionId}/end`, { method: "POST" });
+      window.localStorage.removeItem(ACTIVE_SESSION_KEY);
+      recovery.clearRecoveredSession();
+      if (onNav) {
+        onNav("document", { sessionId });
       }
     } catch (e) {
-      console.error("[meeting:end] connection error:", e);
-      setError("An unexpected network error occurred ending the session.");
+      setError(e instanceof Error ? e.message : "Failed to finalize session.");
     } finally {
       setEnding(false);
       setShowEndConfirm(false);

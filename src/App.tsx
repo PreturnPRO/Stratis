@@ -8,7 +8,8 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { useTheme, ThemeProvider } from "./hooks/useTheme";
 import { useUpdateGuard } from "./hooks/useUpdateGuard";
 import { installTrackFlush, track } from "./lib/track";
-import { API_BASE } from "./lib/api";
+import { apiFetch } from "./lib/http";
+import type { User } from "@shared/types";
 
 const Landing = lazy(() => import("./pages/Landing"));
 const Login = lazy(() => import("./pages/Login"));
@@ -173,11 +174,12 @@ function OAuthLanding({
       return;
     }
 
-    void fetch(`${API_BASE}/api/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(async (res) => {
-        const body = await res.json();
-        if (!res.ok || !body?.data) throw new Error(body?.error ?? "Could not finish signing in");
-        login(token, body.data);
+    // The token is the one we were just handed, not a stored session, so a
+    // rejection here is a failed sign-in — not a session to end.
+    void apiFetch<User>("/api/auth/me", { token })
+      .then((user) => {
+        if (!user) throw new Error("Could not finish signing in");
+        login(token, user);
         window.history.replaceState(null, "", "#/dashboard");
         onDone(null);
       })

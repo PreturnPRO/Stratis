@@ -16,6 +16,7 @@ import {
 import { LoadingState } from "../components/states";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
+import { useCachedQuery } from "../lib/cache";
 import { ApiError, apiFetch } from "../lib/http";
 import { track } from "../lib/track";
 import { FONT, SPACE } from "../tokens/colors";
@@ -35,28 +36,27 @@ const TABS = [
 
 export default function Settings({ onNav }: { onNav?: (id: string, params?: Record<string, string>) => void }) {
   const { colors } = useTheme();
-  const { refreshUser, subscription, refreshSubscription } = useAuth();
+  const { user, refreshUser, subscription, refreshSubscription } = useAuth();
   const [tab, setTab] = useState("profile");
-  const [data, setData] = useState<ProfileResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      setData(await apiFetch<ProfileResponse>("/api/profile"));
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load your settings");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // Your own settings are the last thing that should need a round trip to be
+  // readable. The cached copy is shown at once and corrected in place when the
+  // server answers, so a slow or unreachable backend costs you freshness
+  // rather than the whole screen.
+  const query = useCachedQuery<ProfileResponse>(
+    "profile",
+    useCallback(() => apiFetch<ProfileResponse>("/api/profile"), []),
+    { scope: user?.id },
+  );
+
+  const data = query.data;
+  const loading = query.loading;
+  const error = query.error;
+  const load = query.refresh;
 
   useEffect(() => {
-    void load();
     track("page_viewed", { page: "settings" }, "settings");
-  }, [load]);
+  }, []);
 
   if (loading && !data) {
     return (
@@ -71,7 +71,13 @@ export default function Settings({ onNav }: { onNav?: (id: string, params?: Reco
       title="Settings"
       subtitle={data ? `${data.profile.email} · ${data.organization.name}` : undefined}
     >
-      {error && <Banner tone="danger">{error}</Banner>}
+      {error && (
+        <Banner tone={data ? "info" : "danger"}>
+          {data
+            ? `Showing your last saved settings — we could not reach the server (${error})`
+            : error}
+        </Banner>
+      )}
       <TabBar tabs={TABS} active={tab} onChange={setTab} />
 
       {tab === "profile" && data && (
@@ -212,14 +218,18 @@ function PreferencesTab({ initial }: { initial: UserSettings }) {
   const [message, setMessage] = useState<string | null>(null);
 
   const update = async (patch: Partial<UserSettings>) => {
-    const next = { ...settings, ...patch };
-    setSettings(next);
+    // Move the control now — a toggle that waits on the network feels broken.
+    // But if the write is refused, put it back: a switch left showing ON for a
+    // preference the server never accepted is a lie the user acts on later.
+    const previous = settings;
+    setSettings({ ...settings, ...patch });
     setSaving(true);
     try {
       await apiFetch("/api/profile/settings", { method: "PATCH", body: patch });
       setMessage("Saved");
       setTimeout(() => setMessage(null), 1500);
     } catch {
+      setSettings(previous);
       setMessage("Could not save that");
     } finally {
       setSaving(false);

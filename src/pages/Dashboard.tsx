@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { FONT, LETTER_SPACING, RADIUS, SPACE } from "../tokens/colors";
 import { Button } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
@@ -8,7 +8,8 @@ import { useCreateMeeting, ACTIVE_SESSION_KEY, projectIdFromTitle } from "../hoo
 import { useTheme } from "../hooks/useTheme";
 import AmbientBackground from "../components/AmbientBackground";
 
-import { API_BASE } from "../lib/api";
+import { useCachedQuery } from "../lib/cache";
+import { apiFetch } from "../lib/http";
 
 type Colors = ReturnType<typeof useTheme>["colors"];
 
@@ -365,70 +366,42 @@ export default function Dashboard({ onNav }: DashboardProps) {
   const { token, user } = useAuth();
   const { theme, colors } = useTheme();
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [meetings, setMeetings] = useState<DashboardMeeting[]>([]);
-  const [summaries, setSummaries] = useState<DashboardSummary[]>([]);
+  const [startError, setStartError] = useState<string | null>(null);
   const [showNewMeeting, setShowNewMeeting] = useState(false);
-
-  const authHeaders = useMemo((): Record<string, string> => {
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  }, [token]);
 
   const create = useCreateMeeting(onNav);
 
-  const loadDashboard = async () => {
-    if (!token) return;
+  // Last night's dashboard is a better first frame than an empty one: it paints
+  // immediately and is replaced the moment the server answers.
+  const dashboard = useCachedQuery<DashboardPayload>(
+    "dashboard",
+    useCallback(() => apiFetch<DashboardPayload>("/api/meeting/dashboard"), []),
+    { scope: user?.id, enabled: Boolean(token) },
+  );
 
-    setLoading(true);
-    setError(null);
+  const loadDashboard = dashboard.refresh;
 
-    try {
-      const res = await fetch(`${API_BASE}/api/meeting/dashboard`, {
-        headers: authHeaders,
-      });
+  const meetings = useMemo<DashboardMeeting[]>(() => {
+    const payload = dashboard.data;
+    return payload?.upcomingMeetings ?? payload?.upcoming ?? payload?.meetings ?? [];
+  }, [dashboard.data]);
 
-      const data: {
-        ok: boolean;
-        error?: string;
-        data?: DashboardPayload;
-      } = await res.json();
+  const summaries = useMemo<DashboardSummary[]>(() => {
+    const payload = dashboard.data;
+    return (
+      payload?.summaries ??
+      (payload?.recentSummaries ?? []).map((summary) => ({
+        id: summary.id,
+        sessionId: summary.session_id ?? undefined,
+        title: summary.title,
+        project: summary.project_id ?? summary.meeting_title ?? "Project summary",
+        date: summary.created_at,
+      }))
+    );
+  }, [dashboard.data]);
 
-      if (!data.ok) {
-        setError(data.error ?? "Could not load dashboard");
-        return;
-      }
-
-      const dashboardData = data.data;
-
-      setMeetings(
-        dashboardData?.upcomingMeetings ??
-          dashboardData?.upcoming ??
-          dashboardData?.meetings ??
-          [],
-      );
-
-      setSummaries(
-        dashboardData?.summaries ??
-          (dashboardData?.recentSummaries ?? []).map((summary) => ({
-            id: summary.id,
-            sessionId: summary.session_id ?? undefined,
-            title: summary.title,
-            project:
-              summary.project_id ?? summary.meeting_title ?? "Project summary",
-            date: summary.created_at,
-          })),
-      );
-    } catch {
-      setError("Could not reach backend");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    void loadDashboard();
-  }, [token]);
+  const loading = dashboard.loading;
+  const error = startError ?? dashboard.error;
 
   // No `?? s.id` fallback here: s.id is the SUMMARY's id, and passing it as a
   // sessionId guarantees a 404 on the page we just navigated to. A card with no
@@ -439,7 +412,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
   };
 
   const handleStartExisting = async (meeting: DashboardMeeting) => {
-    setError(null);
+    setStartError(null);
 
     try {
       if (meeting.activeSession?.id) {
@@ -453,7 +426,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
 
       await create.startSessionForMeeting(meeting.id, 60);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not start meeting");
+      setStartError(err instanceof Error ? err.message : "Could not start meeting");
     }
   };
 
