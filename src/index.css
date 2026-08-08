@@ -308,19 +308,22 @@ body[data-theme="light"] .transcript-scroll:hover {
   overflow: hidden;
 }
 
+/* Drift the grid with a transform, not background-position: the latter
+   repaints the whole viewport every frame (that alone was most of the idle
+   CPU burn). The layer is inset by one tile so the translate stays seamless. */
 @keyframes ambGridDrift {
-  from { background-position: 0 0, 0 0; }
-  to   { background-position: 52px 52px, 52px 52px; }
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(52px, 52px, 0); }
 }
 
 @keyframes ambA {
-  0%   { transform: translate(0, 0) scale(1); }
-  100% { transform: translate(-8%, 8%) scale(1.18); }
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  100% { transform: translate3d(-8%, 8%, 0) scale(1.18); }
 }
 
 @keyframes ambB {
-  0%   { transform: translate(0, 0) scale(1); }
-  100% { transform: translate(8%, -8%) scale(1.18); }
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  100% { transform: translate3d(8%, -8%, 0) scale(1.18); }
 }
 
 .scroll-cue {
