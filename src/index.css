@@ -308,19 +308,22 @@ body[data-theme="light"] .transcript-scroll:hover {
   overflow: hidden;
 }
 
+/* Drift the grid with a transform, not background-position: the latter
+   repaints the whole viewport every frame (that alone was most of the idle
+   CPU burn). The layer is inset by one tile so the translate stays seamless. */
 @keyframes ambGridDrift {
-  from { background-position: 0 0, 0 0; }
-  to   { background-position: 52px 52px, 52px 52px; }
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(52px, 52px, 0); }
 }
 
 @keyframes ambA {
-  0%   { transform: translate(0, 0) scale(1); }
-  100% { transform: translate(-8%, 8%) scale(1.18); }
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  100% { transform: translate3d(-8%, 8%, 0) scale(1.18); }
 }
 
 @keyframes ambB {
-  0%   { transform: translate(0, 0) scale(1); }
-  100% { transform: translate(8%, -8%) scale(1.18); }
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  100% { transform: translate3d(8%, -8%, 0) scale(1.18); }
 }
 
 .scroll-cue {
@@ -374,3 +377,25 @@ body[data-theme="light"] .transcript-scroll:hover {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* ── Thai sizing ──────────────────────────────────────────────────────────── */
+
+/* Thai reads smaller than Latin at the same pixel size and its vowel and tone
+   marks need more vertical room, so every size goes up 2px while Thai is on.
+   The sizes live in inline styles (tokens/colors.ts), which is why these match
+   on the style attribute rather than on a class. */
+html[lang="th"] [style*="font-size: 10px"] { font-size: 12px !important; }
+html[lang="th"] [style*="font-size: 11px"] { font-size: 13px !important; }
+html[lang="th"] [style*="font-size: 12px"] { font-size: 14px !important; }
+html[lang="th"] [style*="font-size: 13px"] { font-size: 15px !important; }
+html[lang="th"] [style*="font-size: 14px"] { font-size: 16px !important; }
+html[lang="th"] [style*="font-size: 15px"] { font-size: 17px !important; }
+html[lang="th"] [style*="font-size: 16px"] { font-size: 18px !important; }
+html[lang="th"] [style*="font-size: 17px"] { font-size: 19px !important; }
+html[lang="th"] [style*="font-size: 18px"] { font-size: 20px !important; }
+html[lang="th"] [style*="font-size: 20px"] { font-size: 22px !important; }
+html[lang="th"] [style*="font-size: 22px"] { font-size: 24px !important; }
+html[lang="th"] [style*="font-size: 24px"] { font-size: 26px !important; }
+html[lang="th"] [style*="font-size: 26px"] { font-size: 28px !important; }
+html[lang="th"] [style*="font-size: 28px"] { font-size: 30px !important; }
+html[lang="th"] [style*="font-size: 32px"] { font-size: 34px !important; }

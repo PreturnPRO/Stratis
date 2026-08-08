@@ -6,6 +6,7 @@ import Sidebar from "./components/Sidebar";
 import CurtainTransition, { type CurtainState } from "./components/CurtainTransition";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { useTheme, ThemeProvider } from "./hooks/useTheme";
+import { LangProvider } from "./hooks/useLang";
 import { useUpdateGuard } from "./hooks/useUpdateGuard";
 import { installTrackFlush, track } from "./lib/track";
 import { apiFetch } from "./lib/http";
@@ -754,9 +755,11 @@ export default function App() {
   return (
     <ErrorBoundary area="app shell">
       <ThemeProvider>
-        <AuthProvider>
-          <AppShell />
-        </AuthProvider>
+        <LangProvider>
+          <AuthProvider>
+            <AppShell />
+          </AuthProvider>
+        </LangProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );

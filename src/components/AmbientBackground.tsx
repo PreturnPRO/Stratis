@@ -34,6 +34,7 @@ const CANDIDATE_SAMPLES = 14;
 const MIN_SPACING = 7;
 const DRIFT_AMP = 0.55;
 const MAX_CROSSINGS_PER_EDGE = 1;
+const FRAME_MS = 1000 / 30;
 
 let idCounter = 0;
 function nextId() {
@@ -263,6 +264,13 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
     const tick = (now: number) => {
       if (!running) return;
       const dt = now - last;
+      // Half rate: this loop writes ~24 point transforms and ~40 line endpoints
+      // per pass, and each pass costs an SVG layout. Drift is slow enough that
+      // 30fps is indistinguishable from 60 and halves the main-thread work.
+      if (dt < FRAME_MS) {
+        raf = requestAnimationFrame(tick);
+        return;
+      }
       last = now;
       elapsed += dt;
 
@@ -329,6 +337,9 @@ function Constellation({ theme, reducedMotion }: { theme: "dark" | "light"; redu
         edgeIndex += 1;
       }
 
+      // Under reduced motion every value above is constant, so one pass paints
+      // the final layout and the loop can stop instead of rewriting it forever.
+      if (reducedMotion) return;
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -463,12 +474,16 @@ export default function AmbientBackground({
       <div
         style={{
           position: "absolute",
-          inset: 0,
+          inset: "-52px",
           backgroundImage: `linear-gradient(${grid} 1px, transparent 1px), linear-gradient(90deg, ${grid} 1px, transparent 1px)`,
           backgroundSize: "52px 52px",
           animation: "ambGridDrift 14s linear infinite",
+          willChange: "transform",
         }}
       />
+      {/* No filter: blur() on these two. They are radial gradients that fade to
+          transparent — already soft — and blurring a 70vw layer forces the
+          compositor to re-rasterise it on every frame of the scale animation. */}
       <div
         style={{
           position: "absolute",
@@ -478,8 +493,8 @@ export default function AmbientBackground({
           height: "70vw",
           borderRadius: "50%",
           background: `radial-gradient(circle, ${glow} 0%, transparent 65%)`,
-          filter: "blur(20px)",
           animation: "ambA 22s ease-in-out infinite alternate",
+          willChange: "transform",
         }}
       />
       <div
@@ -491,8 +506,8 @@ export default function AmbientBackground({
           height: "60vw",
           borderRadius: "50%",
           background: `radial-gradient(circle, ${glow2} 0%, transparent 65%)`,
-          filter: "blur(24px)",
           animation: "ambB 28s ease-in-out infinite alternate",
+          willChange: "transform",
         }}
       />
       {constellation && (theme === "light" ? <DotMatrix /> : <Constellation theme={theme} reducedMotion={reducedMotion} />)}

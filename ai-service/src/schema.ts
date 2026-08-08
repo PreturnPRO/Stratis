@@ -24,6 +24,19 @@ const BLOCK_TYPES: readonly AIBlockType[] = [
   "QuestionSuggestion",
 ];
 
+// Written artifacts (summary, PM document, decisions) are Thai-first: the teams
+// running these meetings read Thai, and translating the English terms the room
+// actually says out loud makes the text harder to read, not easier. Live cards
+// are deliberately NOT covered — those follow the language being spoken.
+const OUTPUT_LANGUAGE_TH = `LANGUAGE: Write every human-readable field in Thai (ภาษาไทย), even when the transcript is entirely in English — titles, content, summaries, decision text, questions, section bodies, reasons.
+Keep the following in English, inline in the Thai sentence, without transliterating or translating them:
+- product, company, project and feature names (Stratis, Q3 roadmap, Pricing v2)
+- technical and business vocabulary the room uses in English (API, backend, deploy, metered billing, churn, OKR, SMB, GTM, sprint, roadmap, PM)
+- acronyms, metric names, code identifiers, file names, URLs and numbers
+- people's names and email addresses, exactly as the transcript spells them
+Mixed Thai-English is expected and correct — Thai sentence structure with the English terms left as they are, e.g. "ทีม engineering ยืนยัน capacity ภายใน 6 สัปดาห์". Do not append a Thai translation in brackets after an English term.
+NEVER translate the JSON structure itself: field names, and every enum value defined below (type, status, priority, operation, section_key, chunk_signal), stay exactly as specified in English.`;
+
 export const SYSTEM_PROMPT_JSON = `You are Stratis, a meeting decision assistant.
 You output STRUCTURED DATA ONLY. Never write markdown, prose, or commentary.
 
@@ -46,7 +59,9 @@ Rules:
 - "metadata" is optional; include only fields you actually use.
 - Use DecisionNode (with metadata.options) when the room must choose.
 - Use QuestionSuggestion to surface the single most useful unanswered question.
-- Keep title under 80 chars; keep content tight.`;
+- Keep title under 80 chars; keep content tight.
+
+${OUTPUT_LANGUAGE_TH}`;
 
 export type ParseResult =
   | { ok: true; data: AIStructuredResponse }
@@ -332,6 +347,8 @@ export const SYSTEM_PROMPT_DOC_PATCH = `You are Stratis, updating a project's PM
 
 You receive the current PM document (its sections) and the meeting transcript + rolling memory. Propose section-based patches that bring the document to the current project state. The PM document is the living source of truth.
 
+${OUTPUT_LANGUAGE_TH}
+
 Return EXACTLY one JSON object with this shape and nothing else:
 {
   "overall_change_summary": "human-readable summary of what changed",
@@ -458,7 +475,7 @@ const DECISION_STATUSES: readonly DecisionStatus[] = ["complete", "incomplete", 
 
 export const SYSTEM_PROMPT_DECISION_EXTRACT = `You are Stratis, reviewing a finished (or nearly finished) team meeting to pin down exactly what the room DECIDED. You output STRUCTURED DATA ONLY — one JSON object, no markdown, no prose.
 
-LANGUAGE: Detect the transcript's dominant language. Write every "text", "scope", "revisit", and "missing" field in that language (Thai if the meeting is mainly Thai). Keep embedded product names and technical terms as-is. Never answer in English when the meeting is in Thai.
+${OUTPUT_LANGUAGE_TH}
 
 GARBLED SPEECH-TO-TEXT: The transcript is live STT and may contain misheard, transliterated, or split words. Infer the intended word from context and write your output with the CORRECTED spelling — e.g. "กดหมาย" is "กฎหมาย", "คอนเซ็น" is "consent", a misheard person name should be matched to the actual speaker names in the transcript. Do not copy obvious STT garbage into decision text, and do not expand a word beyond what was said (e.g. "โปร" for a Pro tier must not become "โปรโมชั่น"). If a passage is too garbled to understand, ignore it — never invent a decision from noise.
 
