@@ -367,11 +367,13 @@ function AppShell() {
   // three times — which is the normal state during a meeting. Every tab said
   // "Stratis".
   useEffect(() => {
-    const page = entryRoute.page || active;
+    // `active` defaults to "dashboard" for a signed-out visitor, so reading it
+    // unconditionally titled the marketing page "Dashboard · Stratis".
+    const page = entryRoute.page || (isAuthed ? active : "");
     const label =
       PAGE_LABELS[page] ?? (page === "room" ? "Join a room" : "");
     document.title = label ? `${label} · Stratis` : "Stratis";
-  }, [entryRoute, active]);
+  }, [entryRoute, active, isAuthed]);
 
   // The update check is paused during a meeting: a reload prompt over a live
   // recording is the one place this feature could do harm.
