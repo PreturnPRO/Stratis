@@ -32,6 +32,13 @@ export interface NewMeetingFormValues {
 export interface MeetingSeed {
   goal: string;
   title?: string;
+  /**
+   * The questions this meeting is being called to settle, verbatim. One open
+   * question rarely justifies a meeting; the reason to book one is that four
+   * have piled up on the same project. They ride in the brief so the AI walks
+   * in knowing the list, and so the agenda is written before anyone joins.
+   */
+  carried?: string[];
 }
 
 interface NewMeetingModalProps {
@@ -227,8 +234,15 @@ export function NewMeetingModal({
     setTitle(seed?.title ?? generated);
     setAutoTitle(generated);
     setGoal(seed?.goal ?? "");
-    setBrief("");
-    setBriefOpen(false);
+    setBrief(
+      seed?.carried?.length
+        ? seed.carried.map((q, i) => `${i + 1}. ${q}`).join("\n")
+        : "",
+    );
+    // Open the agenda when there is one to show. Carried questions ARE the
+    // agenda, so hiding them behind a collapsed field would bury the reason
+    // this meeting is being booked.
+    setBriefOpen(Boolean(seed?.carried?.length));
     setDocVersion(null);
 
     const scheduled = defaultScheduled ? "tomorrow" : "now";
@@ -236,7 +250,7 @@ export function NewMeetingModal({
     const initial = tomorrowAfternoon();
     setDateStr(localDateValue(initial));
     setTimeStr(localTimeValue(initial));
-  }, [open, lockedProject?.id, lockedProject?.name, defaultScheduled, seed?.goal, seed?.title]);
+  }, [open, lockedProject?.id, lockedProject?.name, defaultScheduled, seed?.goal, seed?.title, seed?.carried]);
 
   // The whole project list arrives in one request, sorted most-recent-first by
   // the backend. Loading it on open (rather than searching per keystroke) is
@@ -415,8 +429,9 @@ export function NewMeetingModal({
               lineHeight: 1.5,
             }}
           >
-            Seeded from a decision that has been waiting for a date — the goal below is
-            pre-filled, so the AI walks in already briefed.
+            {seed.carried && seed.carried.length > 1
+              ? `${seed.carried.length} open questions are carried into this meeting — the agenda below is written from them, so the AI walks in already briefed.`
+              : "Seeded from a decision that has been waiting for a date — the goal below is pre-filled, so the AI walks in already briefed."}
           </div>
         )}
 

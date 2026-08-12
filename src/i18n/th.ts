@@ -708,6 +708,34 @@ export const TH: Record<string, string> = {
   "Nothing waiting to start. New meetings and anything you have scheduled appear here.":
     "ยังไม่มีการประชุมที่รอเริ่ม การประชุมใหม่และที่นัดไว้จะแสดงที่นี่",
 
+  // --- Dashboard: the decision state ---
+  "What needs your attention": "สิ่งที่ต้องดูตอนนี้",
+  "Decisions in progress": "การตัดสินใจที่ยังไม่สมบูรณ์",
+  "Follow-ups due": "งานที่ต้องทำถึงกำหนดแล้ว",
+  "Next meeting": "การประชุมถัดไป",
+  "Recent decisions": "การตัดสินใจล่าสุด",
+  "Start meeting": "เริ่มการประชุม",
+  "Rejoin meeting": "กลับเข้าการประชุม",
+  "No project": "ยังไม่มีโปรเจกต์",
+  "Set a goal, talk it through, and Stratis tracks what is still unresolved.":
+    "ตั้งเป้าหมาย คุยกันให้จบ แล้ว Stratis จะติดตามว่าอะไรยังไม่ได้ข้อสรุป",
+  "No meeting is running. Start one and Stratis follows the discussion for what is still undecided.":
+    "ยังไม่มีการประชุมที่กำลังดำเนินอยู่ เริ่มการประชุมแล้ว Stratis จะติดตามว่ายังเหลืออะไรที่ต้องตัดสินใจ",
+
+  // --- Sidebar groups ---
+  Workspace: "เวิร์กสเปซ",
+
+  // --- Docket: carrying questions into a meeting ---
+  Clear: "ล้างที่เลือก",
+  "question selected": "คำถามที่เลือก",
+  "questions selected": "คำถามที่เลือก",
+  "Take it into a meeting": "นำเข้าการประชุม",
+  "Take them into a meeting": "นำทั้งหมดเข้าการประชุม",
+  "Unresolved from your checkpoints, oldest first. Tick the ones the next meeting has to settle — they travel in as its agenda.":
+    "คำถามที่ยังไม่ได้ข้อสรุปจากจุดตรวจสอบ เรียงจากเก่าที่สุด เลือกข้อที่การประชุมถัดไปต้องหาข้อสรุป แล้วระบบจะนำไปเป็นวาระการประชุมให้",
+
   // --- Settings ---
   "Email & password": "อีเมลและรหัสผ่าน",
+  "Profile picture": "รูปโปรไฟล์",
+  "A link to an image — jpg, png or gif.": "ลิงก์รูปภาพ — jpg, png หรือ gif",
 };
