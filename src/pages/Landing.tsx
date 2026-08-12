@@ -50,23 +50,24 @@ const HOW_IT_WORKS = [
   { n: '03', title: 'Record', body: 'Afterward, Stratis writes the participant summary and proposes changes to the living PM document — decisions, assumptions, risks.' },
 ]
 
+/**
+ * Names and roles only.
+ *
+ * This block used to carry each person's personal Gmail address, personal
+ * mobile number and LINE QR. On a public page that is three inboxes and three
+ * phone numbers handed to every scraper that walks the site, for no gain a
+ * single project contact would not also give.
+ */
 const TEAM: {
   name: string
   role: string
-  email: string
-  tel: string
   photo: string
   photoZoom: number
   photoPos: string
-  /** LINE QR, served from public/. Omitted until that person sends theirs. */
-  lineQr?: string
-  /** Per-person QR size: the source images carry different quiet-zone margins,
-      so a single number renders the codes at visibly different scales. */
-  lineQrSize?: number
 }[] = [
-  { name: 'Naphat Nirunsitirut', role: 'Interface Designer', email: 'KaifyProduction@gmail.com', tel: '+66 98 101 3409', photo: 'https://i.ibb.co/9mvscLW2/image-1.jpg', photoZoom: 1.5, photoPos: '32.5% 25%' , lineQr: '/line-naphat.jpg' },
-  { name: 'Thananarin Saisornthananant', role: 'Software Architect', email: 's.thananarin@gmail.com', tel: '+66 64 478 8545', photo: 'https://i.ibb.co/279tD5s4/FB-IMG-1783759688169.jpg', photoZoom: 1.5, photoPos: '55% 45%' , lineQr: '/line-thananarin.jpg' , lineQrSize: 78 },
-  { name: 'Phuwich Khamteja', role: 'Project Lead', email: 'subphuwich@gmail.com', tel: '+66 62 875 6868', photo: 'https://i.ibb.co/DP8FSnzS/fqs-2569-01-14-144852-111.jpg', photoZoom: 2, photoPos: '75% 45%' , lineQr: '/line-phuwich.jpg' , lineQrSize: 78 },
+  { name: 'Naphat Nirunsitirut', role: 'Interface Designer', photo: 'https://i.ibb.co/9mvscLW2/image-1.jpg', photoZoom: 1.5, photoPos: '32.5% 25%' },
+  { name: 'Thananarin Saisornthananant', role: 'Software Architect', photo: 'https://i.ibb.co/279tD5s4/FB-IMG-1783759688169.jpg', photoZoom: 1.5, photoPos: '55% 45%' },
+  { name: 'Phuwich Khamteja', role: 'Project Lead', photo: 'https://i.ibb.co/DP8FSnzS/fqs-2569-01-14-144852-111.jpg', photoZoom: 2, photoPos: '75% 45%' },
 ]
 
 const STEP_COUNT = 8
@@ -366,24 +367,35 @@ export default function Landing({ onNavigate, onJoinRoom, onPricing }: Props) {
               are neither signing up nor signing in — someone just read them six
               characters, and they need the shortest possible path to typing
               them. */}
-          <button
-            onClick={onJoinRoom}
+          {/* The sentence is not the control. When the whole line was the
+              button, a screen reader announced the action as "In a meeting
+              right now?" — a question, which is not something you can do. */}
+          <p
             style={{
               marginTop: 18,
-              background: 'transparent',
-              border: 'none',
-              padding: 0,
-              cursor: 'pointer',
+              marginBottom: 0,
               fontSize: FONT.size.body,
               color: colors.textMuted,
               textAlign: 'left',
             }}
           >
             In a meeting right now?{' '}
-            <span style={{ color: colors.accent, textDecoration: 'underline' }}>
+            <button
+              type="button"
+              onClick={onJoinRoom}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                font: 'inherit',
+                cursor: 'pointer',
+                color: colors.accent,
+                textDecoration: 'underline',
+              }}
+            >
               Join with a room code
-            </span>
-          </button>
+            </button>
+          </p>
         </div>
 
         <div
@@ -555,7 +567,7 @@ export default function Landing({ onNavigate, onJoinRoom, onPricing }: Props) {
           }}
         >
           {TEAM.map((person) => (
-            <TeamCard key={person.email} colors={colors} shadow={shadow} person={person} />
+            <TeamCard key={person.name} colors={colors} shadow={shadow} person={person} />
           ))}
         </div>
       </section>
@@ -581,7 +593,11 @@ function TeamCard({
           borderRadius: 18,
           marginBottom: 22,
           border: `1px solid ${colors.border}`,
-          background: colors.border,
+          // backgroundColor, never the `background` shorthand: the shorthand
+          // resets background-image, and React rewrites it whenever the token
+          // changes without rewriting the image beside it. The photos loaded on
+          // first paint and vanished on the first theme toggle.
+          backgroundColor: colors.border,
           backgroundImage: `url('${person.photo}')`,
           backgroundRepeat: 'no-repeat',
           backgroundSize: `${person.photoZoom * 100}%`,
@@ -591,8 +607,8 @@ function TeamCard({
 
       <div
         style={{
-          // minHeight, not height: the QR sits beside the contact lines and is
-          // taller than they are, so the card has to be free to grow.
+          // minHeight, not height: the cards sit in a row and this is what
+          // keeps them level when one name wraps and another does not.
           minHeight: 200,
           borderRadius: 14,
           padding: 22,
@@ -621,44 +637,10 @@ function TeamCard({
           </div>
         </div>
 
-        {/* minHeight keeps every card the same height even though the QR sizes
-            differ per person, so the row of cards stays bottom-aligned. */}
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginTop: 14, minHeight: 72 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0, color: colors.textMuted, fontSize: FONT.size.caption }}>
-            <a href={`mailto:${person.email}`} style={contactLinkStyle}>
-              {person.email}
-            </a>
-            <a href={`tel:${person.tel.replace(/[^+\d]/g, '')}`} style={contactLinkStyle}>
-              {person.tel}
-            </a>
-          </div>
-
-          {person.lineQr && (
-            <img
-              src={person.lineQr}
-              alt={`LINE QR code for ${person.name}`}
-              width={person.lineQrSize ?? 68}
-              height={person.lineQrSize ?? 68}
-              style={{
-                flexShrink: 0,
-                width: person.lineQrSize ?? 68,
-                height: person.lineQrSize ?? 68,
-                borderRadius: 8,
-                // The QR art is black on white, so it carries its own white
-                // plate to stay scannable on the dark theme.
-                background: '#fff',
-                padding: 4,
-                objectFit: 'contain',
-              }}
-            />
-          )}
-        </div>
       </div>
     </div>
   )
 }
-
-const contactLinkStyle = { color: 'inherit', textDecoration: 'none' } as const
 
 function navLinkStyle(colors: Colors) {
   return {
