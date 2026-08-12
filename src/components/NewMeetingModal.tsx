@@ -245,7 +245,12 @@ export function NewMeetingModal({
     setBriefOpen(Boolean(seed?.carried?.length));
     setDocVersion(null);
 
-    const scheduled = defaultScheduled ? "tomorrow" : "now";
+    // Questions carried from the Docket are a decision about WHAT to settle,
+    // not about when. Defaulting those to "now" turned picking three open
+    // questions into an instruction to start recording immediately, which is
+    // not what ticking a checkbox meant.
+    const scheduled: StartMode =
+      seed?.carried?.length || defaultScheduled ? "tomorrow" : "now";
     setStartMode(scheduled);
     const initial = tomorrowAfternoon();
     setDateStr(localDateValue(initial));

@@ -731,8 +731,8 @@ export const TH: Record<string, string> = {
   Clear: "ล้างที่เลือก",
   "question selected": "คำถามที่เลือก",
   "questions selected": "คำถามที่เลือก",
-  "Take it into a meeting": "นำเข้าการประชุม",
-  "Take them into a meeting": "นำทั้งหมดเข้าการประชุม",
+  "Schedule a meeting for it": "นัดประชุมเพื่อหาข้อสรุป",
+  "Schedule a meeting for these": "นัดประชุมเพื่อหาข้อสรุปทั้งหมดนี้",
   "Unresolved from your checkpoints, oldest first. Tick the ones the next meeting has to settle — they travel in as its agenda.":
     "คำถามที่ยังไม่ได้ข้อสรุปจากจุดตรวจสอบ เรียงจากเก่าที่สุด เลือกข้อที่การประชุมถัดไปต้องหาข้อสรุป แล้วระบบจะนำไปเป็นวาระการประชุมให้",
 

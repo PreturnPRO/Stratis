@@ -548,10 +548,15 @@ export default function Docket({
                   <Button variant="ghost" size="sm" onClick={() => setSelected([])}>
                     Clear
                   </Button>
-                  <Button variant="primary" size="sm" onClick={scheduleSelected}>
+                  {/* Ghost, not primary, and it says "schedule". A green
+                      button appearing the moment you tick a checkbox reads as
+                      "record this now" — but choosing which questions matter is
+                      a decision about what to settle, not about when. The
+                      dialog it opens defaults to a date, not to starting. */}
+                  <Button variant="ghost" size="sm" onClick={scheduleSelected}>
                     {selectedItems.length === 1
-                      ? "Take it into a meeting"
-                      : "Take them into a meeting"}
+                      ? "Schedule a meeting for it"
+                      : "Schedule a meeting for these"}
                   </Button>
                 </div>
               )}
@@ -829,8 +834,8 @@ function makeStyles(colors: ReturnType<typeof useTheme>["colors"]): Record<strin
       padding: `${SPACE[1]}px ${SPACE[1.5]}px`,
       marginBottom: SPACE[1.5],
       borderRadius: RADIUS.md,
-      border: `1px solid ${colors.accent}`,
-      background: colors.surface,
+      border: `1px solid ${colors.border}`,
+      background: colors.surfaceMuted,
     },
     filters: {
       display: "flex",
