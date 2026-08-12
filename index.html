@@ -5,6 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Stratis listens to your meetings, surfaces the questions nobody asked, and keeps the project's living PM document up to date." />
     <title>Stratis</title>
+
+    <!-- Inline SVG so the tab carries the mark without shipping a binary. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='5' fill='%238FAE6D'/%3E%3Cpath d='M13 3 5.5 13.5H11l-1 7.5 8-11h-5.5z' fill='%23ffffff'/%3E%3C/svg%3E"
+    />
+
+    <!-- What LINE, Facebook and Slack read when someone pastes the link. There
+         is no artwork to point at yet, so this is deliberately a text card
+         (twitter:card=summary) rather than one with an empty image frame. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Stratis" />
+    <meta property="og:title" content="Stratis — decide better while the meeting is still happening" />
+    <meta property="og:description" content="Stratis listens to your meeting, tracks whether the decision is complete, and writes the record your team never has time to write." />
+    <meta property="og:url" content="https://stratis-beta.vercel.app/" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Stratis — decide better while the meeting is still happening" />
+    <meta name="twitter:description" content="Stratis listens to your meeting, tracks whether the decision is complete, and writes the record your team never has time to write." />
   </head>
   <body>
     <div id="root"></div>

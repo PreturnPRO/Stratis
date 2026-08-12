@@ -213,6 +213,17 @@ function hashToEntry(): { page: AppPage; params: Record<string, string> } {
   return { page: (known ? page : "dashboard") as AppPage, params };
 }
 
+/**
+ * `#/login` and `#/register` are not app pages — they are states of the
+ * signed-out shell, which is why `hashToEntry` does not know them. Reading them
+ * here is what makes the link someone actually sends ("sign in here") land on
+ * the form instead of the marketing page.
+ */
+function readAuthPageFromHash(): AuthPage | null {
+  const page = window.location.hash.replace(/^#\/?/, "").split("?")[0];
+  return page === "login" || page === "register" ? page : null;
+}
+
 function entryToHash(page: AppPage, params: Record<string, string>): string {
   const query = new URLSearchParams(params).toString();
   return `#/${page}${query ? `?${query}` : ""}`;
@@ -299,7 +310,7 @@ function SystemNotice({
 
 function AppShell() {
   const { isAuthed, logout, isAdmin, endedReason, clearEndedReason } = useAuth();
-  const [authPage, setAuthPage] = useState<AuthPage>("landing");
+  const [authPage, setAuthPage] = useState<AuthPage>(() => readAuthPageFromHash() ?? "landing");
   const initialEntry = hashToEntry();
   const [active, setActive] = useState<AppPage>(initialEntry.page);
   const [navParams, setNavParams] = useState<Record<string, string>>(initialEntry.params);
@@ -337,6 +348,30 @@ function AppShell() {
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
+
+  // Back, forward and reload all have to move between the marketing page and
+  // the form. None of that works while the auth screen lives only in state.
+  useEffect(() => {
+    const onHashChange = () => setAuthPage(readAuthPageFromHash() ?? "landing");
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  useEffect(() => {
+    if (isAuthed || entryRoute.page) return;
+    const wanted = authPage === "login" || authPage === "register" ? `#/${authPage}` : "#/";
+    if (window.location.hash !== wanted) window.history.replaceState(null, "", wanted);
+  }, [authPage, isAuthed, entryRoute.page]);
+
+  // The tab strip is a wayfinding surface the moment someone has Stratis open
+  // three times — which is the normal state during a meeting. Every tab said
+  // "Stratis".
+  useEffect(() => {
+    const page = entryRoute.page || active;
+    const label =
+      PAGE_LABELS[page] ?? (page === "room" ? "Join a room" : "");
+    document.title = label ? `${label} · Stratis` : "Stratis";
+  }, [entryRoute, active]);
 
   // The update check is paused during a meeting: a reload prompt over a live
   // recording is the one place this feature could do harm.
@@ -551,7 +586,11 @@ function AppShell() {
         }}
       >
         <CurtainTransition state={authCurtain} routeLabel="DASHBOARD" onMidpoint={() => {}} theme={theme} />
-        {(endedReason || oauthError) && (
+        {/* An expired token is news on the sign-in screen, where "sign in
+            again" is something the reader can act on, and noise on the
+            marketing page, where a visitor who never asked for a session met a
+            red error strip above the headline. */}
+        {(oauthError || (endedReason && authPage !== "landing")) && (
           <SystemNotice
             tone="danger"
             message={oauthError ?? endedReason?.message ?? ""}
