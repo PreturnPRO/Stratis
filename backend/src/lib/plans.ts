@@ -25,7 +25,23 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
       sessionMinutes: 45,
       retentionDays: 30,
     },
-    features: ["live_suggestions", "checkpoint"],
+    /**
+     * Joining is free; opening the room is not.
+     *
+     * Nobody who walks into a meeting ever pays — a guest needs no account and
+     * no plan, and the join path checks neither. What Pro buys is the other
+     * side of that code: the right to *open* a room to people outside the
+     * workspace. So `session_invites` and `guest_access` are Pro features and
+     * the Free tier deliberately does not carry them.
+     */
+    features: [
+      "live_suggestions",
+      "checkpoint",
+      // The PM document is the thing Stratis is for. Walling it off would hide
+      // the product behind the paywall rather than putting the paywall after
+      // it. Taking the record *out* of Stratis is what Pro sells.
+      "pm_document",
+    ],
   },
   pro: {
     id: "pro",
@@ -44,6 +60,7 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
       "transcript_export",
       "session_invites",
       "guest_access",
+      "custom_theme",
     ],
   },
   beta: {
@@ -65,6 +82,7 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
       "session_invites",
       "guest_access",
       "analytics_dashboard",
+      "custom_theme",
     ],
   },
 };
@@ -84,10 +102,24 @@ export function getPlan(id: string | null | undefined): PlanDefinition {
  * on record for the upgrade path but is entitled to Free until it is settled —
  * so the tier shown in the admin panel and the tier enforced never diverge.
  */
-export function effectivePlan(plan: string | null, status: string | null): PlanDefinition {
+export function effectivePlan(
+  plan: string | null,
+  status: string | null,
+  expiresAt?: string | Date | null,
+): PlanDefinition {
   const wanted = getPlan(plan);
   const settled: PlanStatus[] = ["active"];
   if (!settled.includes((status ?? "active") as PlanStatus)) return PLANS.free;
+
+  // A term that has run out is a lapsed subscription whether or not anyone has
+  // got around to flipping plan_status. Without this the column was written by
+  // the admin route and read by nothing, so a paid workspace kept its tier
+  // forever — the plan expired on paper and never in the product.
+  if (expiresAt) {
+    const ends = expiresAt instanceof Date ? expiresAt.getTime() : Date.parse(expiresAt);
+    if (Number.isFinite(ends) && ends <= Date.now()) return PLANS.free;
+  }
+
   return wanted;
 }
 
