@@ -80,7 +80,10 @@ export type InviteCheck =
  * are all failures, and every caller gets the same answer with the same wording.
  */
 export function checkInvite(row: InviteRow | undefined): InviteCheck {
-  if (!row) return { ok: false, reason: "This invite link is not valid" };
+  // Reached from the room screen as well as from an invite URL, and there the
+  // reader typed six characters off a whiteboard — telling them a *link* is
+  // invalid sends them looking for a link they never had.
+  if (!row) return { ok: false, reason: "That code does not match a meeting" };
   if (row.revoked_at) return { ok: false, reason: "This invite link has been revoked" };
   if (row.expires_at && new Date(row.expires_at) < new Date()) {
     return { ok: false, reason: "This invite link has expired" };

@@ -214,7 +214,9 @@ export default function Room({
             id="room-code"
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
-            placeholder="ACDEF4"
+            // "ACDEF4" in this field — centred, letter-spaced, monospace — was
+            // indistinguishable from a code someone had already typed.
+            placeholder="6 characters"
             autoComplete="off"
             autoCapitalize="characters"
             maxLength={8}
@@ -276,7 +278,14 @@ export default function Room({
             </div>
           )}
 
-          <Button fullWidth onClick={() => void join()} disabled={busy || !preview || !name.trim()}>
+          {/* The one action on the screen, so it carries the product's primary
+              style rather than the outline the rest of the page uses. */}
+          <Button
+            fullWidth
+            variant="primary"
+            onClick={() => void join()}
+            disabled={busy || !preview || !name.trim()}
+          >
             {busy ? "Joining…" : "Join"}
           </Button>
 
