@@ -357,7 +357,30 @@ function route(path: string, method: string): Response | null {
   if (path.includes("/api/auth/me")) return json(USER);
 
   if (path.includes("/api/meeting/dashboard")) {
+    const next = MEETINGS.filter((m) => m.scheduledAt)[0];
     return json({
+      attention: { openQuestions: 3, inProgress: 2, followUpsDue: 1 },
+      nextMeeting: next
+        ? { ...next, projectName: next.projectName, unresolved: 2 }
+        : null,
+      recentDecisions: [
+        {
+          id: "d_metered",
+          text: "SMB moves to metered billing from Q3, grandfathering current accounts.",
+          owner: "Sarah K.",
+          decidedAt: at(-2 * DAY),
+          meetingTitle: "Enterprise pricing review",
+          projectName: "Pricing strategy",
+        },
+        {
+          id: "d_consent",
+          text: "Consent notice shows before the first recording, not on signup.",
+          owner: null,
+          decidedAt: at(-5 * DAY),
+          meetingTitle: "Beta readiness",
+          projectName: "Beta launch",
+        },
+      ],
       upcomingMeetings: MEETINGS.filter((m) => m.scheduledAt),
       recentSummaries: SUMMARIES,
       activeSession: null,

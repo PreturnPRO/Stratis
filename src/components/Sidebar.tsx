@@ -14,8 +14,30 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { FONT, RADIUS, SPACE } from "../tokens/colors";
+import { FONT, LETTER_SPACING, RADIUS, SPACE } from "../tokens/colors";
 import { NAV_ITEMS } from "../constants";
+
+type NavItem = { id: string; icon: string; label: string };
+
+/**
+ * Decisions first. A flat list of six destinations describes a file system;
+ * this says what the product works on and where the record of it lives.
+ */
+const NAV_GROUPS: { label: string | null; items: NavItem[] }[] = [
+  { label: null, items: [(NAV_ITEMS as NavItem[])[0]] },
+  { label: "Decisions", items: (NAV_ITEMS as NavItem[]).filter((i) => i.id === "docket") },
+  {
+    label: "Workspace",
+    items: (NAV_ITEMS as NavItem[]).filter((i) => ["projects", "meeting", "document"].includes(i.id)),
+  },
+  {
+    label: null,
+    items: [
+      { id: "settings", icon: "SettingsIcon", label: "Settings" },
+      { id: "admin", icon: "ShieldCheck", label: "Admin" },
+    ],
+  },
+];
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
 
@@ -168,16 +190,43 @@ export default function Sidebar({
         </button>
       </div>
 
-      {[
-        ...(NAV_ITEMS as { id: string; icon: string; label: string }[]),
-        { id: "settings", icon: "SettingsIcon", label: "Settings" },
-        ...(isAdmin ? [{ id: "admin", icon: "ShieldCheck", label: "Admin" }] : []),
-      ].map((item: { id: string; icon: string; label: string }) => {
+      {/* Grouped, because a flat list of six says nothing about what the product
+          is for. Decisions first — that is the object Stratis works on; the
+          workspace items are where the record lives. Headers only when the rail
+          is expanded: on the icon rail they would be noise. */}
+      {NAV_GROUPS.flatMap((group) =>
+        (group.items as { id: string; icon: string; label: string }[])
+          .filter((item) => item.id !== "admin" || isAdmin)
+          .map((item, indexInGroup) => ({ group, item, indexInGroup })),
+      ).map(({ group, item, indexInGroup }) => {
         const isActive = active === item.id;
         const IconComp = ICON_MAP[item.icon];
 
         return (
           <div key={item.id} style={{ position: "relative", marginBottom: 2 }}>
+            {group.label && indexInGroup === 0 && (
+              <div
+                style={{
+                  height: expanded ? 26 : 12,
+                  marginTop: 10,
+                  paddingLeft: 21,
+                  display: "flex",
+                  alignItems: "center",
+                  fontFamily: FONT.mono,
+                  fontSize: FONT.size.micro,
+                  letterSpacing: LETTER_SPACING.wide,
+                  textTransform: "uppercase",
+                  color: colors.textDim,
+                  opacity: expanded ? 1 : 0,
+                  transition: "opacity 0.15s",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                }}
+                aria-hidden={!expanded}
+              >
+                {group.label}
+              </div>
+            )}
             <button
               title={item.label}
               aria-label={item.label}

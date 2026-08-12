@@ -7,6 +7,8 @@ import { useAuth } from "../context/AuthContext";
 import { useCreateMeeting, ACTIVE_SESSION_KEY, projectIdFromTitle } from "../hooks/useCreateMeeting";
 import type { NewMeetingFormValues } from "../components/NewMeetingModal";
 import { StartMeetingConfirm, type StartTarget } from "../components/StartMeetingConfirm";
+import { AttentionRow, type Attention, type NextMeeting } from "../components/AttentionRow";
+import { RecentDecisions, type DecidedItem } from "../components/RecentDecisions";
 import { useTheme } from "../hooks/useTheme";
 import AmbientBackground from "../components/AmbientBackground";
 
@@ -60,6 +62,10 @@ interface BackendSummary {
 }
 
 interface DashboardPayload {
+  /** The decision state the page now opens on. */
+  attention?: Attention;
+  nextMeeting?: (DashboardMeeting & { goal?: string | null; unresolved?: number }) | null;
+  recentDecisions?: DecidedItem[];
   upcomingMeetings?: DashboardMeeting[];
   upcoming?: DashboardMeeting[];
   meetings?: DashboardMeeting[];
@@ -307,7 +313,7 @@ function DashboardPanels({
             message={
               failed
                 ? "Your meetings could not be loaded. They are safe — this screen just could not reach the server."
-                : "Nothing waiting to start. New meetings and anything you have scheduled appear here."
+                : "Set a goal, talk it through, and Stratis tracks what is still unresolved."
             }
           />
         ) : (
@@ -411,6 +417,22 @@ export default function Dashboard({ onNav }: DashboardProps) {
     const payload = dashboard.data;
     return payload?.upcomingMeetings ?? payload?.upcoming ?? payload?.meetings ?? [];
   }, [dashboard.data]);
+
+  const attention = useMemo<Attention>(
+    () =>
+      dashboard.data?.attention ?? { openQuestions: 0, inProgress: 0, followUpsDue: 0 },
+    [dashboard.data],
+  );
+
+  const nextMeeting = useMemo<NextMeeting | null>(
+    () => dashboard.data?.nextMeeting ?? null,
+    [dashboard.data],
+  );
+
+  const decided = useMemo<DecidedItem[]>(
+    () => dashboard.data?.recentDecisions ?? [],
+    [dashboard.data],
+  );
 
   const summaries = useMemo<DashboardSummary[]>(() => {
     const payload = dashboard.data;
@@ -534,6 +556,27 @@ export default function Dashboard({ onNav }: DashboardProps) {
             {error}
           </div>
         )}
+
+        <AttentionRow
+          attention={attention}
+          next={nextMeeting}
+          onOpenDocket={() => onNav?.("docket")}
+          onOpenMeeting={(m) => {
+            if (m.activeSession?.id) {
+              void handleStartExisting(m as DashboardMeeting);
+              return;
+            }
+            setConfirming({
+              id: m.id,
+              title: m.title,
+              projectLabel: m.projectName ?? "No project",
+              goal: m.goal ?? null,
+              durationMinutes: null,
+            });
+          }}
+        />
+
+        <RecentDecisions items={decided} />
 
         <DashboardPanels
           colors={colors}

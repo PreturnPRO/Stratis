@@ -204,8 +204,8 @@ function ProfileTab({
           />
         </Field>
         <Field
-          label="Avatar image URL"
-          hint="An https link to an image. There is no file upload in this build yet."
+          label="Profile picture"
+          hint="A link to an image — jpg, png or gif."
         >
           <TextInput
             value={avatarUrl}

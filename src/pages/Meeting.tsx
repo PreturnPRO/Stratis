@@ -693,7 +693,7 @@ useEffect(() => {
           Meeting
         </h1>
         <EmptyState
-          message="No meeting is running right now."
+          message="No meeting is running. Start one and Stratis follows the discussion for what is still undecided."
           action={
             <Button variant="primary" size="sm" onClick={() => onNav?.("dashboard")}>
               Go to dashboard to start one
