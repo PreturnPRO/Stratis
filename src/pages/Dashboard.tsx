@@ -561,19 +561,8 @@ export default function Dashboard({ onNav }: DashboardProps) {
           attention={attention}
           next={nextMeeting}
           onOpenDocket={() => onNav?.("docket")}
-          onOpenMeeting={(m) => {
-            if (m.activeSession?.id) {
-              void handleStartExisting(m as DashboardMeeting);
-              return;
-            }
-            setConfirming({
-              id: m.id,
-              title: m.title,
-              projectLabel: m.projectName ?? "No project",
-              goal: m.goal ?? null,
-              durationMinutes: null,
-            });
-          }}
+          onRejoin={(m) => void handleStartExisting(m as DashboardMeeting)}
+          onPrepare={() => onNav?.("docket")}
         />
 
         <RecentDecisions items={decided} />

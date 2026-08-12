@@ -716,6 +716,8 @@ export const TH: Record<string, string> = {
   "Recent decisions": "การตัดสินใจล่าสุด",
   "Start meeting": "เริ่มการประชุม",
   "Rejoin meeting": "กลับเข้าการประชุม",
+  "Review what is unresolved": "ดูว่ายังเหลืออะไรที่ต้องตัดสินใจ",
+  "No date yet": "ยังไม่ได้กำหนดวัน",
   "No project": "ยังไม่มีโปรเจกต์",
   "Set a goal, talk it through, and Stratis tracks what is still unresolved.":
     "ตั้งเป้าหมาย คุยกันให้จบ แล้ว Stratis จะติดตามว่าอะไรยังไม่ได้ข้อสรุป",
