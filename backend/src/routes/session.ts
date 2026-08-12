@@ -371,7 +371,7 @@ sessionRouter.get("/recover", requireAuth, async (req, res) => {
       JOIN meetings m ON m.id = s.meeting_id
       WHERE s.status IN ('active', 'created')
         AND m.org_id = $1
-        AND s.facilitator_id = $3
+        AND s.facilitator_id = $2
       ORDER BY
         CASE s.status
           WHEN 'active' THEN 0
@@ -381,7 +381,7 @@ sessionRouter.get("/recover", requireAuth, async (req, res) => {
         COALESCE(s.started_at, s.created_at) DESC
       LIMIT 1
       `,
-      [orgId, role, userId],
+      [orgId, userId],
     );
 
     const row = result.rows[0];

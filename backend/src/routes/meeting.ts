@@ -286,11 +286,11 @@ meetingRouter.get("/dashboard", requireAuth, async (req, res) => {
       JOIN meetings m ON m.id = s.meeting_id
       WHERE m.org_id = $1
         AND s.status = 'active'
-        AND s.facilitator_id = $3
+        AND s.facilitator_id = $2
       ORDER BY s.started_at DESC
       LIMIT 1
       `,
-      [req.auth!.orgId, req.auth!.role, req.auth!.sub]
+      [req.auth!.orgId, req.auth!.sub]
     );
 
     // Read the summaries table, not the notification feed.
@@ -318,11 +318,11 @@ meetingRouter.get("/dashboard", requireAuth, async (req, res) => {
       JOIN sessions s ON s.id = ps.session_id
       JOIN meetings m ON m.id = s.meeting_id
       WHERE m.org_id = $1
-        AND s.facilitator_id = $3
+        AND s.facilitator_id = $2
       ORDER BY ps.created_at DESC
-      LIMIT $4
+      LIMIT $3
       `,
-      [req.auth!.orgId, req.auth!.role, req.auth!.sub, limit]
+      [req.auth!.orgId, req.auth!.sub, limit]
     );
 
     res.json({
