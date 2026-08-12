@@ -106,9 +106,12 @@ export default function FeedbackModal({
         />
       </Field>
 
-      <Field label="How is Stratis going for you so far?" hint="Optional.">
+      {/* 1-5, not 0-10. An eleven-point scale needs volume before the spread
+          means anything, and with a handful of beta teams it only made the
+          question slower to answer. */}
+      <Field label="How is Stratis going for you so far?" hint="Optional. 1 = badly, 5 = well.">
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-          {Array.from({ length: 11 }, (_, n) => (
+          {Array.from({ length: 5 }, (_, i) => i + 1).map((n) => (
             <button
               key={n}
               type="button"

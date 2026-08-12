@@ -11,6 +11,18 @@ type Shadow = ReturnType<typeof useTheme>['shadow']
 
 interface Props {
   onNavigate: (page: 'login' | 'register') => void
+  /**
+   * Someone who was read a room code across a table. They are not signing up
+   * and not signing in — they are joining a meeting happening right now, and
+   * before this existed the only way in was to be told a URL and type it.
+   */
+  onJoinRoom: () => void
+  /**
+   * The plans page is public and was reachable only from inside Settings —
+   * i.e. only by someone who had already signed up. On a commercial site the
+   * price has to be readable before the account, not after it.
+   */
+  onPricing: () => void
 }
 
 const TRANSCRIPT = [
@@ -87,7 +99,7 @@ function scrollToId(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
-export default function Landing({ onNavigate }: Props) {
+export default function Landing({ onNavigate, onJoinRoom, onPricing }: Props) {
   const { theme, toggleTheme, colors, shadow } = useTheme()
   const { lang, toggleLang } = useLang()
   const reducedMotion = usePrefersReducedMotion()
@@ -186,6 +198,18 @@ export default function Landing({ onNavigate }: Props) {
             style={navLinkStyle(colors)}
           >
             See it live
+          </button>
+          <button
+            onClick={onPricing}
+            style={navLinkStyle(colors)}
+          >
+            Pricing
+          </button>
+          <button
+            onClick={onJoinRoom}
+            style={navLinkStyle(colors)}
+          >
+            Join a meeting
           </button>
           <button
             onClick={() => onNavigate('login')}
@@ -337,6 +361,29 @@ export default function Landing({ onNavigate }: Props) {
               </Button>
             </div>
           </div>
+
+          {/* The third audience. Most people who open Stratis during a meeting
+              are neither signing up nor signing in — someone just read them six
+              characters, and they need the shortest possible path to typing
+              them. */}
+          <button
+            onClick={onJoinRoom}
+            style={{
+              marginTop: 18,
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              fontSize: FONT.size.body,
+              color: colors.textMuted,
+              textAlign: 'left',
+            }}
+          >
+            In a meeting right now?{' '}
+            <span style={{ color: colors.accent, textDecoration: 'underline' }}>
+              Join with a room code
+            </span>
+          </button>
         </div>
 
         <div

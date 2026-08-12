@@ -4,6 +4,8 @@ import { requireAuth } from "../auth/middleware";
 import { db } from "../db/database";
 import { getStoredSummary, generateAndSaveSummary } from "../lib/summaryStore";
 import { getDecisions, completenessFromRecords } from "../lib/decisions";
+import { requireFeature } from "../lib/entitlements";
+import { summaryToMarkdown } from "../lib/summaryMarkdown";
 
 export const summaryRouter = Router();
 
@@ -38,9 +40,12 @@ interface SummaryBlock {
 }
 
 interface ActionItem {
+  /** The decision row this came from — the id the tick-off PATCH addresses. */
+  id: string;
   task: string;
   owner: string;
   due_date: string | null;
+  done: boolean;
 }
 
 interface ParticipantSummaryOutput {
@@ -58,7 +63,7 @@ async function getSessionForSummary(
   sessionId: string,
   userId: string,
   orgId: string,
-  role: string,
+  _role: string,
 ): Promise<SessionSummaryRow | undefined> {
   const result = await db.query<SessionSummaryRow>(
     `
@@ -77,9 +82,11 @@ async function getSessionForSummary(
     JOIN meetings m ON m.id = s.meeting_id
     WHERE s.id = $1
       AND m.org_id = $2
-      AND ($3 = 'admin' OR s.facilitator_id = $4)
+      AND s.facilitator_id = $3
     `,
-    [sessionId, orgId, role, userId]
+    // No admin branch: a summary is the record of one person's meeting, and
+    // administering the workspace is not a reason to read it.
+    [sessionId, orgId, userId]
   );
   return result.rows[0];
 }
@@ -96,61 +103,12 @@ summaryRouter.get("/", requireAuth, (_req, res) => {
 });
 
 /**
- * Release the summary to participants.
- *
- * The UI used to flip a local `sent` flag and announce "Summary sent to N
- * participants" without any request leaving the browser — a false confirmation
- * in the one product whose whole claim is an honest record. Sending now means
- * this row's sent_at is set; the client renders sent only from server state.
- *
- * Idempotent: a countdown firing at the same moment as a manual Send now must
- * not produce two send timestamps, so the first write wins.
- */
-summaryRouter.post("/:sessionId/send", requireAuth, async (req, res, next) => {
-  try {
-    const sessionId = req.params.sessionId;
-
-    const session = await getSessionForSummary(
-      sessionId,
-      req.auth!.sub,
-      req.auth!.orgId,
-      req.auth!.role,
-    );
-    if (!session) {
-      return res.status(404).json({
-        ok: false,
-        error: "Session not found or you do not have access",
-      });
-    }
-
-    const updated = await db.query<{ sent_at: string }>(
-      `
-      UPDATE participant_summaries
-      SET sent_at = COALESCE(sent_at, NOW())
-      WHERE session_id = $1
-      RETURNING sent_at
-      `,
-      [sessionId],
-    );
-
-    const row = updated.rows[0];
-    if (!row) {
-      return res.status(404).json({ ok: false, error: "No summary exists for this session yet" });
-    }
-
-    res.json({ ok: true, data: { sentAt: row.sent_at } });
-  } catch (err) {
-    next(err);
-  }
-});
-
-/**
  * Rewrite one generated block.
  *
- * The summary is the only artefact other people read, so a wrong line in it
+ * The summary is the artefact that leaves the building, so a wrong line in it
  * costs more trust than a missing feature. Editing was surfaced in the UI but
- * never wired to anything, which meant a bad ASSUMPTIONS or DECISIONS line went
- * out to participants uncorrectable.
+ * never wired to anything, which meant a bad ASSUMPTIONS or DECISIONS line was
+ * uncorrectable before the PM exported it.
  */
 summaryRouter.patch("/:sessionId/block/:blockId", requireAuth, async (req, res, next) => {
   try {
@@ -206,6 +164,67 @@ summaryRouter.patch("/:sessionId/block/:blockId", requireAuth, async (req, res, 
   }
 });
 
+/**
+ * The summary as a file, and the one place transcript_export is enforced.
+ *
+ * Built on the server rather than in the browser on purpose: an export
+ * assembled client-side from data the client already has is a button, not a
+ * gate, and could be re-enabled from the console. Taking the record out of
+ * Stratis is what the paid tier sells, so the paid tier has to be what produces
+ * the file.
+ */
+summaryRouter.get(
+  "/:sessionId/export",
+  requireAuth,
+  requireFeature("transcript_export"),
+  async (req, res, next) => {
+    try {
+      const sessionId = req.params.sessionId;
+      const session = await getSessionForSummary(
+        sessionId,
+        req.auth!.sub,
+        req.auth!.orgId,
+        req.auth!.role,
+      );
+      if (!session) {
+        return res.status(404).json({
+          ok: false,
+          error: "Session not found or you do not have access",
+        });
+      }
+
+      const stored = await getStoredSummary(sessionId);
+      if (!stored) {
+        return res.status(409).json({ ok: false, error: "No summary exists for this session yet" });
+      }
+
+      const decisions = (await getDecisions(sessionId)).filter((d) => !d.dismissed);
+
+      const markdown = summaryToMarkdown({
+        summary_title: stored.summaryTitle,
+        summary_subtitle: stored.summarySubtitle,
+        participants: stored.participants,
+        duration_minutes: stored.durationMinutes,
+        summary_blocks: stored.blocks as Array<{
+          title: string;
+          content: string;
+          visible_to_participants: boolean;
+        }>,
+        action_items: decisions.map((d) => ({
+          task: d.text,
+          owner: d.owner ?? "",
+          due_date: d.dueDate,
+          done: d.doneAt !== null,
+        })),
+      });
+
+      res.json({ ok: true, data: { markdown, title: stored.summaryTitle } });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 summaryRouter.get("/:sessionId", requireAuth, async (req, res, next) => {
   try {
     const sessionId = req.params.sessionId;
@@ -245,7 +264,18 @@ summaryRouter.get("/:sessionId", requireAuth, async (req, res, next) => {
       participants: stored.participants,
       duration_minutes: stored.durationMinutes,
       summary_blocks: stored.blocks as SummaryBlock[],
-      action_items: [],
+      // Was hardcoded `[]`, which is why the summary always read "0 action
+      // items" and the ActionItemsSection the frontend already had never once
+      // rendered. The decisions are the action items — they are the rows that
+      // carry an owner and a due date — so the table is built from them rather
+      // than from a second extraction that would disagree with the checkpoint.
+      action_items: decisions.map((d) => ({
+        id: d.id,
+        task: d.text,
+        owner: d.owner ?? "",
+        due_date: d.dueDate,
+        done: d.doneAt !== null,
+      })),
     };
 
     res.json({
@@ -256,7 +286,6 @@ summaryRouter.get("/:sessionId", requireAuth, async (req, res, next) => {
         metric: completenessFromRecords(decisions),
         provider: stored.provider ?? "stored",
         transcriptCount: stored.blocks.length,
-        sentAt: stored.sentAt,
       },
     });
   } catch (err) {

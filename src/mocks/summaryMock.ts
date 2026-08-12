@@ -17,9 +17,12 @@ export interface SummaryBlock {
 }
 
 export interface ActionItem {
+  /** The decision row behind this line — the id the tick-off PATCH addresses. */
+  id: string;
   task: string;
   owner: string;
   due_date: string | null;
+  done: boolean;
 }
 
 export interface ParticipantSummaryOutput {

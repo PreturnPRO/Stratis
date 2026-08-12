@@ -65,7 +65,7 @@ billingRouter.get("/subscription", requireAuth, async (req, res) => {
     const org = orgResult.rows[0];
     if (!org) return res.status(404).json({ ok: false, error: "Workspace not found" });
 
-    const plan = effectivePlan(org.plan, org.plan_status);
+    const plan = effectivePlan(org.plan, org.plan_status, org.plan_expires_at);
     const usage = await getUsage(org.id);
 
     const pending = await db.query<PlanRequestRow>(

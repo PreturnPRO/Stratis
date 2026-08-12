@@ -1,6 +1,6 @@
 import React, { useState, type CSSProperties } from 'react'
 import { FONT, LETTER_SPACING, RADIUS, SPACE } from '../constants'
-import { Button } from '../components/ui'
+import { BackLink, Button } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { API_BASE } from '../lib/api'
 import { useTheme } from '../hooks/useTheme'
@@ -109,6 +109,7 @@ export default function Register({ onNavigate }: Props) {
   return (
     <div style={containerStyle(colors)}>
       <AmbientBackground theme={theme} />
+      <BackLink onClick={() => onNavigate('landing')} />
       <div style={cardStyle(colors, shadow)}>
         <div style={wordmarkStyle(colors)}>
           <Zap size={14} strokeWidth={2} />

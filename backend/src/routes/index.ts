@@ -13,6 +13,7 @@ import { adminRouter } from "./admin";
 import { trackRouter } from "./track";
 import { feedbackRouter } from "./feedback";
 import { systemRouter } from "./system";
+import { roomRouter } from "./room";
 
 export const apiRouter = Router();
 
@@ -32,3 +33,4 @@ apiRouter.use("/admin", adminRouter);
 apiRouter.use("/track", trackRouter);
 apiRouter.use("/feedback", feedbackRouter);
 apiRouter.use("/system", systemRouter);
+apiRouter.use("/room", roomRouter);

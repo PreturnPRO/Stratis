@@ -98,25 +98,72 @@ Instructions:
 - Produce useful participant-facing summary content.
 - Organize custom output blocks prioritizing dynamic block structures for: Decisions, Action Items, Open Questions, and Risks.
 - Include overview, assumptions, and next steps when present.
-- Keep it concise and clear.
 - Return valid Stratis AI structured blocks only.
+
+Length — this summary is read in two minutes, by someone who was in the room:
+- At most ${MAX_SUMMARY_BLOCKS} blocks in total. Choose the most decision-relevant ones; leave the rest out.
+- Each block title: at most ${MAX_BLOCK_TITLE_CHARS} characters, no trailing punctuation.
+- Each block body: at most ${MAX_BLOCK_CONTENT_CHARS} characters. Prefer short bullets to paragraphs.
+- Do not restate the same point in two blocks. A longer summary is a worse summary.
 
 Transcript:
 ${fence.block("TRANSCRIPT", transcript, "(no transcript)")}
 `.trim();
 }
 
+/**
+ * The ceiling the prompt asks for is also enforced here, because a prompt is a
+ * request and this is the guarantee. Summaries were growing meeting over
+ * meeting with nothing bounding them at all.
+ */
+export const MAX_SUMMARY_BLOCKS = 6;
+export const MAX_BLOCK_TITLE_CHARS = 60;
+export const MAX_BLOCK_CONTENT_CHARS = 600;
+
+/** Bucket keywords, checked against the model's own heading. */
+const TITLE_BUCKETS: Array<[RegExp, string]> = [
+  [/risk|ความเสี่ยง/i, "RISKS"],
+  [/assum|ข้อสมมติ|สมมติฐาน/i, "ASSUMPTIONS"],
+  [/action|task|to-?do|owner|งาน|ผู้รับผิดชอบ/i, "ACTION_ITEMS"],
+  [/next step|follow.?up|ขั้นตอนต่อไป|ต่อไป/i, "NEXT_STEPS"],
+  [/what changed|change|เปลี่ยน/i, "WHAT_CHANGED"],
+  [/open question|unresolved|คำถาม|ค้าง/i, "OPEN_ITEMS"],
+  [/decision|ตัดสินใจ/i, "DECISIONS"],
+];
+
+/**
+ * The AI block schema has four generic types, but summary_blocks accepts eight
+ * buckets — so mapping on `block.type` alone sent everything that was not a
+ * decision or a question into OVERVIEW, and the Risks / Assumptions / Action
+ * Items / Next Steps sections the prompt asks for could never exist. The
+ * model's own heading is the only signal available for the rest, so it is what
+ * gets read.
+ */
 function blockTypeFromAI(block: AIBlock): string {
   if (block.type === "DecisionNode") return "DECISIONS";
   if (block.type === "QuestionSuggestion") return "OPEN_ITEMS";
+
+  const title = block.title ?? "";
+  for (const [pattern, bucket] of TITLE_BUCKETS) {
+    if (pattern.test(title)) return bucket;
+  }
   return "OVERVIEW";
 }
 
+/** Cuts at a word boundary where it can, so a summary never ends mid-word. */
+function clamp(text: string, limit: number): string {
+  const clean = text.trim();
+  if (clean.length <= limit) return clean;
+  const cut = clean.slice(0, limit);
+  const lastSpace = cut.lastIndexOf(" ");
+  return `${(lastSpace > limit * 0.6 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
+}
+
 function aiBlocksToSummaryBlocks(blocks: AIBlock[]): StoredSummaryBlock[] {
-  return blocks.map((block) => ({
+  return blocks.slice(0, MAX_SUMMARY_BLOCKS).map((block) => ({
     block_type: blockTypeFromAI(block),
-    title: block.title,
-    content: block.content,
+    title: clamp(block.title ?? "", MAX_BLOCK_TITLE_CHARS),
+    content: clamp(block.content ?? "", MAX_BLOCK_CONTENT_CHARS),
     visible_to_participants: block.type !== "QuestionSuggestion",
   }));
 }

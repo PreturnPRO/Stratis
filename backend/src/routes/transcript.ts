@@ -10,6 +10,7 @@ import { pushSuggestion, pushAnswered, pushNotes, registerStreamIngest } from ".
 import { getDocumentRow, rowToDocument, renderDocument } from "../lib/pmDocument";
 import { withRetry } from "../lib/withRetry";
 import { dedupeMemory, shouldReplaceMemory } from "../lib/rollingMemory";
+import { cleanSttText, isSttEcho } from "../lib/sttText";
 import { env } from "../config/env";
 
 export const transcriptRouter = Router();
@@ -19,6 +20,7 @@ interface SessionRow {
   id: string;
   facilitator_id: string;
   status: "created" | "active" | "ended";
+  org_id: string;
 }
 
 interface TranscriptRow {
@@ -31,18 +33,32 @@ interface TranscriptRow {
 
 async function getSession(sessionId: string): Promise<SessionRow | undefined> {
   const result = await db.query<SessionRow>(
-    `SELECT id, facilitator_id, status FROM sessions WHERE id = $1`,
+    `SELECT s.id, s.facilitator_id, s.status, m.org_id
+     FROM sessions s
+     JOIN meetings m ON m.id = s.meeting_id
+     WHERE s.id = $1`,
     [sessionId]
   );
   return result.rows[0];
 }
 
+/**
+ * The org check is the load-bearing half. "admin" is a role inside one
+ * workspace, not across the product, and signup lets an account choose it — so
+ * without `session.org_id === orgId` any stranger could register as an admin
+ * and read, or write, the transcript of every meeting in the database. The
+ * summary route has always scoped this way; this one had not.
+ */
 function canUseSession(
   session: SessionRow,
   userId: string,
-  role: string,
+  _role: string,
+  orgId: string,
 ): boolean {
-  if (role === "admin") return true;
+  if (session.org_id !== orgId) return false;
+  // No admin bypass. A workspace admin administers the workspace — accounts,
+  // plan, settings — and that is not the same thing as being entitled to read
+  // what was said in someone else's meeting.
   return session.facilitator_id === userId;
 }
 
@@ -289,8 +305,12 @@ function scheduleAiRouting(
   })();
 }
 
-function cleanSttText(raw: string): string {
-  return raw.replace(/([฀-๿])\s+(?=[฀-๿])/g, "$1").trim();
+async function lastTranscriptText(sessionId: string): Promise<string | null> {
+  const result = await db.query<{ text: string }>(
+    `SELECT text FROM transcripts WHERE session_id = $1 ORDER BY timestamp DESC LIMIT 1`,
+    [sessionId],
+  );
+  return result.rows[0]?.text ?? null;
 }
 
 const ingestDeadLetter = new Map<string, Array<{ speaker: string; text: string }>>();
@@ -325,6 +345,16 @@ registerStreamIngest(async ({ sessionId, speaker, text, role }) => {
 
   const session = await getSession(sessionId);
   if (!session || session.status === "ended") return null;
+
+  // Two sockets on one session — a second tab, or a reconnect whose old socket
+  // has not been reaped yet — each run their own recogniser over the same room
+  // audio and write the same sentence twice. Dropping a final that repeats the
+  // line before it costs nothing real: a room that genuinely says the same
+  // sentence twice in a row is saying it about the same thing.
+  if (isSttEcho(await lastTranscriptText(sessionId), clean)) {
+    console.warn(`[stt:ingest] Dropped an echo of the previous line (session ${sessionId})`);
+    return null;
+  }
 
   await flushIngestDeadLetter(sessionId, role);
 
@@ -365,7 +395,7 @@ async function validateSession(req: any, res: any, sessionId: string) {
     return null;
   }
 
-  if (!canUseSession(session, req.auth!.sub, req.auth!.role)) {
+  if (!canUseSession(session, req.auth!.sub, req.auth!.role, req.auth!.orgId)) {
     res
       .status(403)
       .json({ ok: false, error: "You do not have access to this session" });
@@ -399,7 +429,7 @@ transcriptRouter.get("/session/:sessionId", requireAuth, async (req, res) => {
       return res.status(404).json({ ok: false, error: "Session not found" });
     }
 
-    if (!canUseSession(session, req.auth!.sub, req.auth!.role)) {
+    if (!canUseSession(session, req.auth!.sub, req.auth!.role, req.auth!.orgId)) {
       return res
         .status(403)
         .json({ ok: false, error: "You do not have access to this session" });

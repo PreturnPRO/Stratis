@@ -17,7 +17,10 @@ aiRouter.get(
   ),
 );
 
-aiRouter.get("/test", async (_req, res, next) => {
+// requireAuth on both of these: they are Sprint-1 scaffolding that reaches the
+// paid LLM. Open to the internet they are a metered bill anyone can run up —
+// and a prompt anyone can choose.
+aiRouter.get("/test", requireAuth, async (_req, res, next) => {
   try {
     const result = await firstCall();
     res.json({
@@ -29,7 +32,7 @@ aiRouter.get("/test", async (_req, res, next) => {
   }
 });
 
-aiRouter.post("/structure", async (req, res, next) => {
+aiRouter.post("/structure", requireAuth, async (req, res, next) => {
   try {
     const input = typeof req.body?.input === "string" ? req.body.input : "";
     if (input.trim() === "") {

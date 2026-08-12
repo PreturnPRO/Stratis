@@ -87,7 +87,8 @@ function canRead(req: Request, meeting: MeetingRow): boolean {
 function canManage(req: Request, meeting: MeetingRow): boolean {
   if (!req.auth) return false;
   if (meeting.org_id !== req.auth.orgId) return false;
-  if (req.auth.role === "admin") return true;
+  // Editing and deleting a meeting belongs to whoever scheduled it. An admin
+  // manages the workspace, not other people's agendas.
   return meeting.created_by === req.auth.sub;
 }
 
@@ -285,7 +286,7 @@ meetingRouter.get("/dashboard", requireAuth, async (req, res) => {
       JOIN meetings m ON m.id = s.meeting_id
       WHERE m.org_id = $1
         AND s.status = 'active'
-        AND ($2 = 'admin' OR s.facilitator_id = $3)
+        AND s.facilitator_id = $3
       ORDER BY s.started_at DESC
       LIMIT 1
       `,
@@ -317,7 +318,7 @@ meetingRouter.get("/dashboard", requireAuth, async (req, res) => {
       JOIN sessions s ON s.id = ps.session_id
       JOIN meetings m ON m.id = s.meeting_id
       WHERE m.org_id = $1
-        AND ($2 = 'admin' OR s.facilitator_id = $3)
+        AND s.facilitator_id = $3
       ORDER BY ps.created_at DESC
       LIMIT $4
       `,

@@ -77,6 +77,114 @@ export const TH: Record<string, string> = {
   "A core assumption no one has tested.":
     "เป็นข้อสมมติสำคัญที่ยังไม่มีใครทดสอบ",
 
+  // --- Room code (participants) ---
+  "Join the room": "เข้าร่วมห้องประชุม",
+  "Type the code the facilitator read out.": "พิมพ์รหัสที่ผู้ดำเนินการประชุมอ่านให้ฟัง",
+  "Room code": "รหัสห้อง",
+  "How the room knows you": "ชื่อที่คนในห้องจะเห็น",
+  "Joining…": "กำลังเข้าร่วม…",
+  "Leave": "ออกจากห้อง",
+  "← Back to Stratis": "← กลับไปที่ Stratis",
+  "← Back": "← ย้อนกลับ",
+  "No account needed. You can see and comment on this meeting's decisions for as long as it is running.":
+    "ไม่ต้องสร้างบัญชี คุณดูและแสดงความเห็นต่อการตัดสินใจของการประชุมนี้ได้ตลอดเวลาที่ประชุมยังดำเนินอยู่",
+  "Nothing on the checkpoint yet. It fills in as the meeting reaches decisions.":
+    "ยังไม่มีอะไรในจุดตรวจสอบ จะเพิ่มขึ้นเมื่อที่ประชุมเริ่มตัดสินใจ",
+  "Updates every few seconds while the meeting runs.":
+    "อัปเดตทุกไม่กี่วินาทีระหว่างที่ประชุมดำเนินอยู่",
+  "What did the room actually decide?": "จริง ๆ แล้วที่ประชุมตัดสินใจว่าอะไร?",
+  "ROOM CODE": "รหัสห้อง",
+  "Open to the room": "เปิดให้คนในห้องเข้าร่วม",
+  "Opening…": "กำลังเปิด…",
+
+  "Colours are adjusted to stay readable on the theme you are using.":
+    "สีจะถูกปรับให้อ่านง่ายกับธีมที่คุณใช้อยู่",
+  "Custom colour": "สีที่กำหนดเอง",
+  "Signal Matcha": "Signal Matcha",
+  Violet: "ม่วง",
+  Magenta: "บานเย็น",
+  Coral: "ส้มปะการัง",
+  Indigo: "คราม",
+  Cobalt: "น้ำเงิน",
+  Amber: "เหลืองอำพัน",
+  Teal: "เขียวน้ำทะเล",
+
+  // --- Pro locks ---
+  PRO: "PRO",
+  "See what Pro includes →": "ดูว่าแพ็กเกจ Pro มีอะไรบ้าง →",
+  "Not now": "ไว้ทีหลัง",
+  "Theme and workspace colour": "ธีมและสีของเวิร์กสเปซ",
+  "Theme and workspace colour is part of Pro": "ธีมและสีของเวิร์กสเปซเป็นฟีเจอร์ของแพ็กเกจ Pro",
+  "Exporting the record": "การส่งออกบันทึกการประชุม",
+  "Exporting the record is part of Pro": "การส่งออกบันทึกการประชุมเป็นฟีเจอร์ของแพ็กเกจ Pro",
+  "Dark mode, eight workspace colours, and any custom colour you like.":
+    "โหมดมืด สีเวิร์กสเปซ 8 แบบ และสีที่คุณกำหนดเองได้ตามต้องการ",
+  "Take the summary out of Stratis as a file you can paste into LINE, email or Notion.":
+    "นำสรุปออกจาก Stratis เป็นไฟล์ที่วางลงใน LINE อีเมล หรือ Notion ได้",
+  "Theme and workspace colour. Applies to this browser.":
+    "ธีมและสีของเวิร์กสเปซ มีผลกับเบราว์เซอร์นี้",
+
+  // --- Settings: profile actions ---
+  "Save changes": "บันทึกการเปลี่ยนแปลง",
+  "Saving…": "กำลังบันทึก…",
+
+  // --- Settings: language & appearance ---
+  Language: "ภาษา",
+  Appearance: "การแสดงผล",
+  "Applies to the whole interface.": "มีผลกับทั้งระบบ",
+  "Applies to this browser.": "มีผลกับเบราว์เซอร์นี้",
+  Light: "สว่าง",
+  Dark: "มืด",
+  "See Pro →": "ดูแพ็กเกจ Pro →",
+  "Changing the theme is part of Pro. Your current theme stays as it is.":
+    "การเปลี่ยนธีมเป็นฟีเจอร์ของแพ็กเกจ Pro ธีมปัจจุบันของคุณจะยังคงเดิม",
+  "Tells you when a project document is updated after a meeting.":
+    "แจ้งเตือนเมื่อเอกสารโปรเจกต์ถูกอัปเดตหลังการประชุม",
+
+  // --- Summary ---
+  "Meeting summary": "สรุปการประชุม",
+  Export: "ส่งออก",
+  Copy: "คัดลอก",
+  Copied: "คัดลอกแล้ว",
+  "Done editing": "แก้ไขเสร็จแล้ว",
+  Task: "งาน",
+  Due: "กำหนดส่ง",
+  "no date": "ไม่มีกำหนด",
+  "Back to dashboard": "กลับไปที่แดชบอร์ด",
+  "Open the project document →": "เปิดเอกสารโปรเจกต์ →",
+  "This summary could not be loaded": "ไม่สามารถโหลดสรุปนี้ได้",
+  "Review it, then export and share it however your team works.":
+    "ตรวจทานแล้วส่งออกเพื่อแบ่งปันตามวิธีที่ทีมของคุณใช้",
+  "Editing — correct the AI before you send this out":
+    "กำลังแก้ไข — ปรับข้อความของ AI ให้ถูกต้องก่อนส่งออก",
+
+  // --- Landing / auth entry points ---
+  Pricing: "ราคา",
+  "Join a meeting": "เข้าร่วมการประชุม",
+  "Join with a room code": "เข้าร่วมด้วยรหัสห้อง",
+  "In a meeting right now?": "กำลังประชุมอยู่ใช่ไหม?",
+  "Joining a meeting?": "กำลังจะเข้าร่วมประชุม?",
+  "Enter a room code": "กรอกรหัสห้อง",
+
+  // --- Shell & failure copy ---
+  "Loading…": "กำลังโหลด…",
+  Dismiss: "ปิด",
+  "No meeting is running right now.": "ตอนนี้ยังไม่มีการประชุมที่กำลังดำเนินอยู่",
+  "Could not reach Stratis. Check your connection and try again.":
+    "เชื่อมต่อกับ Stratis ไม่ได้ กรุณาตรวจสอบอินเทอร์เน็ตแล้วลองใหม่",
+  "Your meetings could not be loaded. They are safe — this screen just could not reach the server.":
+    "โหลดรายการประชุมของคุณไม่ได้ ข้อมูลยังอยู่ครบ เพียงแต่หน้านี้เชื่อมต่อเซิร์ฟเวอร์ไม่ได้",
+  "Recent summaries could not be loaded.": "โหลดสรุปล่าสุดไม่ได้",
+  "The docket could not be loaded. Nothing has been lost — this screen just could not reach the server.":
+    "โหลดวาระการประชุมไม่ได้ ไม่มีข้อมูลสูญหาย เพียงแต่หน้านี้เชื่อมต่อเซิร์ฟเวอร์ไม่ได้",
+  "Your projects could not be loaded. They are safe — this screen just could not reach the server.":
+    "โหลดโปรเจกต์ของคุณไม่ได้ ข้อมูลยังอยู่ครบ เพียงแต่หน้านี้เชื่อมต่อเซิร์ฟเวอร์ไม่ได้",
+  "Your plan and usage could not be loaded. Nothing about your subscription has changed.":
+    "โหลดข้อมูลแพ็กเกจและการใช้งานไม่ได้ การสมัครใช้งานของคุณไม่มีการเปลี่ยนแปลง",
+
+  // --- Admin (workspace admins) ---
+  Usage: "การใช้งาน",
+
   // --- Auth: login / register / join ---
   "Sign in to Stratis": "เข้าสู่ระบบ Stratis",
   "Access the Control Room": "เข้าสู่ห้องควบคุม",

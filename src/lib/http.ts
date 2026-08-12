@@ -81,15 +81,30 @@ export async function apiFetch<T = unknown>(path: string, options: ApiFetchOptio
   // and neither is a reason to sign the account holder out.
   const speaksForSession = !anonymous && !explicitToken && !silentSessionEnd && token !== null;
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...rest,
-    headers: {
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(headers ?? {}),
-    },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      ...rest,
+      headers: {
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(headers ?? {}),
+      },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch (err) {
+    // `fetch` rejects with a bare TypeError("Failed to fetch") when the server
+    // cannot be reached at all. That string was being shown to customers as-is,
+    // wherever an action reported its own failure. Status 0 marks "never
+    // reached the server", which is a different thing from any HTTP status and
+    // is what callers need to distinguish a dead backend from a rejection.
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    throw new ApiError(
+      "Could not reach Stratis. Check your connection and try again.",
+      0,
+      "NETWORK",
+    );
+  }
 
   let payload: ApiEnvelope<T> | null = null;
   try {

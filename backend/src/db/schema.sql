@@ -301,6 +301,12 @@ CREATE TABLE IF NOT EXISTS decisions (
 -- Additive upgrade for databases that created the table before `dismissed`.
 ALTER TABLE decisions ADD COLUMN IF NOT EXISTS dismissed BOOLEAN NOT NULL DEFAULT FALSE;
 
+-- Ticked off in the summary's action table. A different axis from `status`,
+-- which says whether the DECISION is structurally complete; this says whether
+-- the WORK is finished. A timestamp rather than a boolean, so a PM can see
+-- when something was cleared and not only that it was.
+ALTER TABLE decisions ADD COLUMN IF NOT EXISTS done_at TIMESTAMPTZ;
+
 -- Set when a facilitator rewrites a generated summary block. Its presence is
 -- the provenance signal the summary renders: this line is human-ratified, not
 -- model output. NULL means the AI's wording is untouched.
@@ -379,6 +385,34 @@ CREATE TABLE IF NOT EXISTS invites (
 
 CREATE INDEX IF NOT EXISTS idx_invites_org_id ON invites(org_id);
 CREATE INDEX IF NOT EXISTS idx_invites_session_id ON invites(session_id);
+
+-- The short code a facilitator reads out so the room can join the checkpoint.
+-- It hangs off a session invite rather than being its own grant: the invite is
+-- what carries expiry, revocation and the guest role, and the code is only a
+-- way to find it without a URL. Partial index so the uniqueness applies to
+-- issued codes and not to the many invites that have none.
+ALTER TABLE invites ADD COLUMN IF NOT EXISTS code TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_invites_code ON invites(code) WHERE code IS NOT NULL;
+
+-- 24. DECISION REACTIONS (the room's read on the checkpoint)
+-- One row per person per decision. `agree` is a tick; `flag` says this does not
+-- match what I heard, and carries an optional note. Participants never write to
+-- `decisions` — the facilitator still owns every edit — so this table is the
+-- whole of what the room can say.
+CREATE TABLE IF NOT EXISTS decision_reactions (
+    id TEXT PRIMARY KEY,
+    decision_id TEXT NOT NULL REFERENCES decisions(id) ON DELETE CASCADE,
+    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+    -- A guest id or a user id. Guests are not user rows, so this is not an FK.
+    actor_id TEXT NOT NULL,
+    actor_name TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('agree', 'flag')),
+    note TEXT,
+    created_at TIMESTAMPTZ NOT NULL,
+    UNIQUE (decision_id, actor_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_decision_reactions_session ON decision_reactions(session_id);
 
 -- 24. INVITE REDEMPTIONS — audit trail; one row per accept, account or guest.
 CREATE TABLE IF NOT EXISTS invite_redemptions (

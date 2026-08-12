@@ -1,6 +1,7 @@
 import { Router } from "express";
 import type { InvitePreview, InviteWithLink, Role } from "@shared/types";
 import { requireAuth, requireRole } from "../auth/middleware";
+import { inviteLimiter } from "../middleware/rateLimit";
 import { signGuestToken } from "../auth/jwt";
 import { db } from "../db/database";
 import { newId, now } from "../lib/ids";
@@ -172,7 +173,7 @@ inviteRouter.post("/:id/revoke", requireAuth, requireRole("facilitator", "admin"
  * whether it still works, and nothing that would leak workspace contents to
  * whoever holds a guessed URL.
  */
-inviteRouter.get("/preview/:token", async (req, res) => {
+inviteRouter.get("/preview/:token", inviteLimiter, async (req, res) => {
   try {
     const row = await findInviteByToken(req.params.token);
     const check = checkInvite(row);
@@ -304,11 +305,11 @@ inviteRouter.post("/:token/accept", requireAuth, async (req, res) => {
       });
     }
 
-    const orgRow = await db.query<{ plan: string | null; plan_status: string | null; name: string }>(
+    const orgRow = await db.query<{ plan: string | null; plan_status: string | null; plan_expires_at: string | null; name: string }>(
       `SELECT plan, plan_status, name FROM organizations WHERE id = $1`,
       [invite.org_id],
     );
-    const plan = effectivePlan(orgRow.rows[0]?.plan ?? null, orgRow.rows[0]?.plan_status ?? null);
+    const plan = effectivePlan(orgRow.rows[0]?.plan ?? null, orgRow.rows[0]?.plan_status ?? null, orgRow.rows[0]?.plan_expires_at ?? null);
 
     const seatError = await enforceSeatQuota(invite.org_id, plan);
     if (seatError) return res.status(402).json({ ok: false, error: seatError });
@@ -350,7 +351,7 @@ inviteRouter.post("/:token/accept", requireAuth, async (req, res) => {
  * A guest is not a user row on purpose: they cannot be granted a role, cannot
  * appear in the workspace, and cannot outlive the meeting they were invited to.
  */
-inviteRouter.post("/:token/guest", async (req, res) => {
+inviteRouter.post("/:token/guest", inviteLimiter, async (req, res) => {
   try {
     const row = await findInviteByToken(req.params.token);
     const check = checkInvite(row);

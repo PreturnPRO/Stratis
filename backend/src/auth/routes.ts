@@ -12,6 +12,7 @@ import { db } from "../db/database";
 import { newId, now } from "../lib/ids";
 import { signToken } from "./jwt";
 import { requireAuth } from "./middleware";
+import { authLimiter } from "../middleware/rateLimit";
 import { consumeInviteForSignup, peekWorkspaceInvite } from "../lib/invites";
 import { effectivePlan } from "../lib/plans";
 import { enforceSeatQuota } from "../lib/entitlements";
@@ -36,6 +37,17 @@ const toUser = (r: UserRow): User => ({
 
 const VALID_ROLES: Role[] = ["facilitator", "participant", "admin"];
 
+const EMAIL_SHAPE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+/**
+ * One spelling of an address, everywhere. Postgres compares TEXT case- and
+ * space-sensitively, so "Owen@x.com " and "owen@x.com" were two accounts on
+ * signup and a failed login for the same person afterwards. The admin create
+ * path already normalised; these two did not.
+ */
+const normalizeEmail = (raw: unknown): string =>
+  typeof raw === "string" ? raw.trim().toLowerCase() : "";
+
 /**
  * Which sign-in methods this deployment actually has. The login screen reads
  * this instead of hard-coding a Google button that would 503 wherever the
@@ -45,19 +57,23 @@ authRouter.get("/providers", (_req, res) => {
   res.json({ ok: true, data: { password: true, google: env.google.enabled } });
 });
 
-authRouter.post("/signup", async (req, res) => {
+authRouter.post("/signup", authLimiter, async (req, res) => {
   try {
-    const { email, password, name, role, orgName } = (req.body ?? {}) as SignupRequest;
+    const { password, name, role, orgName } = (req.body ?? {}) as SignupRequest;
+    const email = normalizeEmail((req.body ?? {}).email);
     const inviteToken = typeof (req.body ?? {}).invite === "string" ? req.body.invite : "";
 
     if (!email || !password || !name) {
       return res.status(400).json({ ok: false, error: "email, password and name are required" });
     }
+    if (!EMAIL_SHAPE.test(email)) {
+      return res.status(400).json({ ok: false, error: "That does not look like an email address" });
+    }
     if (password.length < 8) {
       return res.status(400).json({ ok: false, error: "Use at least 8 characters" });
     }
 
-    const existingResult = await db.query(`SELECT id FROM users WHERE email = $1`, [email]);
+    const existingResult = await db.query(`SELECT id FROM users WHERE LOWER(email) = $1`, [email]);
     const existing = existingResult.rows[0];
 
     if (existing) return res.status(409).json({ ok: false, error: "Email already registered" });
@@ -75,11 +91,11 @@ authRouter.post("/signup", async (req, res) => {
       const check = await peekWorkspaceInvite(inviteToken);
       if (!check.ok) return res.status(410).json({ ok: false, error: check.reason });
 
-      const orgRow = await db.query<{ plan: string | null; plan_status: string | null }>(
-        `SELECT plan, plan_status FROM organizations WHERE id = $1`,
+      const orgRow = await db.query<{ plan: string | null; plan_status: string | null; plan_expires_at: string | null }>(
+        `SELECT plan, plan_status, plan_expires_at FROM organizations WHERE id = $1`,
         [check.invite.org_id],
       );
-      const plan = effectivePlan(orgRow.rows[0]?.plan ?? null, orgRow.rows[0]?.plan_status ?? null);
+      const plan = effectivePlan(orgRow.rows[0]?.plan ?? null, orgRow.rows[0]?.plan_status ?? null, orgRow.rows[0]?.plan_expires_at ?? null);
       const seatError = await enforceSeatQuota(check.invite.org_id, plan);
       if (seatError) return res.status(402).json({ ok: false, error: seatError });
 
@@ -96,7 +112,9 @@ authRouter.post("/signup", async (req, res) => {
     }
 
     const id = newId("usr");
-    const hash = bcrypt.hashSync(password, 10);
+    // Async, not hashSync: bcrypt at cost 10 blocks the event loop for ~100ms,
+    // and this process is also streaming meeting audio to STT on the same loop.
+    const hash = await bcrypt.hash(password, 10);
 
     await db.query(
       `INSERT INTO users (id,org_id,email,name,password_hash,role,created_at,invited_by,last_active_at)
@@ -119,14 +137,17 @@ authRouter.post("/signup", async (req, res) => {
   }
 });
 
-authRouter.post("/login", async (req, res) => {
+authRouter.post("/login", authLimiter, async (req, res) => {
   try {
-    const { email, password } = (req.body ?? {}) as LoginRequest;
+    const { password } = (req.body ?? {}) as LoginRequest;
+    const email = normalizeEmail((req.body ?? {}).email);
     if (!email || !password) {
       return res.status(400).json({ ok: false, error: "email and password are required" });
     }
-    
-    const queryResult = await db.query(`SELECT * FROM users WHERE email = $1`, [email]);
+
+    // LOWER(email) rather than email: accounts created before normalisation —
+    // and by the admin path, which always lowercased — must still sign in.
+    const queryResult = await db.query(`SELECT * FROM users WHERE LOWER(email) = $1`, [email]);
     const row = queryResult.rows[0] as UserRow | undefined;
 
     // A Google-only account has no password hash. Comparing against an empty
@@ -139,7 +160,7 @@ authRouter.post("/login", async (req, res) => {
       });
     }
 
-    if (!row || !bcrypt.compareSync(password, row.password_hash!)) {
+    if (!row || !(await bcrypt.compare(password, row.password_hash!))) {
       return res.status(401).json({ ok: false, error: "Invalid email or password" });
     }
 

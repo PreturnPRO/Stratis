@@ -29,23 +29,19 @@ export interface User {
  * the set changes with the UI and none of it is ever queried across users.
  */
 export interface UserSettings {
-  theme?: "dark" | "light" | "system";
-  transcriptLanguage?: string;
-  emailSummary?: boolean;
+  /**
+   * Deliberately short. Every key here has to be read by something: a stored
+   * preference that nothing acts on is a promise the product does not keep,
+   * and theme, transcriptLanguage, emailSummary, suggestionSound,
+   * autoSendSummary and reduceMotion were all exactly that — written to the
+   * database, never read anywhere. Theme is real, but it lives in
+   * localStorage where the app actually reads it.
+   */
   inAppNotifications?: boolean;
-  suggestionSound?: boolean;
-  autoSendSummary?: boolean;
-  reduceMotion?: boolean;
 }
 
 export const DEFAULT_USER_SETTINGS: Required<UserSettings> = {
-  theme: "system",
-  transcriptLanguage: "th-TH",
-  emailSummary: true,
   inAppNotifications: true,
-  suggestionSound: false,
-  autoSendSummary: false,
-  reduceMotion: false,
 };
 
 export interface AuthResponse {
@@ -217,6 +213,8 @@ export interface DecisionRecord {
   confidence: number | null;
   source: "ai" | "facilitator";
   dismissed: boolean;
+  /** Ticked off in the summary's action table. Null means still outstanding. */
+  doneAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -318,7 +316,8 @@ export type FeatureKey =
   | "transcript_export"
   | "session_invites"
   | "guest_access"
-  | "analytics_dashboard";
+  | "analytics_dashboard"
+  | "custom_theme";
 
 export interface PlanLimits {
   /** Meetings that may be created per calendar month. null = unlimited. Enforced. */

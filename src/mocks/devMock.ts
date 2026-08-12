@@ -16,11 +16,31 @@ const FLAG_KEY = "stratis.mock";
 const AUTH_KEY = "stratis.auth.v1";
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 
+/**
+ * Facilitator by default, because that is who the meeting screens are for.
+ * `?as=admin` switches the mocked role so the Admin panel can be looked at
+ * without changing what every other screen demonstrates. Sticks like the mock
+ * flag itself, so a reload keeps whichever role you asked for.
+ */
+const ROLE_KEY = "stratis.mock.role";
+
+function mockRole(): string {
+  if (typeof window === "undefined") return "facilitator";
+  const asked = new URLSearchParams(window.location.search).get("as");
+  if (asked === "admin" || asked === "facilitator") {
+    window.localStorage.setItem(ROLE_KEY, asked);
+    return asked;
+  }
+  return window.localStorage.getItem(ROLE_KEY) ?? "facilitator";
+}
+
 const USER = {
   id: "u_dana",
   name: "Dana Reviewer",
   email: "dana@demo.local",
-  role: "facilitator",
+  get role() {
+    return mockRole();
+  },
   orgId: "org_demo",
 };
 
@@ -358,6 +378,155 @@ function route(path: string, method: string): Response | null {
     // Recording is a no-op here — there is no STT service to hand audio to.
     return json({ accepted: true, transcripts: [] });
   }
+  // Plan state. Free by default so the Pro gates (theme, export) are visible
+  // in the state most new workspaces are actually in.
+  if (path.includes("/api/billing/subscription")) {
+    // `?plan=pro` flips the mocked workspace to Pro so the unlocked side of
+    // every ProLock can be checked without a real subscription.
+    const pro =
+      new URLSearchParams(window.location.search).get("plan") === "pro" ||
+      window.localStorage.getItem("stratis.mock.plan") === "pro";
+    if (new URLSearchParams(window.location.search).has("plan")) {
+      window.localStorage.setItem(
+        "stratis.mock.plan",
+        new URLSearchParams(window.location.search).get("plan") ?? "free",
+      );
+    }
+    if (pro) {
+      const features = [
+        "live_suggestions", "checkpoint", "pm_document", "transcript_export",
+        "session_invites", "guest_access", "custom_theme",
+      ];
+      return json({
+        plan: {
+          id: "pro", name: "Pro", tagline: "Unlimited meetings for the whole workspace.",
+          limits: { meetingsPerMonth: null, seats: null, sessionMinutes: 240, retentionDays: null },
+          features,
+        },
+        state: {
+          orgId: "org_demo", plan: "pro", status: "active", isBeta: false,
+          startedAt: at(-40 * DAY), expiresAt: null, note: null,
+        },
+        usage: { meetingsThisMonth: 12, sessionsThisMonth: 14, seatsUsed: 6 },
+        limits: { meetingsPerMonth: null, seats: null, sessionMinutes: 240, retentionDays: null },
+        features,
+        pendingRequest: null,
+      });
+    }
+    // The real route returns the view directly under `data` — no wrapper key.
+    return json({
+        plan: {
+          id: "free",
+          name: "Free",
+          tagline: "Try Stratis on a few meetings a month.",
+          limits: { meetingsPerMonth: 5, seats: 3, sessionMinutes: 45, retentionDays: 30 },
+          features: ["live_suggestions", "checkpoint", "session_invites", "guest_access", "pm_document"],
+        },
+        state: {
+          orgId: "org_demo", plan: "free", status: "active", isBeta: false,
+          startedAt: at(-40 * DAY), expiresAt: null, note: null,
+        },
+        usage: { meetingsThisMonth: 3, sessionsThisMonth: 4, seatsUsed: 3 },
+        limits: { meetingsPerMonth: 5, seats: 3, sessionMinutes: 45, retentionDays: 30 },
+        features: ["live_suggestions", "checkpoint", "session_invites", "guest_access", "pm_document"],
+      pendingRequest: null,
+    });
+  }
+
+  // Admin panel. Monitoring only — usage numbers, feedback, members. Nothing
+  // here reaches a transcript or a meeting, which is the point of the panel.
+  if (path.includes("/api/admin/metrics")) {
+    return json({
+      metrics: {
+        activeUsers: { daily: 3, weekly: 7, monthly: 9 },
+        members: { total: 9 },
+        sessions: { total: 24, last7d: 6, avgMinutes: 38 },
+        meetings: { total: 31, last7d: 8 },
+        // A 0-1 fraction: the admin metric divides, the UI multiplies by 100.
+        checkpoint: { sessionsWithDecisions: 19, decisions: 57, completeRate: 0.68 },
+        feedback: { total: 12, open: 3, avgRating: 4.1 },
+        topEvents: [
+          { event: "meeting_started", count: 31 },
+          { event: "checkpoint_opened", count: 22 },
+          { event: "summary_exported", count: 14 },
+          { event: "room_joined", count: 11 },
+          { event: "upgrade_clicked", count: 4 },
+        ],
+        dailyActive: [
+          { day: "Aug 5", users: 4 },
+          { day: "Aug 6", users: 6 },
+          { day: "Aug 7", users: 5 },
+          { day: "Aug 8", users: 7 },
+          { day: "Aug 9", users: 3 },
+          { day: "Aug 10", users: 6 },
+          { day: "Aug 11", users: 3 },
+        ],
+      },
+    });
+  }
+  if (/\/api\/admin\/feedback\/[^/]+$/.test(path)) {
+    return json({ updated: true });
+  }
+  if (path.includes("/api/admin/feedback")) {
+    return json({
+      feedback: [
+        {
+          id: "fb_1", orgId: "org_demo", userId: "u_dana", userName: "Dana Reviewer",
+          sessionId: "sess_pricing_live", kind: "bug", rating: 2,
+          message: "Checkpoint changed after I refreshed the page mid-meeting.",
+          surface: "meeting", appVersion: "2743fe8", status: "new",
+          createdAt: at(-2 * 60 * 60_000),
+        },
+        {
+          id: "fb_2", orgId: "org_demo", userId: "u_mike", userName: "Mike R.",
+          sessionId: null, kind: "idea", rating: 5,
+          message: "Room code worked on three phones. Would like a QR next to it.",
+          surface: "room", appVersion: "2743fe8", status: "triaged",
+          createdAt: at(-26 * 60 * 60_000),
+        },
+        {
+          id: "fb_3", orgId: "org_demo", userId: null, userName: null,
+          sessionId: null, kind: "praise", rating: 5,
+          message: "The action table is the first thing my PM actually reads.",
+          surface: "summary", appVersion: "2743fe8", status: "resolved",
+          createdAt: at(-3 * 24 * 60 * 60_000),
+        },
+      ],
+    });
+  }
+  if (path.includes("/api/admin/users")) {
+    return json({
+      users: [
+        { id: "u_dana", orgId: "org_demo", orgName: "Demo workspace", email: "dana@demo.co", name: "Dana Reviewer", role: "admin", status: "active", authProvider: "password", plan: "beta", createdAt: at(-40 * 24 * 60 * 60_000), lastActiveAt: at(-5 * 60_000), sessionCount: 14 },
+        { id: "u_mike", orgId: "org_demo", orgName: "Demo workspace", email: "mike@demo.co", name: "Mike R.", role: "facilitator", status: "active", authProvider: "google", plan: "beta", createdAt: at(-30 * 24 * 60 * 60_000), lastActiveAt: at(-3 * 60 * 60_000), sessionCount: 7 },
+        { id: "u_alex", orgId: "org_demo", orgName: "Demo workspace", email: "alex@demo.co", name: "Alex T.", role: "participant", status: "suspended", authProvider: "password", plan: "beta", createdAt: at(-12 * 24 * 60 * 60_000), lastActiveAt: at(-6 * 24 * 60 * 60_000), sessionCount: 0 },
+      ],
+    });
+  }
+  if (path.includes("/api/admin/workspace")) {
+    return json({ workspace: { id: "org_demo", name: "Demo workspace", plan: "beta", isBeta: true } });
+  }
+
+  // Room code and the room's reactions, so the checkpoint can be reviewed with
+  // its collaborative half visible instead of erroring on an absent backend.
+  if (/\/api\/room\/session\/[^/]+\/code$/.test(path)) {
+    return json({ code: "K7MDX4" });
+  }
+  if (/\/api\/room\/session\/[^/]+\/reactions$/.test(path)) {
+    return json({
+      reactions: {
+        d_metered: { agree: 4, flag: 0, flags: [] },
+        d_capacity: {
+          agree: 1,
+          flag: 2,
+          flags: [
+            { name: "Alex T.", note: "Thursday is the capacity numbers, not the confirmation." },
+            { name: "Mike R.", note: "Six-week window still unconfirmed by engineering." },
+          ],
+        },
+      },
+    });
+  }
   if (path.includes("/decisions/extract")) {
     return json({ decisions: DECISIONS });
   }
@@ -457,6 +626,18 @@ export function isDevMockEnabled(): boolean {
   );
 }
 
+const FAIL_KEY = "stratis.mock.fail";
+
+/** Dev-only: pretend the backend is down. `?fail=1` on, `?fail=0` off. */
+function failEverything(): boolean {
+  if (typeof window === "undefined") return false;
+  const asked = new URLSearchParams(window.location.search).get("fail");
+  if (asked === "1" || asked === "0") {
+    window.localStorage.setItem(FAIL_KEY, asked);
+  }
+  return window.localStorage.getItem(FAIL_KEY) === "1";
+}
+
 export function installDevMock(): void {
   const realFetch = window.fetch.bind(window);
 
@@ -466,6 +647,15 @@ export function installDevMock(): void {
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
 
     if (url.includes("/api/")) {
+      // `?fail=1` makes every API call reject, which is the only cheap way to
+      // see what each screen looks like when the backend is unreachable — a
+      // cold-starting Render instance, a dropped connection, a bad deploy.
+      // Auth is exempt so the shell still renders and the pages are reachable.
+      if (failEverything() && !url.includes("/api/auth/")) {
+        await new Promise((r) => setTimeout(r, 180));
+        throw new TypeError("Failed to fetch");
+      }
+
       const mocked = route(url, method);
       if (mocked) {
         // A beat of latency so loading states actually render instead of

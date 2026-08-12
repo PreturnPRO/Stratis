@@ -25,8 +25,11 @@ feedbackRouter.post("/", optionalAuth, async (req, res) => {
 
     const kind: FeedbackKind = KINDS.includes(req.body?.kind) ? req.body.kind : "general";
 
+    // 1-5. The server decides the scale, not the form — a client sending 9
+    // would otherwise be stored and later rendered as "9/5".
     const rawRating = Number(req.body?.rating);
-    const rating = Number.isFinite(rawRating) && rawRating >= 0 && rawRating <= 10 ? Math.round(rawRating) : null;
+    const rating =
+      Number.isFinite(rawRating) && rawRating >= 1 && rawRating <= 5 ? Math.round(rawRating) : null;
 
     const sessionId =
       typeof req.body?.sessionId === "string" ? req.body.sessionId : req.guest?.sessionId ?? null;

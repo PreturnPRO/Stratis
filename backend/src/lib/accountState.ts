@@ -84,6 +84,7 @@ interface AccountRow {
   token_valid_after: string | null;
   plan: string | null;
   plan_status: string | null;
+  plan_expires_at: string | null;
   is_beta: boolean | null;
 }
 
@@ -93,7 +94,7 @@ export async function getAccountState(userId: string): Promise<AccountState | nu
 
   const result = await db.query<AccountRow>(
     `SELECT u.id, u.org_id, u.role, u.status, u.status_reason, u.token_valid_after,
-            o.plan, o.plan_status, o.is_beta
+            o.plan, o.plan_status, o.plan_expires_at, o.is_beta
      FROM users u
      LEFT JOIN organizations o ON o.id = u.org_id
      WHERE u.id = $1`,
@@ -109,7 +110,7 @@ export async function getAccountState(userId: string): Promise<AccountState | nu
         status: row.status ?? "active",
         statusReason: row.status_reason,
         tokenValidAfter: toEpochSeconds(row.token_valid_after),
-        plan: effectivePlan(row.plan, row.plan_status),
+        plan: effectivePlan(row.plan, row.plan_status, row.plan_expires_at),
         planStatus: row.plan_status ?? "active",
         isBeta: Boolean(row.is_beta),
       }

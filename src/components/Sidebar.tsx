@@ -6,14 +6,11 @@ import {
   FileText,
   LogOut,
   Zap,
-  Sun,
-  Moon,
   PanelLeft,
   PanelLeftClose,
   Settings as SettingsIcon,
   ShieldCheck,
   MessageSquarePlus,
-  Languages,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useState, type MouseEvent as ReactMouseEvent } from "react";
@@ -21,7 +18,6 @@ import { FONT, RADIUS, SPACE } from "../tokens/colors";
 import { NAV_ITEMS } from "../constants";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
-import { useLang, OTHER_LANG_LABEL } from "../hooks/useLang";
 
 // The rail keeps a CONSTANT layout width and expansion is a deliberate,
 // persisted click. Hover-expand animated the flex width, which relaid out the
@@ -61,23 +57,18 @@ export default function Sidebar({
   active,
   onNav,
   onLogout,
-  theme,
-  onToggleTheme,
   isAdmin = false,
   onFeedback,
 }: {
   active: string;
   onNav: (id: string) => void;
   onLogout?: () => void;
-  theme: "dark" | "light";
-  onToggleTheme: () => void;
   /** Admin is the only nav entry that is not for everyone. */
   isAdmin?: boolean;
   onFeedback?: () => void;
 }) {
   const { user } = useAuth();
   const { colors } = useTheme();
-  const { lang, toggleLang } = useLang();
   const [expanded, setExpanded] = useState<boolean>(() => {
     try {
       return localStorage.getItem(STORAGE_KEY) === "1";
@@ -86,8 +77,6 @@ export default function Sidebar({
     }
   });
   const [pressedNav, setPressedNav] = useState<string | null>(null);
-  const [themePressed, setThemePressed] = useState(false);
-  const [langPressed, setLangPressed] = useState(false);
   const [logoutPressed, setLogoutPressed] = useState(false);
   const [feedbackPressed, setFeedbackPressed] = useState(false);
   const [togglePressed, setTogglePressed] = useState(false);
@@ -259,61 +248,11 @@ export default function Sidebar({
           </button>
         )}
 
-        <button
-          title="Toggle theme"
-          aria-label="Toggle theme"
-          onClick={onToggleTheme}
-          onMouseLeave={() => setThemePressed(false)}
-          onMouseDown={() => setThemePressed(true)}
-          onMouseUp={() => setThemePressed(false)}
-          style={{
-            width: expanded ? EXPANDED_WIDTH - 8 : 56, height: 44, marginLeft: 4,
-            borderRadius: 8, background: "transparent", border: "none",
-            color: colors.textDim, cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "flex-start",
-            gap: 14, paddingLeft: 17,
-            opacity: themePressed ? 0.7 : 1,
-            transition: "opacity 0.1s, width 0.2s cubic-bezier(.4,0,.2,1)",
-          }}
-        >
-          <span style={{ display: "flex", flexShrink: 0 }}>
-            {theme === "dark" ? <Sun size={16} strokeWidth={1.75} /> : <Moon size={16} strokeWidth={1.75} />}
-          </span>
-          <span style={{
-            fontSize: FONT.size.body, fontWeight: 500, whiteSpace: "nowrap",
-            opacity: expanded ? 1 : 0, transition: "opacity 0.15s",
-          }}>
-            {theme === "dark" ? "Light mode" : "Dark mode"}
-          </span>
-        </button>
-
-        <button
-          title="Switch language"
-          aria-label="Switch language"
-          onClick={toggleLang}
-          onMouseLeave={() => setLangPressed(false)}
-          onMouseDown={() => setLangPressed(true)}
-          onMouseUp={() => setLangPressed(false)}
-          style={{
-            width: expanded ? EXPANDED_WIDTH - 8 : 56, height: 44, marginLeft: 4,
-            borderRadius: 8, background: "transparent", border: "none",
-            color: colors.textDim, cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "flex-start",
-            gap: 14, paddingLeft: 17,
-            opacity: langPressed ? 0.7 : 1,
-            transition: "opacity 0.1s, width 0.2s cubic-bezier(.4,0,.2,1)",
-          }}
-        >
-          <span style={{ display: "flex", flexShrink: 0 }}>
-            <Languages size={16} strokeWidth={1.75} />
-          </span>
-          <span style={{
-            fontSize: FONT.size.body, fontWeight: 500, whiteSpace: "nowrap",
-            opacity: expanded ? 1 : 0, transition: "opacity 0.15s",
-          }}>
-            {OTHER_LANG_LABEL[lang]}
-          </span>
-        </button>
+        {/* The theme control moved to Settings → Preferences. The rail is for
+            navigation; a rarely-used appearance switch sitting next to the
+            pages was crowding the thing people are actually here to click. */}
+        {/* Language moved to Settings → Preferences with the theme. The rail
+            is for destinations. */}
 
         <div
           title={displayName}

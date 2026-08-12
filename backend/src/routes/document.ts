@@ -59,6 +59,18 @@ async function getSessionMeta(sessionId: string): Promise<SessionMetaRow | undef
   return result.rows[0];
 }
 
+/** A version label is one line: first sentence, hard-capped. */
+const MAX_VERSION_LABEL_CHARS = 80;
+
+function versionLabel(raw: string): string {
+  const firstSentence = raw.trim().split(/(?<=[.!?。])\s+/)[0] ?? "";
+  const line = (firstSentence || raw).trim().replace(/\s+/g, " ");
+  if (line.length <= MAX_VERSION_LABEL_CHARS) return line;
+  const cut = line.slice(0, MAX_VERSION_LABEL_CHARS);
+  const lastSpace = cut.lastIndexOf(" ");
+  return `${(lastSpace > 40 ? cut.slice(0, lastSpace) : cut).trimEnd()}…`;
+}
+
 async function getVersions(documentId: string): Promise<PmDocumentVersion[]> {
   const result = await db.query<VersionRow>(
     `SELECT id, version, session_id, patch_json, created_at
@@ -74,6 +86,10 @@ async function getVersions(documentId: string): Promise<PmDocumentVersion[]> {
     } catch {
       changeSummary = "";
     }
+    // This renders as the label on a row in the version list, next to "v3".
+    // Unbounded, it was a paragraph of model prose stretched across the
+    // history panel. One line is what a label is for.
+    changeSummary = versionLabel(changeSummary);
     return {
       id: v.id,
       version: v.version,
@@ -84,9 +100,10 @@ async function getVersions(documentId: string): Promise<PmDocumentVersion[]> {
   });
 }
 
-function canAccess(meta: SessionMetaRow, role: string, userId: string, orgId: string): boolean {
+function canAccess(meta: SessionMetaRow, _role: string, userId: string, orgId: string): boolean {
   if (meta.org_id !== orgId) return false;
-  if (role === "admin") return true;
+  // No admin bypass. Two people entitled to commit against one project
+  // document is how it ends up with two writers and a forked history.
   return meta.facilitator_id === userId;
 }
 
@@ -173,43 +190,84 @@ documentRouter.post("/session/:sessionId/commit", requireAuth, async (req, res, 
     }
 
     const timestamp = now();
-    const existing = await getDocumentRow(meta.org_id, meta.project_id);
-    const currentState = existing ? rowToDocument(existing).state : emptyState();
-    const nextState = applyPatches(currentState, patches);
-    const nextVersion = (existing?.version ?? 0) + 1;
 
-    const stateJson = JSON.stringify(nextState);
-
-    let documentId: string;
-    if (existing) {
-      documentId = existing.id;
-      await db.query(
-        `UPDATE documents SET state_json = $1, version = $2, updated_at = $3 WHERE id = $4`,
-        [stateJson, nextVersion, timestamp, documentId]
+    /**
+     * One transaction, and the document row is locked before it is read.
+     *
+     * This was a read-modify-write across three separate pooled queries: read
+     * version N, apply patches to the state it returned, write N+1. Two commits
+     * landing together both read N, so the second overwrote the first's state
+     * with its own — one meeting's decisions silently gone — and both tried to
+     * insert version N+1, which UNIQUE(document_id, version) rejected with a
+     * 500. That is the two-devices-one-document bug: the PM doc forked and the
+     * halves overwrote each other.
+     *
+     * SELECT ... FOR UPDATE makes the second commit wait for the first, then
+     * read the state the first actually wrote, so the patches stack instead of
+     * racing.
+     */
+    const { documentId, nextVersion } = await db.tx(async (client) => {
+      const locked = await client.query<DocumentRow>(
+        `SELECT * FROM documents WHERE org_id = $1 AND project_id = $2 FOR UPDATE`,
+        [meta.org_id, meta.project_id],
       );
-    } else {
-      documentId = newId("doc");
-      await db.query(
-        `INSERT INTO documents (id, project_id, org_id, state_json, version, created_at, updated_at) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [documentId, meta.project_id, meta.org_id, stateJson, nextVersion, timestamp, timestamp]
-      );
-    }
+      const current = locked.rows[0];
 
-    await db.query(
-      `INSERT INTO document_versions (id, document_id, session_id, version, state_json, patch_json, created_by, created_at) 
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [
-        newId("dver"),
-        documentId,
-        meta.session_id,
-        nextVersion,
-        stateJson,
-        JSON.stringify({ overall_change_summary: changeSummary, patches }),
-        req.auth!.sub,
-        timestamp,
-      ]
-    );
+      const currentState = current ? rowToDocument(current).state : emptyState();
+      const nextState = applyPatches(currentState, patches);
+      const version = (current?.version ?? 0) + 1;
+      const stateJson = JSON.stringify(nextState);
+
+      let docId: string;
+      if (current) {
+        docId = current.id;
+        await client.query(
+          `UPDATE documents SET state_json = $1, version = $2, updated_at = $3 WHERE id = $4`,
+          [stateJson, version, timestamp, docId],
+        );
+      } else {
+        docId = newId("doc");
+        // Two first-ever commits race the lock, because there is no row yet to
+        // lock. UNIQUE(project_id, org_id) settles it and the loser re-reads.
+        await client.query(
+          `INSERT INTO documents (id, project_id, org_id, state_json, version, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (project_id, org_id) DO UPDATE
+             SET state_json = EXCLUDED.state_json,
+                 version = documents.version + 1,
+                 updated_at = EXCLUDED.updated_at`,
+          [docId, meta.project_id, meta.org_id, stateJson, version, timestamp, timestamp],
+        );
+        const settled = await client.query<DocumentRow>(
+          `SELECT id, version FROM documents WHERE org_id = $1 AND project_id = $2`,
+          [meta.org_id, meta.project_id],
+        );
+        docId = settled.rows[0]?.id ?? docId;
+      }
+
+      const stored = await client.query<{ version: number }>(
+        `SELECT version FROM documents WHERE id = $1`,
+        [docId],
+      );
+      const finalVersion = stored.rows[0]?.version ?? version;
+
+      await client.query(
+        `INSERT INTO document_versions (id, document_id, session_id, version, state_json, patch_json, created_by, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          newId("dver"),
+          docId,
+          meta.session_id,
+          finalVersion,
+          stateJson,
+          JSON.stringify({ overall_change_summary: changeSummary, patches }),
+          req.auth!.sub,
+          timestamp,
+        ],
+      );
+
+      return { documentId: docId, nextVersion: finalVersion };
+    });
 
     const orgUsers = await db.query<{ id: string }>(
       "SELECT id FROM users WHERE org_id = $1",

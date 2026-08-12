@@ -28,17 +28,26 @@ import { apiFetch } from "../lib/http";
 import { track } from "../lib/track";
 import { FONT, RADIUS, SPACE } from "../tokens/colors";
 
+/**
+ * Monitoring first, administration second.
+ *
+ * Admin is a place to see how the beta is going and what people are saying —
+ * not a way into anyone's meeting. The content access that used to come with
+ * the role (every session, transcript, summary and document in the workspace)
+ * is gone from the API, so there is nothing here that opens a meeting someone
+ * else is running.
+ */
 const TABS = [
-  { id: "team", label: "Team" },
-  { id: "invites", label: "Invites" },
-  { id: "usage", label: "Beta usage" },
+  { id: "usage", label: "Usage" },
   { id: "feedback", label: "Feedback" },
+  { id: "team", label: "Members" },
+  { id: "invites", label: "Invites" },
   { id: "release", label: "Release" },
 ];
 
 export default function Admin() {
   const { isAdmin } = useAuth();
-  const [tab, setTab] = useState("team");
+  const [tab, setTab] = useState("usage");
 
   useEffect(() => {
     track("page_viewed", { page: "admin" }, "admin");
@@ -56,7 +65,7 @@ export default function Admin() {
   }
 
   return (
-    <PageShell title="Admin" subtitle="Members, access, invite links, and how the beta is going.">
+    <PageShell title="Admin" subtitle="How the beta is going, what people are reporting, and who is in the workspace. Meeting content stays with whoever ran the meeting.">
       <TabBar tabs={TABS} active={tab} onChange={setTab} />
       {tab === "team" && <TeamTab />}
       {tab === "invites" && <InvitesTab />}
@@ -658,7 +667,7 @@ function FeedbackTab() {
         >
           <div style={{ display: "flex", gap: SPACE[1], alignItems: "center", marginBottom: 4 }}>
             <Chip>{item.kind}</Chip>
-            {item.rating !== null && <Chip>{item.rating}/10</Chip>}
+            {item.rating !== null && <Chip>{item.rating}/5</Chip>}
             <span style={{ fontSize: FONT.size.caption, color: colors.textDim }}>
               {item.userName ?? "Anonymous"} · {new Date(item.createdAt).toLocaleString()}
               {item.surface ? ` · ${item.surface}` : ""}

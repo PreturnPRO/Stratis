@@ -25,8 +25,10 @@ export interface UseCheckpointReturn {
   loading: boolean;
   extracting: boolean;
   error: string | null;
-  load: () => Promise<void>;
-  extract: () => Promise<void>;
+  /** Resolves to how many decisions the server holds, so callers can decide
+   *  whether an extraction is needed without trusting local state. */
+  load: () => Promise<number>;
+  extract: (force?: boolean) => Promise<void>;
   edit: (decisionId: string, patch: DecisionEdit) => Promise<void>;
 }
 
@@ -54,28 +56,34 @@ export function useCheckpoint(
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!sessionId || !token) return;
+    if (!sessionId || !token) return 0;
     setLoading(true);
     setError(null);
     try {
       const data = await apiFetch<DecisionPayload>(`/api/session/${sessionId}/decisions`);
-      setDecisions(data.decisions ?? []);
+      const next = data.decisions ?? [];
+      setDecisions(next);
       setMetric(data.metric ?? EMPTY_METRIC);
+      return next.length;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load decisions");
+      return 0;
     } finally {
       setLoading(false);
     }
   }, [sessionId, token]);
 
-  const extract = useCallback(async () => {
+  // `force` is the explicit "Re-run" affordance. Without it the server returns
+  // what it already holds instead of asking the model again — which is what
+  // kept the checkpoint changing under the facilitator on every refresh.
+  const extract = useCallback(async (force = false) => {
     if (!sessionId || !token) return;
     setExtracting(true);
     setError(null);
     try {
       const data = await apiFetch<DecisionPayload>(
         `/api/session/${sessionId}/decisions/extract`,
-        { method: "POST" },
+        { method: "POST", body: { force } },
       );
       setDecisions(data.decisions ?? []);
       setMetric(data.metric ?? EMPTY_METRIC);

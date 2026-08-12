@@ -23,6 +23,7 @@ const FEATURE_LABELS: Record<FeatureKey, string> = {
   session_invites: "Invite links for individual meetings",
   guest_access: "Guests can join without an account",
   analytics_dashboard: "Team usage dashboard",
+  custom_theme: "Dark mode and workspace colours",
 };
 
 export default function Pricing({ onNav }: { onNav?: (id: string) => void }) {
@@ -45,7 +46,7 @@ export default function Pricing({ onNav }: { onNav?: (id: string) => void }) {
     setError(null);
     try {
       await apiFetch("/api/billing/request", { method: "POST", body: { plan: planId } });
-      setMessage("Thanks — we have your request and will be in touch to arrange it.");
+      setMessage("Added to the wishlist — we will email you when Pro opens up.");
       await refreshSubscription();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send that request");
@@ -54,19 +55,34 @@ export default function Pricing({ onNav }: { onNav?: (id: string) => void }) {
     }
   };
 
-  if (!plans) return <PageShell title="Plans"><LoadingState persist count={2} /></PageShell>;
+  // The error banner lives below this early return, so a failed fetch used to
+  // sit on "Loading…" forever. On a cold-starting backend that is the first
+  // thing a prospective customer sees, and it never resolves itself.
+  if (!plans) {
+    return (
+      <PageShell title="Plans">
+        {error ? (
+          <Banner tone="danger">
+            {error} — the plans could not be loaded. Please try again in a moment.
+          </Banner>
+        ) : (
+          <LoadingState persist count={2} />
+        )}
+      </PageShell>
+    );
+  }
 
   const currentPlanId = subscription?.plan.id;
 
   return (
     <PageShell
       title="Plans"
-      subtitle="One price covers the whole workspace — there is no per-seat maths. During the beta, upgrades are arranged by the Stratis team rather than charged in the app."
+      subtitle="One price covers the whole workspace — there is no per-seat maths. Pro is not on sale yet: add it to your wishlist and we will email you when it opens."
     >
       {error && <Banner tone="danger">{error}</Banner>}
       {message && <Banner tone="success">{message}</Banner>}
       {subscription?.pendingRequest && (
-        <Banner>Your request to move to {subscription.pendingRequest.toPlan} is with us.</Banner>
+        <Banner>{subscription.pendingRequest.toPlan} is on your wishlist — we will be in touch.</Banner>
       )}
 
       <div style={{ display: "flex", gap: SPACE[2], flexWrap: "wrap", marginBottom: SPACE[3] }}>
@@ -138,7 +154,7 @@ export default function Pricing({ onNav }: { onNav?: (id: string) => void }) {
                     disabled={busy !== null}
                     onClick={() => void request(plan.id)}
                   >
-                    {busy === plan.id ? "Sending…" : `Request ${plan.name}`}
+                    {busy === plan.id ? "Adding…" : `Wishlist ${plan.name}`}
                   </Button>
                 )}
               </div>
@@ -147,11 +163,11 @@ export default function Pricing({ onNav }: { onNav?: (id: string) => void }) {
         })}
       </div>
 
-      <Card title="What happens when you request an upgrade">
+      <Card title="What the wishlist does">
         <p style={{ margin: 0, fontSize: FONT.size.body, color: colors.textMuted, lineHeight: 1.7 }}>
-          Nothing is charged. Your request is recorded against your workspace, and a member of the
-          Stratis team activates the plan and arranges billing with you directly. Beta workspaces keep
-          full access throughout.
+          Nothing is charged and nothing changes about your workspace. It records that this plan is
+          the one you want, against your workspace, so we can email you when it is ready to buy.
+          Everything you can do today, you keep doing.
         </p>
       </Card>
     </PageShell>

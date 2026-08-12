@@ -1,6 +1,6 @@
 import React, { useEffect, useState, type CSSProperties } from 'react'
 import { FONT, LETTER_SPACING, RADIUS, SPACE } from '../constants'
-import { Button } from '../components/ui'
+import { BackLink, Button } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { API_BASE } from '../lib/api'
 import { useTheme } from '../hooks/useTheme'
@@ -12,6 +12,8 @@ type Shadow = ReturnType<typeof useTheme>['shadow']
 
 interface Props {
   onNavigate: (page: 'landing' | 'register' | 'app') => void
+  /** Straight to the room-code screen, for a participant who has no account. */
+  onJoinRoom: () => void
 }
 
 function isValidEmail(email: string): boolean {
@@ -26,7 +28,7 @@ function validateLogin(email: string, password: string): string | null {
   return null
 }
 
-export default function Login({ onNavigate }: Props) {
+export default function Login({ onNavigate, onJoinRoom }: Props) {
   const { login } = useAuth()
   const { theme, colors, shadow } = useTheme()
   const [email, setEmail] = useState('')
@@ -92,6 +94,7 @@ export default function Login({ onNavigate }: Props) {
   return (
     <div style={containerStyle(colors)}>
       <AmbientBackground theme={theme} />
+      <BackLink onClick={() => onNavigate('landing')} />
       <div style={cardStyle(colors, shadow)}>
         <div style={wordmarkStyle(colors)}>
           <Zap size={14} strokeWidth={2} />
@@ -173,6 +176,21 @@ export default function Login({ onNavigate }: Props) {
             style={linkStyle(colors)}
           >
             Create one
+          </button>
+        </div>
+
+        {/* Participants land here by reflex — it is the page that looks like
+            the way in. An account is the wrong answer for someone who was just
+            read six characters, so offer them the right one. */}
+        <div style={switchFooterStyle}>
+          <span style={{ color: colors.textMuted }}>Joining a meeting? </span>
+          <button
+            type="button"
+            onClick={onJoinRoom}
+            disabled={loading}
+            style={linkStyle(colors)}
+          >
+            Enter a room code
           </button>
         </div>
       </div>

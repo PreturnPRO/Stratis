@@ -178,6 +178,56 @@ export function Button({
   );
 }
 
+/**
+ * The way out of a page, in the corner every page keeps it.
+ *
+ * Fixed to the top-left of the viewport rather than placed inside whatever the
+ * page happens to be showing. The auth screens had this tucked inside the
+ * centred card, above the wordmark, which reads as part of the form instead of
+ * as page furniture — and put the same control in a different place on every
+ * screen. One component, one position, so it is where the hand already goes.
+ */
+export function BackLink({
+  onClick,
+  label = "Back",
+}: {
+  onClick: () => void;
+  label?: string;
+}) {
+  const { colors } = useTheme();
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        position: "fixed",
+        top: 18,
+        left: 20,
+        zIndex: 20,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "6px 12px 6px 9px",
+        borderRadius: RADIUS.pill,
+        border: `1px solid ${hovered ? colors.borderLight : "transparent"}`,
+        background: hovered ? colors.surface : "transparent",
+        color: hovered ? colors.text : colors.textMuted,
+        fontSize: FONT.size.label,
+        transition: "background 0.15s, color 0.15s, border-color 0.15s",
+      }}
+    >
+      <span aria-hidden style={{ fontSize: FONT.size.body, lineHeight: 1 }}>
+        ←
+      </span>
+      {label}
+    </button>
+  );
+}
+
 export function IconButton({
   title,
   style,

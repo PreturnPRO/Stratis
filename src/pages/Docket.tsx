@@ -107,7 +107,11 @@ export default function Docket({
 
   const load = query.refresh;
   const loading = query.loading;
-  const error = localError ?? query.error;
+  // Only what a button did. A failed background load is not announced here —
+  // the page renders as normal and the failure surfaces from the action that
+  // needed the server, when it is pressed.
+  const error = localError;
+  const loadFailed = Boolean(query.error);
 
   const meetings = useMemo(() => query.data?.meetings ?? [], [query.data]);
   const waiting = useMemo(() => query.data?.waiting ?? [], [query.data]);
@@ -368,7 +372,11 @@ export default function Docket({
 
           {meetings.length === 0 && waiting.length === 0 && (
             <EmptyState
-              message="Nothing on the docket. Meetings you schedule — and decisions still waiting for one — land here."
+              message={
+                loadFailed
+                  ? "The docket could not be loaded. Nothing has been lost — this screen just could not reach the server."
+                  : "Nothing on the docket. Meetings you schedule — and decisions still waiting for one — land here."
+              }
               action={
                 <Button variant="primary" size="sm" onClick={() => openModal()}>
                   Schedule the first one

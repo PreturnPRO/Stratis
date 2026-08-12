@@ -56,7 +56,9 @@ export default function Projects({ onNav }: Props) {
   const projects = useMemo(() => query.data?.projects ?? [], [query.data]);
   const load = query.refresh;
   const loading = query.loading;
-  const error = writeError ?? query.error;
+  // Only what a button did; a failed load is not announced on arrival.
+  const error = writeError;
+  const loadFailed = Boolean(query.error);
 
   const handleCreate = async () => {
     const name = newName.trim();
@@ -135,7 +137,9 @@ export default function Projects({ onNav }: Props) {
           border: `1px dashed ${colors.border}`, borderRadius: RADIUS.lg, padding: "48px 24px",
           textAlign: "center", color: colors.textMuted, fontSize: FONT.size.body,
         }}>
-          No projects yet. Create one, or start a meeting from the dashboard.
+          {loadFailed
+            ? "Your projects could not be loaded. They are safe — this screen just could not reach the server."
+            : "No projects yet. Create one, or start a meeting from the dashboard."}
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 14 }}>

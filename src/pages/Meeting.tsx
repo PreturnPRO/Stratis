@@ -7,7 +7,7 @@ import { Button, Chip, Modal } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { SuggestionCardStack } from "../components/SuggestionCardStack";
 import { NotesRibbon } from "../components/NotesRibbon";
-import { CheckpointPanel } from "../components/CheckpointPanel";
+import { CheckpointPanel, type DecisionReactions } from "../components/CheckpointPanel";
 import { useCheckpoint } from "../hooks/useCheckpoint";
 import {
   AiPresenceChip,
@@ -24,7 +24,7 @@ import { useMediaRecorder } from "../hooks/useMediaRecorder";
 import { usePcmStream } from "../hooks/usePcmStream";
 import { mergeTranscripts } from "../lib/mergeTranscripts";
 import { loadSeen, saveSeen, shouldInterruptEnd, unreviewedIds } from "../lib/checkpointReview";
-import { apiFetch } from "../lib/http";
+import { ApiError, apiFetch } from "../lib/http";
 
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 
@@ -272,23 +272,75 @@ export default function Meeting({ onNav }: MeetingProps) {
     return [...names];
   }, [transcripts]);
 
-  const extractAfterFlush = useCallback(() => {
-    const flushed = isRecording && sendControl({ type: "stt:flush" });
-    window.setTimeout(() => {
-      void checkpoint.extract();
-    }, flushed ? FLUSH_SETTLE_MS : 0);
-  }, [isRecording, sendControl, checkpoint]);
+  // `force` is what the "Re-read meeting" button means. Auto-opens pass false,
+  // so opening the panel never re-rolls a checkpoint that already exists.
+  const extractAfterFlush = useCallback(
+    (force = false) => {
+      const flushed = isRecording && sendControl({ type: "stt:flush" });
+      window.setTimeout(() => {
+        void checkpoint.extract(force);
+      }, flushed ? FLUSH_SETTLE_MS : 0);
+    },
+    [isRecording, sendControl, checkpoint],
+  );
 
+  // Load first, then decide. `checkpoint.decisions` is React state and a page
+  // refresh empties it, so branching on its length made every reload look like
+  // a first open and re-ran extraction over the same transcript.
   const openCheckpoint = useCallback(() => {
     setShowCheckpoint(true);
-    if (checkpoint.decisions.length === 0) {
-      extractAfterFlush();
-    } else {
-      void checkpoint.load();
-    }
+    void checkpoint.load().then((held) => {
+      if (held === 0) extractAfterFlush();
+    });
   }, [checkpoint, extractAfterFlush]);
 
   const checkpointVisible = showCheckpoint || showEndCheckpoint;
+
+  // The room code, and what the room said back. Polled rather than pushed: the
+  // meeting socket belongs to the facilitator, and guests hold no socket at all.
+  const [roomCode, setRoomCode] = useState<string | null>(null);
+  const [openingRoom, setOpeningRoom] = useState(false);
+  const [reactions, setReactions] = useState<Record<string, DecisionReactions>>({});
+
+  const openRoom = useCallback(async () => {
+    if (!sessionId || openingRoom) return;
+    setOpeningRoom(true);
+    try {
+      const data = await apiFetch<{ code: string }>(`/api/room/session/${sessionId}/code`, {
+        method: "POST",
+      });
+      setRoomCode(data.code);
+    } catch (err) {
+      // Joining a room is free; opening one is Pro. A Free workspace pressing
+      // this is being sold to, not failing, so it must not read as a fault.
+      if (err instanceof ApiError && err.code === "PLAN_REQUIRED") {
+        setError(
+          "Opening the room to participants is part of Pro. Anyone you invite still joins free — see Settings › Plan to upgrade.",
+        );
+      } else {
+        setError(err instanceof Error ? err.message : "Could not open the room");
+      }
+    } finally {
+      setOpeningRoom(false);
+    }
+  }, [sessionId, openingRoom]);
+
+  useEffect(() => {
+    if (!sessionId || !roomCode || !checkpointVisible) return;
+    const pull = () => {
+      void apiFetch<{ reactions: Record<string, DecisionReactions> }>(
+        `/api/room/session/${sessionId}/reactions`,
+      )
+        .then((data) => setReactions(data.reactions ?? {}))
+        .catch(() => {
+          // The room's reactions are an overlay on the checkpoint. Failing to
+          // fetch them must never take the checkpoint itself down.
+        });
+    };
+    pull();
+    const timer = setInterval(pull, 8_000);
+    return () => clearInterval(timer);
+  }, [sessionId, roomCode, checkpointVisible]);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -325,13 +377,12 @@ export default function Meeting({ onNav }: MeetingProps) {
     }
 
     setShowEndCheckpoint(true);
-    // Same rule as the button: extract only when nothing has been pulled yet,
-    // so peek-then-end cannot fire two ~90s extractions against one quota.
-    if (checkpoint.decisions.length === 0) {
-      extractAfterFlush();
-    } else {
-      void checkpoint.load();
-    }
+    // Same rule as the button, and for the same reason: ask the server what it
+    // holds, so peek-then-end cannot fire two ~90s extractions against one
+    // quota — and a refresh in between cannot either.
+    void checkpoint.load().then((held) => {
+      if (held === 0) extractAfterFlush();
+    });
   }, [checkpoint, seenDecisions, extractAfterFlush]);
 
   const sendAudioChunk = useCallback(async (blob: Blob) => {
@@ -995,7 +1046,11 @@ useEffect(() => {
             speakers={speakerNames}
             present={false}
             onEdit={checkpoint.edit}
-            onReExtract={extractAfterFlush}
+            onReExtract={() => extractAfterFlush(true)}
+            roomCode={roomCode}
+            openingRoom={openingRoom}
+            onOpenRoom={() => void openRoom()}
+            reactions={reactions}
             onTogglePresent={() => {
               setShowEndCheckpoint(false);
               setShowCheckpoint(true);
@@ -1051,7 +1106,11 @@ useEffect(() => {
             speakers={speakerNames}
             present={false}
             onEdit={checkpoint.edit}
-            onReExtract={extractAfterFlush}
+            onReExtract={() => extractAfterFlush(true)}
+            roomCode={roomCode}
+            openingRoom={openingRoom}
+            onOpenRoom={() => void openRoom()}
+            reactions={reactions}
             onTogglePresent={() => setPresentMode(true)}
             onClose={() => setShowCheckpoint(false)}
           />
@@ -1079,7 +1138,11 @@ useEffect(() => {
               speakers={speakerNames}
               present={true}
               onEdit={checkpoint.edit}
-              onReExtract={extractAfterFlush}
+              onReExtract={() => extractAfterFlush(true)}
+              roomCode={roomCode}
+              openingRoom={openingRoom}
+              onOpenRoom={() => void openRoom()}
+              reactions={reactions}
               onTogglePresent={() => setPresentMode(false)}
               onClose={() => setShowCheckpoint(false)}
             />

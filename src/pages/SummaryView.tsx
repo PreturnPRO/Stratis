@@ -6,14 +6,17 @@ import type { DecisionRecord } from '../../shared/types';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../hooks/useTheme';
 
-import { apiFetch } from '../lib/http';
+import { ApiError, apiFetch } from '../lib/http';
+import { downloadMarkdown, summaryFilename } from '../lib/summaryExport';
+import { ProLock } from '../components/ProLock';
 
 type UserRole = 'facilitator' | 'participant';
 type ThemeColors = ReturnType<typeof useTheme>['colors'];
 
 interface SummaryViewProps {
   sessionId?: string;
-  autoSendCountdownSeconds?: number;
+  /** The summary is a leaf. Without this there is nowhere to go from it. */
+  onNav?: (id: string, params?: Record<string, string>) => void;
 }
 
 function getBlockConfig(colors: ThemeColors): Record<
@@ -42,12 +45,6 @@ const BLOCK_LABEL: Record<SummaryBlock['block_type'], string> = {
   ACTION_ITEMS: 'Action items',
   NEXT_STEPS:   'Next steps',
 };
-
-function formatCountdown(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
 
 function parseContentLines(content: string): string[] {
   return content.split('\n').map(l => l.trim()).filter(Boolean);
@@ -92,54 +89,51 @@ const FacilitatorBadge: React.FC = () => {
   );
 };
 
-const TimerBar: React.FC<{
-  seconds: number;
-  paused: boolean;
-  sending: boolean;
-  onSendNow: () => void;
+/**
+ * The summary is a document the PM owns, not a message Stratis sends.
+ *
+ * This used to be a countdown that auto-delivered the summary to "participants"
+ * — who were speaker names off a transcript, not accounts, and had no inbox to
+ * receive anything. Nothing was ever delivered. Export hands the PM a file and
+ * lets them decide who should see it, which is what was actually happening.
+ */
+const ExportBar: React.FC<{
+  editing: boolean;
+  onExport: () => void;
+  onCopy: () => void;
   onEdit: () => void;
-}> = ({ seconds, paused, sending, onSendNow, onEdit }) => {
+  copied: boolean;
+  /** False on Free — the buttons still show, wearing a lock. */
+  canExport: boolean;
+  onSeePricing: () => void;
+}> = ({ editing, onExport, onCopy, onEdit, copied, canExport, onSeePricing }) => {
   const { colors } = useTheme();
-  const accent = paused ? colors.cyan : colors.amber;
+  const accent = editing ? colors.cyan : colors.accent;
   return (
     <div
       style={{
-        background: paused ? colors.cyanBg : colors.amberSubtle,
+        background: editing ? colors.cyanBg : colors.surfaceMuted,
         border: `1px solid ${accent}55`,
         borderRadius: 8,
         padding: '10px 14px',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
+        gap: 12,
+        flexWrap: 'wrap',
         marginBottom: 24,
       }}
     >
       <div
-        role="status"
-        aria-live="polite"
         style={{
           fontSize: FONT.size.label,
-          color: accent,
+          color: editing ? accent : colors.textMuted,
           fontWeight: 500,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
         }}
       >
-        <span
-          aria-hidden="true"
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: '50%',
-            background: accent,
-            display: 'inline-block',
-            animation: paused ? undefined : 'stratisTimerPulse 1.2s ease-in-out infinite',
-          }}
-        />
-        {paused
-          ? 'Editing — nothing sends until you finish'
-          : `Auto-sends in ${formatCountdown(seconds)} — review before it goes out`}
+        {editing
+          ? 'Editing — correct the AI before you send this out'
+          : 'Review it, then export and share it however your team works.'}
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
         <button
@@ -149,31 +143,53 @@ const TimerBar: React.FC<{
             fontWeight: 500,
             padding: '5px 12px',
             borderRadius: RADIUS.pill,
-            border: `1px solid ${paused ? accent : colors.border}`,
-            background: paused ? colors.surface : colors.surface,
-            color: paused ? accent : colors.textMuted,
+            border: `1px solid ${editing ? accent : colors.border}`,
+            background: colors.surface,
+            color: editing ? accent : colors.textMuted,
             cursor: 'pointer',
           }}
         >
-          {paused ? 'Done editing' : 'Edit'}
+          {editing ? 'Done editing' : 'Edit'}
         </button>
-        <button
-          onClick={onSendNow}
-          disabled={sending}
-          style={{
-            fontSize: FONT.size.caption,
-            fontWeight: 500,
-            padding: '5px 12px',
-            borderRadius: RADIUS.pill,
-            border: `1px solid ${colors.teal}55`,
-            background: colors.tealBg,
-            color: colors.teal,
-            cursor: sending ? 'default' : 'pointer',
-            opacity: sending ? 0.6 : 1,
-          }}
+        <ProLock
+          locked={!canExport}
+          feature="Exporting the record"
+          blurb="Take the summary out of Stratis as a file you can paste into LINE, email or Notion."
+          onSeePricing={onSeePricing}
         >
-          {sending ? 'Sending…' : 'Send now'}
-        </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={onCopy}
+              style={{
+                fontSize: FONT.size.caption,
+                fontWeight: 500,
+                padding: '5px 12px',
+                borderRadius: RADIUS.pill,
+                border: `1px solid ${colors.border}`,
+                background: colors.surface,
+                color: colors.textMuted,
+                cursor: 'pointer',
+              }}
+            >
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+            <button
+              onClick={onExport}
+              style={{
+                fontSize: FONT.size.caption,
+                fontWeight: 500,
+                padding: '5px 12px',
+                borderRadius: RADIUS.pill,
+                border: `1px solid ${colors.accent}55`,
+                background: colors.surface,
+                color: colors.accent,
+                cursor: 'pointer',
+              }}
+            >
+              Export
+            </button>
+          </div>
+        </ProLock>
       </div>
     </div>
   );
@@ -368,8 +384,40 @@ const SummaryBlockSection: React.FC<{
   );
 };
 
-const ActionItemsSection: React.FC<{ items: ActionItem[] }> = ({ items }) => {
+/**
+ * The two-minute read.
+ *
+ * A table, not a list of sentences: who owns it, when it is due, and whether it
+ * is finished are the three things a PM scans for, and scanning only works when
+ * they sit in fixed columns. The tick is the PM's own state — "the work is
+ * done" is a different question from "the decision was recorded completely",
+ * which is what the checkpoint's status already means.
+ */
+const ActionItemsSection: React.FC<{
+  items: ActionItem[];
+  canTick: boolean;
+  onToggle: (id: string, done: boolean) => void;
+}> = ({ items, canTick, onToggle }) => {
   const { colors } = useTheme();
+  const outstanding = items.filter((i) => !i.done).length;
+
+  const cell: React.CSSProperties = {
+    padding: '10px 12px',
+    borderBottom: `1px solid ${colors.border}`,
+    fontSize: FONT.size.body,
+    color: colors.textPrimary,
+    textAlign: 'left',
+    verticalAlign: 'top',
+  };
+  const head: React.CSSProperties = {
+    ...cell,
+    fontSize: FONT.size.label,
+    fontWeight: 500,
+    letterSpacing: LETTER_SPACING.label,
+    textTransform: 'uppercase',
+    color: colors.textMuted,
+  };
+
   return (
     <div style={{ marginBottom: 20 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: SPACE[2.5] }}>
@@ -385,50 +433,75 @@ const ActionItemsSection: React.FC<{ items: ActionItem[] }> = ({ items }) => {
         >
           Action items
         </span>
+        <span style={{ fontSize: FONT.size.caption, color: colors.textDim, fontFamily: FONT.mono }}>
+          {outstanding} of {items.length} outstanding
+        </span>
       </div>
-      <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
-      {items.map((item, i) => (
-        <li
-          key={i}
-          style={{
-            background: colors.surface,
-            border: `1px solid ${colors.border}`,
-            borderRadius: 6,
-            padding: '10px 12px',
-            marginBottom: SPACE[1.5],
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 12,
-          }}
-        >
-          <span style={{ fontSize: FONT.size.body, color: colors.textPrimary }}>{item.task}</span>
-          <span
-            style={{
-              fontSize: FONT.size.caption,
-              color: colors.textMuted,
-              background: colors.surfaceMuted,
-              border: `1px solid ${colors.border}`,
-              borderRadius: RADIUS.sm,
-              padding: '2px 8px',
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
-            }}
-          >
-            {item.owner}
-          </span>
-        </li>
-      ))}
-      </ul>
+
+      {/* Wide content scrolls in its own box rather than the page. */}
+      <div style={{ overflowX: 'auto', border: `1px solid ${colors.border}`, borderRadius: 6 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 460 }}>
+          <thead>
+            <tr>
+              <th scope="col" style={{ ...head, width: 40 }}>
+                <span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
+                  Done
+                </span>
+              </th>
+              <th scope="col" style={head}>Task</th>
+              <th scope="col" style={{ ...head, width: 140 }}>Owner</th>
+              <th scope="col" style={{ ...head, width: 120 }}>Due</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((item) => (
+              <tr key={item.id} style={{ background: item.done ? colors.surfaceMuted : colors.surface }}>
+                <td style={{ ...cell, width: 40 }}>
+                  <input
+                    type="checkbox"
+                    checked={item.done}
+                    disabled={!canTick}
+                    aria-label={`Mark "${item.task}" done`}
+                    onChange={(e) => onToggle(item.id, e.target.checked)}
+                    style={{ cursor: canTick ? 'pointer' : 'default', accentColor: colors.accent }}
+                  />
+                </td>
+                <td
+                  style={{
+                    ...cell,
+                    textDecoration: item.done ? 'line-through' : 'none',
+                    color: item.done ? colors.textDim : colors.textPrimary,
+                  }}
+                >
+                  {item.task}
+                </td>
+                <td style={{ ...cell, color: item.owner ? colors.textMuted : colors.textDim }}>
+                  {item.owner || 'unowned'}
+                </td>
+                <td
+                  style={{
+                    ...cell,
+                    fontFamily: FONT.mono,
+                    fontSize: FONT.size.caption,
+                    color: item.due_date ? colors.textMuted : colors.textDim,
+                  }}
+                >
+                  {item.due_date || 'no date'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
 
 const SummaryView: React.FC<SummaryViewProps> = ({
   sessionId,
-  autoSendCountdownSeconds = 300,
+  onNav,
 }) => {
-  const { token, user } = useAuth();
+  const { token, user, subscription } = useAuth();
   const { colors } = useTheme();
   const role: UserRole = user?.role === 'facilitator' ? 'facilitator' : 'participant';
 
@@ -439,18 +512,18 @@ const SummaryView: React.FC<SummaryViewProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [countdown, setCountdown] = useState(autoSendCountdownSeconds);
-  // Truth about "sent" lives on the server (participant_summaries.sent_at).
-  // `sent` mirrors it; `sending` guards the POST so countdown-zero and a manual
-  // "Send now" in the same tick cannot double-fire.
-  const [sent, setSent] = useState(false);
-  const [sending, setSending] = useState(false);
+  // Export replaced send. Nothing here is time-bound any more: the PM decides
+  // when the summary is good enough to leave the building, and who gets it.
+  const [copied, setCopied] = useState(false);
   // Holds the auto-send while the facilitator is correcting the AI's wording.
   // Without it the summary could go out mid-edit, which is the exact failure
   // the edit affordance exists to prevent.
   const [editingSummary, setEditingSummary] = useState(false);
 
   const isFacilitator = role === 'facilitator';
+  // Read from the plan the server already sends, so the lock matches what the
+  // export endpoint will actually allow.
+  const canExport = Boolean(subscription?.features?.includes('transcript_export'));
 
   useEffect(() => {
     let cancelled = false;
@@ -492,7 +565,6 @@ const SummaryView: React.FC<SummaryViewProps> = ({
         setDecisions(data.decisions ?? []);
         setCompletenessRate(data.metric?.completenessRate ?? null);
         setProvider(data.provider ?? null);
-        setSent(!!data.sentAt);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Could not reach summary endpoint');
@@ -511,32 +583,79 @@ const SummaryView: React.FC<SummaryViewProps> = ({
     };
   }, [sessionId, token]);
 
-  const sendSummary = async () => {
-    if (sending || sent || !sessionId || !token) return;
-    setSending(true);
+  /**
+   * Ticking an action item off. Optimistic, because the checkbox has to feel
+   * like a checkbox; rolled back if the write fails, because a tick that
+   * silently did not save is worse than one that visibly bounced.
+   */
+  const toggleActionDone = async (decisionId: string, done: boolean) => {
+    if (!sessionId || !token) return;
+
+    const apply = (value: boolean) =>
+      setSummary((prev) =>
+        prev
+          ? {
+              ...prev,
+              action_items: prev.action_items.map((item) =>
+                item.id === decisionId ? { ...item, done: value } : item,
+              ),
+            }
+          : prev,
+      );
+
+    apply(done);
     try {
-      await apiFetch<{ sentAt: string }>(`/api/summary/${sessionId}/send`, { method: 'POST' });
-      setSent(true);
-      setError(null);
+      await apiFetch(`/api/session/${sessionId}/decisions/${decisionId}`, {
+        method: 'PATCH',
+        body: { done },
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not send the summary');
-    } finally {
-      setSending(false);
+      apply(!done);
+      setError(err instanceof Error ? err.message : 'Could not save that change');
     }
   };
 
-  useEffect(() => {
-    if (!isFacilitator || sent || sending || editingSummary) return;
-    if (countdown <= 0) {
-      // Auto-send is a real send: same endpoint as "Send now", not a UI flip.
-      void sendSummary();
-      return;
+  /**
+   * The file comes from the server, because that is where the plan check is.
+   * A 402 here is the paywall, not a failure — say so in those words.
+   */
+  const fetchMarkdown = async (): Promise<string | null> => {
+    if (!sessionId) return null;
+    try {
+      const data = await apiFetch<{ markdown: string }>(`/api/summary/${sessionId}/export`);
+      return data.markdown;
+    } catch (err) {
+      const status = err instanceof ApiError ? err.status : 0;
+      setError(
+        status === 402
+          ? 'Exporting the record is part of Pro — add it to your wishlist on the Plans page.'
+          : err instanceof Error
+            ? err.message
+            : 'Could not prepare the export',
+      );
+      return null;
     }
+  };
 
-    const t = setTimeout(() => setCountdown(s => s - 1), 1000);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [countdown, isFacilitator, sent, sending, editingSummary]);
+  const exportSummary = async () => {
+    if (!summary) return;
+    const markdown = await fetchMarkdown();
+    if (markdown) downloadMarkdown(summaryFilename(summary), markdown);
+  };
+
+  const copySummary = async () => {
+    const markdown = await fetchMarkdown();
+    if (!markdown) return;
+    try {
+      await navigator.clipboard.writeText(markdown);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard permission is not guaranteed. Export still works, and the
+      // button says nothing rather than claiming a copy that did not happen.
+      setError('Could not copy — use Export instead');
+    }
+  };
 
   const saveBlock = async (blockId: string | undefined, content: string): Promise<boolean> => {
     if (!blockId || !sessionId || !token) {
@@ -592,20 +711,79 @@ const SummaryView: React.FC<SummaryViewProps> = ({
     );
   }
 
-  if (error) {
+  // A failed load replaced the entire page with one red line — no title, no
+  // way back, nothing to tell you which meeting you were even trying to open.
+  // The parts that need no server are rendered from what we already know.
+  if (error && !summary) {
     return (
       <div
-        role="alert"
         style={{
           background: colors.bg,
           minHeight: '100vh',
           padding: '32px 24px',
-          color: colors.red,
+          color: colors.text,
           fontFamily: 'inherit',
         }}
       >
         <div style={{ maxWidth: 720, margin: '0 auto' }}>
-          {error}
+          <div
+            style={{
+              fontSize: FONT.size.caption,
+              letterSpacing: LETTER_SPACING.wide,
+              textTransform: 'uppercase',
+              color: colors.textDim,
+              marginBottom: SPACE[1],
+            }}
+          >
+            Meeting summary
+          </div>
+          <h1 style={{ fontSize: FONT.size.title, margin: `0 0 ${SPACE[2]}px`, fontWeight: 500 }}>
+            This summary could not be loaded
+          </h1>
+          <div
+            role="alert"
+            style={{
+              background: colors.surfaceMuted,
+              border: `1px solid ${colors.border}`,
+              borderRadius: 8,
+              padding: '12px 14px',
+              color: colors.textMuted,
+              fontSize: FONT.size.label,
+              marginBottom: SPACE[2],
+            }}
+          >
+            {error}
+          </div>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+            <button
+              onClick={() => window.location.reload()}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                fontSize: FONT.size.label,
+                color: colors.accent,
+                cursor: 'pointer',
+              }}
+            >
+              Try again
+            </button>
+            {onNav && (
+              <button
+                onClick={() => onNav('dashboard')}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  padding: 0,
+                  fontSize: FONT.size.label,
+                  color: colors.textMuted,
+                  cursor: 'pointer',
+                }}
+              >
+                Back to dashboard
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -684,32 +862,16 @@ const SummaryView: React.FC<SummaryViewProps> = ({
           </div>
         )}
 
-        {isFacilitator && !sent && (
-          <TimerBar
-            seconds={countdown}
-            paused={editingSummary}
-            sending={sending}
-            onSendNow={() => void sendSummary()}
+        {isFacilitator && (
+          <ExportBar
+            editing={editingSummary}
+            copied={copied}
+            canExport={canExport}
+            onSeePricing={() => onNav?.('pricing')}
+            onExport={() => void exportSummary()}
+            onCopy={() => void copySummary()}
             onEdit={() => setEditingSummary(e => !e)}
           />
-        )}
-
-        {sent && isFacilitator && (
-          <div
-            role="status"
-            style={{
-              background: colors.tealBg,
-              border: `1px solid ${colors.teal}55`,
-              borderRadius: 8,
-              padding: '10px 14px',
-              marginBottom: 24,
-              fontSize: FONT.size.label,
-              color: colors.teal,
-              fontWeight: 500,
-            }}
-          >
-            <span aria-hidden="true">✓</span> Summary sent to {summary.participants.length} participant{summary.participants.length !== 1 ? 's' : ''}
-          </div>
         )}
 
         <div style={{ marginBottom: 20 }}>
@@ -814,13 +976,60 @@ const SummaryView: React.FC<SummaryViewProps> = ({
             key={block.id ?? i}
             block={block}
             role={role}
-            canEdit={isFacilitator && !sent}
+            canEdit={isFacilitator}
             onSave={(content) => saveBlock(block.id, content)}
           />
         ))}
 
         {summary.action_items.length > 0 && (
-          <ActionItemsSection items={summary.action_items} />
+          <ActionItemsSection
+            items={summary.action_items}
+            canTick={isFacilitator}
+            onToggle={(id, done) => void toggleActionDone(id, done)}
+          />
+        )}
+
+        {/* The summary was the end of the road: you arrived, read it, and the
+            only way on was the sidebar. These are the two places a PM actually
+            goes next. */}
+        {onNav && (
+          <div
+            style={{
+              display: 'flex',
+              gap: 16,
+              flexWrap: 'wrap',
+              marginTop: 28,
+              paddingTop: 18,
+              borderTop: `1px solid ${colors.border}`,
+            }}
+          >
+            <button
+              onClick={() => onNav('document', sessionId ? { sessionId } : {})}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                fontSize: FONT.size.label,
+                color: colors.accent,
+                cursor: 'pointer',
+              }}
+            >
+              Open the project document →
+            </button>
+            <button
+              onClick={() => onNav('dashboard')}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                padding: 0,
+                fontSize: FONT.size.label,
+                color: colors.textMuted,
+                cursor: 'pointer',
+              }}
+            >
+              Back to dashboard
+            </button>
+          </div>
         )}
 
       </div>

@@ -94,7 +94,11 @@ async function ownsSession(
       [sessionId],
     );
     const [row] = result.rows;
-    if (!row) return true;
+    // A session id with no row used to be waved through. Every real client
+    // creates the session over HTTP before opening this socket, so the only
+    // caller arriving with an id that does not exist is one that invented it —
+    // and letting it in opens a billed STT stream.
+    if (!row) return false;
     return row.facilitator_id === claims.sub;
   } catch (err) {
     console.error("[ws:db] Failed to verify session ownership:", err);

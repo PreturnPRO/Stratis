@@ -253,6 +253,7 @@ function MeetingRow({
 function DashboardPanels({
   colors,
   loading,
+  failed,
   meetings,
   summaries,
   onRefresh,
@@ -262,6 +263,8 @@ function DashboardPanels({
 }: {
   colors: Colors;
   loading: boolean;
+  /** True when the load failed. An empty list then means "unknown", not "none". */
+  failed?: boolean;
   meetings: DashboardMeeting[];
   summaries: DashboardSummary[];
   onRefresh: () => void;
@@ -291,7 +294,16 @@ function DashboardPanels({
         {loading ? (
           <LoadingState count={3} />
         ) : ordered.length === 0 ? (
-          <EmptyState message="No meetings yet. Create your first meeting." />
+          // "No meetings yet" is a claim about the data. When the request
+          // failed we do not have the data, and telling a team with thirty
+          // meetings to create their first one is worse than saying nothing.
+          <EmptyState
+            message={
+              failed
+                ? "Your meetings could not be loaded. They are safe — this screen just could not reach the server."
+                : "No meetings yet. Create your first meeting."
+            }
+          />
         ) : (
           <div style={{ display: "flex", flexDirection: "column" }}>
             {ordered.map((m, i) => (
@@ -318,7 +330,13 @@ function DashboardPanels({
         {loading ? (
           <LoadingState count={3} />
         ) : summaries.length === 0 ? (
-          <EmptyState message="No summaries yet. End a meeting to generate one." />
+          <EmptyState
+            message={
+              failed
+                ? "Recent summaries could not be loaded."
+                : "No summaries yet. End a meeting to generate one."
+            }
+          />
         ) : (
           <div
             className="dashboard-summary-cards"
@@ -401,7 +419,9 @@ export default function Dashboard({ onNav }: DashboardProps) {
   }, [dashboard.data]);
 
   const loading = dashboard.loading;
-  const error = startError ?? dashboard.error;
+  // Only what a button did; a failed load is not announced on arrival.
+  const error = startError;
+  const loadFailed = Boolean(dashboard.error);
 
   // No `?? s.id` fallback here: s.id is the SUMMARY's id, and passing it as a
   // sessionId guarantees a 404 on the page we just navigated to. A card with no
@@ -516,6 +536,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
         <DashboardPanels
           colors={colors}
           loading={loading}
+          failed={loadFailed}
           meetings={meetings}
           summaries={summaries}
           onRefresh={loadDashboard}

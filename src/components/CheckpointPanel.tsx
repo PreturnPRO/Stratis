@@ -8,6 +8,12 @@ import { toggleOpenStatus } from "../lib/decisionStatus";
 import type { DecisionRecord, DecisionStatus } from "../../shared/types";
 import type { CompletenessMetric, DecisionEdit } from "../hooks/useCheckpoint";
 
+export interface DecisionReactions {
+  agree: number;
+  flag: number;
+  flags: Array<{ name: string; note: string | null }>;
+}
+
 interface CheckpointPanelProps {
   decisions: DecisionRecord[];
   metric: CompletenessMetric | null;
@@ -19,6 +25,12 @@ interface CheckpointPanelProps {
   error?: string | null;
   onEdit: (decisionId: string, patch: DecisionEdit) => void;
   onReExtract: () => void;
+  /** The spoken room code, once the facilitator has opened the room. */
+  roomCode?: string | null;
+  openingRoom?: boolean;
+  onOpenRoom?: () => void;
+  /** What the room said back, keyed by decision id. */
+  reactions?: Record<string, DecisionReactions>;
   onTogglePresent: () => void;
   onClose: () => void;
   /**
@@ -47,11 +59,13 @@ function DecisionRow({
   decision,
   speakers,
   present,
+  reactions,
   onEdit,
 }: {
   decision: DecisionRecord;
   speakers: string[];
   present: boolean;
+  reactions?: DecisionReactions;
   onEdit: (patch: DecisionEdit) => void;
 }) {
   const { colors } = useTheme();
@@ -112,6 +126,9 @@ function DecisionRow({
     <div
       style={{
         border: `1px solid ${decision.status === "incomplete" ? `${meta.color}55` : colors.border}`,
+        // The status as a left edge, not only as a pill. Six decisions are read
+        // by scanning down the margin; a badge has to be read one at a time.
+        borderLeft: `3px solid ${meta.color}`,
         background: colors.surfaceMuted,
         borderRadius: RADIUS.md,
         padding: present ? "18px 22px" : "14px 16px",
@@ -216,9 +233,10 @@ function DecisionRow({
         <p
           style={{
             margin: 0,
-            fontSize: present ? FONT.size.subheading : FONT.size.body,
+            // Present mode is read from across a room, not from a laptop.
+            fontSize: present ? FONT.size.heading : FONT.size.body,
             color: colors.textPrimary,
-            lineHeight: 1.5,
+            lineHeight: present ? 1.35 : 1.5,
             fontWeight: present ? 600 : 500,
           }}
         >
@@ -250,8 +268,21 @@ function DecisionRow({
         )
       )}
 
+      {/* The controls sit below a hairline, quieter than the decision itself.
+          Ungrouped, a bare date field and a text field carried the same weight
+          as the sentence they were about, and the card read as a form. */}
       {!present && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
+            marginTop: 4,
+            paddingTop: 10,
+            borderTop: `1px solid ${colors.border}`,
+          }}
+        >
           <input
             type="date"
             value={isoOrEmpty(decision.dueDate)}
@@ -324,6 +355,42 @@ function DecisionRow({
           </Button>
         </div>
       )}
+
+      {/* What the room said. A count alone only says something is wrong; the
+          notes are what tell the facilitator where to look. */}
+      {reactions && (reactions.agree > 0 || reactions.flag > 0) && (
+        <div
+          style={{
+            marginTop: SPACE[1],
+            paddingTop: SPACE[1],
+            borderTop: `1px solid ${colors.border}`,
+            fontSize: FONT.size.micro,
+            color: colors.textDim,
+            fontFamily: FONT.mono,
+          }}
+        >
+          {reactions.agree > 0 && <span>{reactions.agree} agreed</span>}
+          {reactions.agree > 0 && reactions.flag > 0 && <span> · </span>}
+          {reactions.flag > 0 && (
+            <span style={{ color: colors.orange }}>{reactions.flag} flagged</span>
+          )}
+          {reactions.flags
+            .filter((f) => f.note)
+            .map((f, i) => (
+              <div
+                key={i}
+                style={{
+                  marginTop: 4,
+                  color: colors.textMuted,
+                  fontFamily: FONT.sans,
+                  fontSize: FONT.size.caption,
+                }}
+              >
+                <strong style={{ color: colors.text }}>{f.name}:</strong> {f.note}
+              </div>
+            ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -337,6 +404,10 @@ export function CheckpointPanel({
   error,
   onEdit,
   onReExtract,
+  roomCode,
+  openingRoom,
+  onOpenRoom,
+  reactions,
   onTogglePresent,
   onClose,
   footer,
@@ -360,7 +431,9 @@ export function CheckpointPanel({
       style={{
         display: "flex",
         flexDirection: "column",
-        gap: SPACE[4],
+        // Was SPACE[4] between every section, which spaced the header, the
+        // list and the actions equally and left no grouping to read.
+        gap: SPACE[2.5],
         height: present ? "100%" : "auto",
         maxHeight: present ? "100%" : "70vh",
       }}
@@ -383,9 +456,37 @@ export function CheckpointPanel({
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {rate != null && (
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: present ? FONT.size.heading : FONT.size.subheading, fontWeight: 800, color: rate === 100 ? colors.green : colors.orange }}>
+            <div style={{ textAlign: "right", minWidth: present ? 140 : 108 }}>
+              <div
+                style={{
+                  fontSize: present ? FONT.size.heading : FONT.size.subheading,
+                  fontWeight: 800,
+                  color: rate === 100 ? colors.green : colors.orange,
+                  lineHeight: 1.1,
+                }}
+              >
                 {rate}%
+              </div>
+              {/* A bar as well as a number: "70%" is a fact, a bar is a glance. */}
+              <div
+                role="img"
+                aria-label={`${rate}% of decisions have a date`}
+                style={{
+                  height: 4,
+                  borderRadius: 2,
+                  background: colors.border,
+                  overflow: "hidden",
+                  margin: "5px 0 4px",
+                }}
+              >
+                <div
+                  style={{
+                    width: `${rate}%`,
+                    height: "100%",
+                    background: rate === 100 ? colors.green : colors.orange,
+                    transition: "width 0.4s ease",
+                  }}
+                />
               </div>
               <div style={{ fontSize: FONT.size.micro, color: colors.textDim, textTransform: "uppercase", letterSpacing: 0.5 }}>
                 have a date
@@ -416,7 +517,17 @@ export function CheckpointPanel({
         </div>
       )}
 
-      <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: SPACE[2.5] }}>
+      <div
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: SPACE[1.5],
+          // Breathing room against the actions below without a hard rule.
+          paddingBottom: 2,
+        }}
+      >
         {decisions.length === 0 && extracting ? (
           <LoadingState count={3} persist />
         ) : decisions.length === 0 ? (
@@ -430,11 +541,61 @@ export function CheckpointPanel({
               decision={d}
               speakers={speakers}
               present={present}
+              reactions={reactions?.[d.id]}
               onEdit={(patch) => onEdit(d.id, patch)}
             />
           ))
         )}
       </div>
+
+      {/* The room's way in. Shown as the code itself once opened, because the
+          facilitator's next action is to read it out loud. */}
+      {onOpenRoom && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: SPACE[1.5],
+            padding: SPACE[1.5],
+            marginBottom: SPACE[1.5],
+            background: colors.surfaceMuted,
+            border: `1px solid ${colors.border}`,
+            borderRadius: RADIUS.md,
+          }}
+        >
+          {roomCode ? (
+            <>
+              <span style={{ fontSize: FONT.size.micro, color: colors.textDim, letterSpacing: 1 }}>
+                ROOM CODE
+              </span>
+              <span
+                style={{
+                  fontFamily: FONT.mono,
+                  fontSize: present ? 32 : 22,
+                  letterSpacing: 4,
+                  color: colors.accent,
+                  fontWeight: 600,
+                }}
+              >
+                {roomCode}
+              </span>
+              <span style={{ fontSize: FONT.size.micro, color: colors.textDim, marginLeft: "auto" }}>
+                stratis-beta.vercel.app/#/room
+              </span>
+            </>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onOpenRoom}
+              disabled={openingRoom}
+            >
+              {openingRoom ? "Opening…" : "Open to the room"}
+            </Button>
+          )}
+        </div>
+      )}
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <Button

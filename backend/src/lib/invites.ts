@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { InviteKind, InviteRecord, Role } from "@shared/types";
 import { db } from "../db/database";
+import { generateRoomCode, isRoomCodeShape, normalizeRoomCode } from "./roomCode";
 import { env } from "../config/env";
 import { newId, now } from "./ids";
 
@@ -21,6 +22,8 @@ export interface InviteRow {
   revoked_at: string | null;
   created_by: string | null;
   created_at: string;
+  /** The spoken room code, when this invite has one. */
+  code: string | null;
 }
 
 /**
@@ -136,6 +139,70 @@ export async function consumeInviteForSignup(
   const row = await findInviteByToken(token);
   if (!row) return;
   await redeemInvite({ inviteId: row.id, userId, displayName });
+}
+
+/**
+ * Finds the invite behind a spoken room code.
+ *
+ * Codes are looked up directly rather than by hash, unlike tokens: a token is a
+ * bearer secret and must survive a database leak, whereas a code is read aloud
+ * to a room and is only useful while that meeting is live. What protects it is
+ * the invite's own expiry and revocation, plus the rate limit on the endpoints
+ * that accept it — not secrecy.
+ */
+export async function findInviteByCode(code: string): Promise<InviteRow | undefined> {
+  const normalized = normalizeRoomCode(code);
+  if (!isRoomCodeShape(normalized)) return undefined;
+  const result = await db.query<InviteRow>(`SELECT * FROM invites WHERE code = $1`, [normalized]);
+  return result.rows[0];
+}
+
+/**
+ * The live room code for a session, minted on first ask and reused after that.
+ *
+ * Reused deliberately: a facilitator who reads the code out, then reopens the
+ * panel, must not find a different one on screen while the room is typing the
+ * first.
+ */
+export async function ensureSessionRoomCode(input: {
+  orgId: string;
+  sessionId: string;
+  createdBy: string;
+  expiresInHours?: number;
+}): Promise<{ code: string; token: string | null }> {
+  const existing = await db.query<InviteRow>(
+    `SELECT * FROM invites
+     WHERE session_id = $1 AND code IS NOT NULL AND revoked_at IS NULL
+       AND (expires_at IS NULL OR expires_at > NOW())
+     ORDER BY created_at DESC LIMIT 1`,
+    [input.sessionId],
+  );
+  const live = existing.rows[0];
+  if (live?.code) return { code: live.code, token: null };
+
+  const { row, token } = await createInvite({
+    orgId: input.orgId,
+    kind: "session",
+    role: "participant",
+    sessionId: input.sessionId,
+    allowGuest: true,
+    expiresInHours: input.expiresInHours ?? 12,
+    createdBy: input.createdBy,
+  });
+
+  // Retried on collision rather than assumed unique: the space is large, but
+  // the unique index is the thing that actually decides, so honour it.
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const code = generateRoomCode();
+    try {
+      await db.query(`UPDATE invites SET code = $1 WHERE id = $2`, [code, row.id]);
+      return { code, token };
+    } catch (err) {
+      if (attempt === 4) throw err;
+    }
+  }
+
+  throw new Error("Could not allocate a room code");
 }
 
 export async function createInvite(input: {

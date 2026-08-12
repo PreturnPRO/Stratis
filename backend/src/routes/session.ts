@@ -50,7 +50,7 @@ interface CountRow {
 async function getSession(sessionId: string): Promise<any> {
   const result = await db.query<any>(
     `SELECT s.id, s.meeting_id, s.facilitator_id, s.status, s.started_at, s.ended_at, s.created_at,
-            m.duration_minutes
+            m.duration_minutes, m.org_id
      FROM sessions s
      LEFT JOIN meetings m ON m.id = s.meeting_id
      WHERE s.id = $1`,
@@ -79,12 +79,21 @@ async function getMeeting(meetingId: string): Promise<MeetingRow | undefined> {
   return result.rows[0];
 }
 
+/**
+ * "admin" is a role inside one workspace, not across the product, and signup
+ * lets an account choose it. Without the org check an account created in thirty
+ * seconds could read, start, end, and rewrite the decisions of any session in
+ * the database.
+ */
 function canAccessSession(
-  session: SessionRow,
+  session: SessionRow & { org_id?: string | null },
   userId: string,
-  role: string,
+  _role: string,
+  orgId: string,
 ): boolean {
-  if (role === "admin") return true;
+  if (session.org_id !== orgId) return false;
+  // No admin bypass: administering a workspace is not a reason to open, end,
+  // or rewrite the decisions of a meeting someone else is running.
   return session.facilitator_id === userId;
 }
 
@@ -92,6 +101,7 @@ async function requireAccessibleSession(
   sessionId: string,
   userId: string,
   role: string,
+  orgId: string,
 ) {
   const session = await getSession(sessionId);
 
@@ -103,7 +113,7 @@ async function requireAccessibleSession(
     };
   }
 
-  if (!canAccessSession(session, userId, role)) {
+  if (!canAccessSession(session, userId, role, orgId)) {
     return {
       ok: false as const,
       status: 403,
@@ -155,59 +165,31 @@ export async function endSession(sessionId: string): Promise<any> {
 
 sessionRouter.get("/", requireAuth, async (req, res) => {
   try {
-    const userId = req.auth!.sub;
-    const role = req.auth!.role;
+    // Own sessions, whatever the role. The admin branch here used to return
+    // every session in the workspace, which is the listing that made another
+    // person's meeting openable in the first place.
+    const result = await db.query<SessionWithMeetingRow>(
+      `
+      SELECT
+        s.id,
+        s.meeting_id,
+        s.facilitator_id,
+        s.status,
+        s.started_at,
+        s.ended_at,
+        s.created_at,
+        m.title AS meeting_title,
+        m.project_id AS project_id
+      FROM sessions s
+      JOIN meetings m ON m.id = s.meeting_id
+      WHERE s.facilitator_id = $1
+        AND m.org_id = $2
+      ORDER BY s.created_at DESC
+      `,
+      [req.auth!.sub, req.auth!.orgId],
+    );
 
-    let sessions: SessionWithMeetingRow[];
-
-    if (role === "admin") {
-      const result = await db.query<SessionWithMeetingRow>(
-        `
-        SELECT
-          s.id,
-          s.meeting_id,
-          s.facilitator_id,
-          s.status,
-          s.started_at,
-          s.ended_at,
-          s.created_at,
-          m.title AS meeting_title,
-          m.project_id AS project_id
-        FROM sessions s
-        LEFT JOIN meetings m ON m.id = s.meeting_id
-        ORDER BY s.created_at DESC
-        `,
-      );
-      sessions = result.rows;
-    } else {
-      const result = await db.query<SessionWithMeetingRow>(
-        `
-        SELECT
-          s.id,
-          s.meeting_id,
-          s.facilitator_id,
-          s.status,
-          s.started_at,
-          s.ended_at,
-          s.created_at,
-          m.title AS meeting_title,
-          m.project_id AS project_id
-        FROM sessions s
-        LEFT JOIN meetings m ON m.id = s.meeting_id
-        WHERE s.facilitator_id = $1
-        ORDER BY s.created_at DESC
-        `,
-        [userId],
-      );
-      sessions = result.rows;
-    }
-
-    res.json({
-      ok: true,
-      data: {
-        sessions,
-      },
-    });
+    res.json({ ok: true, data: { sessions: result.rows } });
   } catch (error) {
     console.error("List sessions error:", error);
     res
@@ -218,71 +200,38 @@ sessionRouter.get("/", requireAuth, async (req, res) => {
 
 sessionRouter.get("/active", requireAuth, async (req, res) => {
   try {
-    const userId = req.auth!.sub;
-    const role = req.auth!.role;
+    // The caller's own live session. An admin picking up whichever session in
+    // the workspace happened to be active is precisely how a second device
+    // ended up writing to a meeting it was not running.
+    const result = await db.query<SessionWithMeetingRow>(
+      `
+      SELECT
+        s.id,
+        s.meeting_id,
+        s.facilitator_id,
+        s.status,
+        s.started_at,
+        s.ended_at,
+        s.created_at,
+        m.title AS meeting_title,
+        m.project_id AS project_id
+      FROM sessions s
+      JOIN meetings m ON m.id = s.meeting_id
+      WHERE s.facilitator_id = $1
+        AND m.org_id = $2
+        AND s.status = 'active'
+      ORDER BY s.started_at DESC
+      LIMIT 1
+      `,
+      [req.auth!.sub, req.auth!.orgId],
+    );
 
-    let session: SessionWithMeetingRow | undefined;
-
-    if (role === "admin") {
-      const result = await db.query<SessionWithMeetingRow>(
-        `
-        SELECT
-          s.id,
-          s.meeting_id,
-          s.facilitator_id,
-          s.status,
-          s.started_at,
-          s.ended_at,
-          s.created_at,
-          m.title AS meeting_title,
-          m.project_id AS project_id
-        FROM sessions s
-        LEFT JOIN meetings m ON m.id = s.meeting_id
-        WHERE s.status = 'active'
-        ORDER BY s.started_at DESC
-        LIMIT 1
-        `,
-      );
-      session = result.rows[0];
-    } else {
-      const result = await db.query<SessionWithMeetingRow>(
-        `
-        SELECT
-          s.id,
-          s.meeting_id,
-          s.facilitator_id,
-          s.status,
-          s.started_at,
-          s.ended_at,
-          s.created_at,
-          m.title AS meeting_title,
-          m.project_id AS project_id
-        FROM sessions s
-        LEFT JOIN meetings m ON m.id = s.meeting_id
-        WHERE s.facilitator_id = $1
-          AND s.status = 'active'
-        ORDER BY s.started_at DESC
-        LIMIT 1
-        `,
-        [userId],
-      );
-      session = result.rows[0];
-    }
-
-    res.json({
-      ok: true,
-      data: {
-        session: session ?? null,
-      },
-    });
+    res.json({ ok: true, data: { session: result.rows[0] ?? null } });
   } catch (error) {
     console.error("Get active session error:", error);
     res
       .status(500)
-      .json({
-        ok: false,
-        error: "Internal server error retrieving active session",
-      });
+      .json({ ok: false, error: "Internal server error retrieving active session" });
   }
 });
 
@@ -311,7 +260,11 @@ sessionRouter.post("/", requireAuth, async (req, res) => {
       });
     }
 
-    if (req.auth!.role !== "admin" && meeting.org_id !== req.auth!.orgId) {
+    // The org check is unconditional. "admin" used to skip it, which let a
+    // workspace admin open a session on another workspace's meeting — and an
+    // admin starting a second session against a meeting they do not run is
+    // exactly how one project document ends up with two writers.
+    if (meeting.org_id !== req.auth!.orgId) {
       return res.status(403).json({
         ok: false,
         error: "You cannot create a session for this meeting",
@@ -418,10 +371,7 @@ sessionRouter.get("/recover", requireAuth, async (req, res) => {
       JOIN meetings m ON m.id = s.meeting_id
       WHERE s.status IN ('active', 'created')
         AND m.org_id = $1
-        AND (
-          $2 = 'admin'
-          OR s.facilitator_id = $3
-        )
+        AND s.facilitator_id = $3
       ORDER BY
         CASE s.status
           WHEN 'active' THEN 0
@@ -468,6 +418,7 @@ sessionRouter.get("/:id", requireAuth, async (req, res) => {
       req.params.id,
       req.auth!.sub,
       req.auth!.role,
+      req.auth!.orgId,
     );
 
     if (!accessible.ok) {
@@ -521,6 +472,7 @@ sessionRouter.post("/:id/start", requireAuth, async (req, res) => {
       req.params.id,
       req.auth!.sub,
       req.auth!.role,
+      req.auth!.orgId,
     );
 
     if (!accessible.ok) {
@@ -582,6 +534,7 @@ sessionRouter.post("/:id/end", requireAuth, async (req, res) => {
       req.params.id,
       req.auth!.sub,
       req.auth!.role,
+      req.auth!.orgId,
     );
 
     if (!accessible.ok) {
@@ -622,7 +575,7 @@ sessionRouter.post("/:id/end", requireAuth, async (req, res) => {
 
 sessionRouter.get("/:id/decisions", requireAuth, async (req, res) => {
   try {
-    const accessible = await requireAccessibleSession(req.params.id, req.auth!.sub, req.auth!.role);
+    const accessible = await requireAccessibleSession(req.params.id, req.auth!.sub, req.auth!.role, req.auth!.orgId);
     if (!accessible.ok) {
       return res.status(accessible.status).json({ ok: false, error: accessible.error });
     }
@@ -639,11 +592,13 @@ sessionRouter.get("/:id/decisions", requireAuth, async (req, res) => {
 
 sessionRouter.post("/:id/decisions/extract", requireAuth, async (req, res) => {
   try {
-    const accessible = await requireAccessibleSession(req.params.id, req.auth!.sub, req.auth!.role);
+    const accessible = await requireAccessibleSession(req.params.id, req.auth!.sub, req.auth!.role, req.auth!.orgId);
     if (!accessible.ok) {
       return res.status(accessible.status).json({ ok: false, error: accessible.error });
     }
-    const decisions = await extractAndSaveDecisions(req.params.id);
+    // Only an explicit re-run spends a second extraction on one transcript.
+    const force = req.body?.force === true;
+    const decisions = await extractAndSaveDecisions(req.params.id, { force });
     res.json({
       ok: true,
       data: { decisions, metric: completenessFromRecords(decisions) },
@@ -656,7 +611,7 @@ sessionRouter.post("/:id/decisions/extract", requireAuth, async (req, res) => {
 
 sessionRouter.patch("/:id/decisions/:decisionId", requireAuth, async (req, res) => {
   try {
-    const accessible = await requireAccessibleSession(req.params.id, req.auth!.sub, req.auth!.role);
+    const accessible = await requireAccessibleSession(req.params.id, req.auth!.sub, req.auth!.role, req.auth!.orgId);
     if (!accessible.ok) {
       return res.status(accessible.status).json({ ok: false, error: accessible.error });
     }
@@ -668,6 +623,7 @@ sessionRouter.patch("/:id/decisions/:decisionId", requireAuth, async (req, res) 
     if ("revisit" in body) patch.revisit = typeof body.revisit === "string" ? body.revisit : null;
     if (typeof body.text === "string") patch.text = body.text;
     if (typeof body.dismissed === "boolean") patch.dismissed = body.dismissed;
+    if (typeof body.done === "boolean") patch.done = body.done;
     if (body.status === "complete" || body.status === "incomplete" || body.status === "open") {
       patch.status = body.status;
     }

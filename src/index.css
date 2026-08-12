@@ -9,18 +9,22 @@ html, body, #root {
   width: 100%;
 }
 
+/* Light is the base, not an override. ThemeProvider sets `data-theme` in an
+   effect, which runs after the first paint — so whichever theme lives in this
+   rule is what a first-time visitor sees for a frame. With dark here, the new
+   light default opened on a black flash. */
 body {
-  background: #09090b;
-  color: #f2f2f3;
+  background: #f6f4ee;
+  color: #1b1b16;
   font-family: 'Inter Variable', 'Inter', 'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   margin: 0;
 }
 
-body[data-theme="light"] {
-  background: #f6f4ee;
-  color: #1b1b16;
+body[data-theme="dark"] {
+  background: #09090b;
+  color: #f2f2f3;
 }
 
 /* ── Interaction defaults ─────────────────────────────────────────────────── */
