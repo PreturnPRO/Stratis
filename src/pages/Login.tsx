@@ -100,8 +100,10 @@ export default function Login({ onNavigate, onJoinRoom }: Props) {
           <Zap size={14} strokeWidth={2} />
           STRATIS
         </div>
-        <div style={headingStyle(colors)}>Sign in to Stratis</div>
-        <div style={subtitleStyle(colors)}>Access the Control Room</div>
+        {/* h1, not a styled div: this screen had no heading at all, so a
+            screen reader landed on it with nothing to announce. */}
+        <h1 style={{ ...headingStyle(colors), margin: 0 }}>Sign in to Stratis</h1>
+        <div style={subtitleStyle(colors)}>Welcome back.</div>
 
         {error && <div style={errorStyle(colors)}>{error}</div>}
 
@@ -130,6 +132,10 @@ export default function Login({ onNavigate, onJoinRoom }: Props) {
             </label>
             <input
               id="email"
+              name="email"
+              // Without name + autoComplete a password manager neither fills
+              // this form nor offers to save it.
+              autoComplete="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -146,6 +152,8 @@ export default function Login({ onNavigate, onJoinRoom }: Props) {
             </label>
             <input
               id="password"
+              name="password"
+              autoComplete="current-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -163,7 +171,7 @@ export default function Login({ onNavigate, onJoinRoom }: Props) {
             fullWidth
             style={{ marginTop: 12 }}
           >
-            {loading ? 'Accessing...' : 'Enter Control Room'}
+            {loading ? 'Signing in…' : 'Sign in'}
           </Button>
         </form>
 

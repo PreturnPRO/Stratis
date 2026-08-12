@@ -115,7 +115,7 @@ export default function Register({ onNavigate }: Props) {
           <Zap size={14} strokeWidth={2} />
           STRATIS
         </div>
-        <div style={headingStyle(colors)}>Create your account</div>
+        <h1 style={{ ...headingStyle(colors), margin: 0 }}>Create your account</h1>
         <div style={subtitleStyle(colors)}>Initialize Master Organizational Tenant</div>
 
         {error && <div style={errorStyle(colors)}>{error}</div>}
@@ -127,6 +127,8 @@ export default function Register({ onNavigate }: Props) {
             </label>
             <input
               id="fullName"
+              name="name"
+              autoComplete="name"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -143,6 +145,8 @@ export default function Register({ onNavigate }: Props) {
             </label>
             <input
               id="orgName"
+              name="organization"
+              autoComplete="organization"
               type="text"
               value={orgName}
               onChange={(e) => setOrgName(e.target.value)}
@@ -158,6 +162,10 @@ export default function Register({ onNavigate }: Props) {
             </label>
             <input
               id="email"
+              name="email"
+              // A password manager fills and offers to save this form only if
+              // the fields say what they are.
+              autoComplete="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -174,6 +182,8 @@ export default function Register({ onNavigate }: Props) {
             </label>
             <input
               id="password"
+              name="new-password"
+              autoComplete="new-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -190,6 +200,8 @@ export default function Register({ onNavigate }: Props) {
             </label>
             <input
               id="confirmPassword"
+              name="confirm-password"
+              autoComplete="new-password"
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
@@ -207,7 +219,7 @@ export default function Register({ onNavigate }: Props) {
             fullWidth
             style={{ marginTop: 12 }}
           >
-            {loading ? 'Initializing...' : 'Deploy Workspace'}
+            {loading ? 'Creating your workspace…' : 'Create workspace'}
           </Button>
         </form>
 
