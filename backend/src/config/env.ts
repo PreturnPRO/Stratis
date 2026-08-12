@@ -23,6 +23,49 @@ if (isProd && !process.env.JWT_SECRET) {
   );
 }
 
+/**
+ * A hosted provider with no credential does not fail — it silently downgrades
+ * to the deterministic mock, and the only trace is one console line nobody
+ * reads. In production that means customers watching Stratis invent decisions
+ * that were never said, with the UI showing no difference at all.
+ *
+ * So in production a missing key is a boot failure. The way to run without a
+ * model is to say so: AI_PROVIDER=mock, STT_PROVIDER=mock. Both are explicit
+ * and neither is reachable by accident.
+ */
+if (isProd) {
+  const aiProvider = process.env.AI_PROVIDER ?? "groq";
+  const aiKeyFor: Record<string, string | undefined> = {
+    groq: "GROQ_API_KEY",
+    gemini: "GEMINI_API_KEY",
+    typhoon: "TYPHOON_API_KEY",
+  };
+  const requiredAiKey = aiKeyFor[aiProvider];
+  if (requiredAiKey && !process.env[requiredAiKey]) {
+    throw new Error(
+      `[env] AI_PROVIDER=${aiProvider} but ${requiredAiKey} is not set. Refusing to start: ` +
+        `every AI call would be served by the mock provider and the product would look ` +
+        `healthy while fabricating decisions. Set ${requiredAiKey}, or set AI_PROVIDER=mock ` +
+        `to run without a model deliberately.`,
+    );
+  }
+
+  if ((process.env.STT_PROVIDER ?? "mock") === "google") {
+    const hasCredential =
+      process.env.GOOGLE_APPLICATION_CREDENTIALS ||
+      process.env.STT_GOOGLE_KEY_FILE ||
+      process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+    if (!hasCredential) {
+      throw new Error(
+        "[env] STT_PROVIDER=google but no service-account credential is set. Refusing to " +
+          "start: transcription would fall back to the mock and every meeting would record " +
+          "placeholder text. Set GOOGLE_SERVICE_ACCOUNT_JSON (or GOOGLE_APPLICATION_CREDENTIALS), " +
+          "or set STT_PROVIDER=mock deliberately.",
+      );
+    }
+  }
+}
+
 export const env = {
   nodeEnv,
   isProd,

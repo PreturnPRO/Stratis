@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 import { db } from "./database";
+import { applySchema } from "./applySchema";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const reset = process.argv.includes("--reset");
@@ -19,8 +20,7 @@ async function run() {
       console.log("[migrate] dropped existing tables (--reset)");
     }
 
-    const schema = readFileSync(resolve(__dirname, "schema.sql"), "utf-8");
-    await db.query(schema);
+    await applySchema();
     console.log("[migrate] schema applied");
     process.exit(0);
   } catch (err) {
