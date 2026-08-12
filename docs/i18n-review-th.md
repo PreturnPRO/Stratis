@@ -1,11 +1,19 @@
 # Thai translation review
 
-One row per string. Edit the Thai in the last column, or copy the snippet, change it, and paste it
-back into `src/i18n/th.ts` over the matching line — the key on the left must stay exactly as it is,
-because the translator matches rendered text against it.
+One row per string. Edit the Thai, or copy the snippet, change it, and paste it back into
+`src/i18n/th.ts` over the matching line.
 
-543 strings. Anything not in this file stays English on purpose (project names, meeting titles,
-people's names, dates).
+**The English key is load-bearing.** The translator matches rendered English text against it,
+so changing a key stops the string translating — silently. Only the Thai side is safe to edit.
+
+The standard this is reviewed against — terminology table, voice, and what Stratis must never
+sound like — is [`docs/i18n-thai-style.md`](i18n-thai-style.md). In short: facilitator is
+ผู้ดำเนินการประชุม, a decision is การตัดสินใจ and never มติ, an assumption is ข้อสมมติ, an open
+question is คำถามที่ยังค้างอยู่, and Stratis is a decision facilitator rather than a
+transcription tool.
+
+543 strings. Anything absent stays English on purpose — project and meeting names, people's
+names, dates, and technical terms like AI, PM, STT, WebSocket, LINE, Notion.
 
 
 ## Sidebar / global nav
@@ -13,14 +21,14 @@ people's names, dates).
 | English | Thai | Where it appears | Paste back |
 |---|---|---|---|
 | Dashboard | แดชบอร์ด | app shell / header, left sidebar, dashboard | `Dashboard: "แดชบอร์ด",` |
-| Docket | วาระการประชุม | app shell / header, useCreateMeeting, offline demo data | `Docket: "วาระการประชุม",` |
+| Docket | วาระการประชุม | app shell / header, meeting creation, offline demo data | `Docket: "วาระการประชุม",` |
 | Projects | โปรเจกต์ | app shell / header, new meeting dialog, projects list | `Projects: "โปรเจกต์",` |
 | Project | โปรเจกต์ | app shell / header, new meeting dialog, start recording dialog | `Project: "โปรเจกต์",` |
-| Meeting | การประชุม | app shell / header, MeetingTransition, new meeting dialog | `Meeting: "การประชุม",` |
+| Meeting | การประชุม | app shell / header, meeting entry animation, new meeting dialog | `Meeting: "การประชุม",` |
 | Meetings | การประชุม | offline demo data, admin panel, dashboard | `Meetings: "การประชุม",` |
 | Document | เอกสาร | app shell / header, project document, projects list | `Document: "เอกสาร",` |
 | Settings | ตั้งค่า | app shell / header, first-run language choice, left sidebar | `Settings: "ตั้งค่า",` |
-| Admin | ผู้ดูแลระบบ | app shell / header, left sidebar, AuthContext | `Admin: "ผู้ดูแลระบบ",` |
+| Admin | ผู้ดูแลระบบ | app shell / header, left sidebar, session handling | `Admin: "ผู้ดูแลระบบ",` |
 | Send feedback | ส่งความคิดเห็น | feedback dialog, left sidebar | `"Send feedback": "ส่งความคิดเห็น",` |
 | Sign out | ออกจากระบบ | left sidebar, admin panel, invite link screen | `"Sign out": "ออกจากระบบ",` |
 | Sign in | เข้าสู่ระบบ | app shell / header, public landing page, sign-in screen | `"Sign in": "เข้าสู่ระบบ",` |
@@ -291,7 +299,7 @@ people's names, dates).
 | WEBSOCKET SYNCED | ซิงก์ผ่าน WebSocket | live meeting screen | `"WEBSOCKET SYNCED": "ซิงก์ผ่าน WebSocket",` |
 | Go to dashboard to start one | ไปที่แดชบอร์ดเพื่อเริ่มการประชุม | live meeting screen | `"Go to dashboard to start one": "ไปที่แดชบอร์ดเพื่อเริ่มการประชุม",` |
 | Agenda | วาระการประชุม | meeting pacing chips, new meeting dialog, live meeting screen | `Agenda: "วาระการประชุม",` |
-| Preparing session | กำลังเตรียมเซสชัน | MeetingTransition | `"Preparing session": "กำลังเตรียมเซสชัน",` |
+| Preparing session | กำลังเตรียมเซสชัน | meeting entry animation | `"Preparing session": "กำลังเตรียมเซสชัน",` |
 | Strategic notes · live | บันทึกเชิงกลยุทธ์ · สด | live notes ribbon | `"Strategic notes · live": "บันทึกเชิงกลยุทธ์ · สด",` |
 
 ## Suggestion cards
@@ -343,14 +351,14 @@ people's names, dates).
 | English | Thai | Where it appears | Paste back |
 |---|---|---|---|
 | Start something new | เริ่มการประชุมใหม่ | new meeting dialog | `"Start something new": "เริ่มการประชุมใหม่",` |
-| Title | หัวข้อ | new meeting dialog, useCreateMeeting, dashboard | `Title: "หัวข้อ",` |
+| Title | หัวข้อ | new meeting dialog, meeting creation, dashboard | `Title: "หัวข้อ",` |
 | e.g. Weekly sync | เช่น ประชุมทีมประจำสัปดาห์ | new meeting dialog | `"e.g. Weekly sync": "เช่น ประชุมทีมประจำสัปดาห์",` |
 | Kind of meeting | ประเภทการประชุม | new meeting dialog | `"Kind of meeting": "ประเภทการประชุม",` |
 | Kickoff | เริ่มโปรเจกต์ | new meeting dialog | `Kickoff: "เริ่มโปรเจกต์",` |
 | Check-in | ติดตามงาน | new meeting dialog | `"Check-in": "ติดตามงาน",` |
 | Decision | การตัดสินใจ | BlockRenderer, end-of-meeting checkpoint, new meeting dialog | `Decision: "การตัดสินใจ",` |
 | Other | อื่น ๆ | new meeting dialog | `Other: "อื่น ๆ",` |
-| Custom | กำหนดเอง | new meeting dialog, AuthContext, useTheme | `Custom: "กำหนดเอง",` |
+| Custom | กำหนดเอง | new meeting dialog, session handling, useTheme | `Custom: "กำหนดเอง",` |
 | Regular team update | อัปเดตทีมตามปกติ | new meeting dialog | `"Regular team update": "อัปเดตทีมตามปกติ",` |
 | Choose between options | เลือกจากตัวเลือก | new meeting dialog | `"Choose between options": "เลือกจากตัวเลือก",` |
 | Goal — what this meeting has to settle | เป้าหมาย — สิ่งที่ต้องหาข้อสรุปในการประชุมนี้ | new meeting dialog | `"Goal — what this meeting has to settle": "เป้าหมาย — สิ่งที่ต้องหาข้อสรุปในการประชุมนี้",` |
@@ -467,7 +475,7 @@ people's names, dates).
 | This workspace is on the beta programme — thank you. Your feedback shapes what ships next. | เวิร์กสเปซนี้อยู่ในโปรแกรมเบต้า ขอบคุณสำหรับความคิดเห็น เพราะความคิดเห็นของคุณช่วยกำหนดสิ่งที่เราจะพัฒนาต่อ | settings | `"This workspace is on the beta programme — thank you. Your feedback shapes what ships next.": "เวิร์กสเปซนี้อยู่ในโปรแกรมเบต้า ขอบคุณสำหรับความคิดเห็น เพราะความคิดเห็นของคุณช่วยกำหนดสิ่งที่เราจะพัฒนาต่อ",` |
 | Members | สมาชิก | admin panel, settings | `Members: "สมาชิก",` |
 | Sessions | เซสชัน | admin panel, settings | `Sessions: "เซสชัน",` |
-| Role | บทบาท | AuthContext, useSuggestionSocket, offline demo data | `Role: "บทบาท",` |
+| Role | บทบาท | session handling, useSuggestionSocket, offline demo data | `Role: "บทบาท",` |
 | Email & password | อีเมลและรหัสผ่าน | settings | `"Email & password": "อีเมลและรหัสผ่าน",` |
 
 ## Pricing
@@ -549,17 +557,17 @@ people's names, dates).
 | Anyone with the link can join with the role you pick, until it expires or is used up. | ทุกคนที่มีลิงก์สามารถเข้าร่วมด้วยบทบาทที่คุณกำหนดได้ จนกว่าลิงก์จะหมดอายุหรือถูกใช้ครบจำนวน | admin panel | `"Anyone with the link can join with the role you pick, until it expires or is used up.": "ทุกคนที่มีลิงก์สามารถเข้าร่วมด้วยบทบาทที่คุณกำหนดได้ จนกว่าลิงก์จะหมดอายุหรือถูกใช้ครบจำนวน",` |
 | Copy this now — the link is not shown again. | คัดลอกลิงก์นี้ไว้ตอนนี้ — ลิงก์จะไม่แสดงอีกหลังจากนี้ | admin panel | `"Copy this now — the link is not shown again.": "คัดลอกลิงก์นี้ไว้ตอนนี้ — ลิงก์จะไม่แสดงอีกหลังจากนี้",` |
 | Changing a role or revoking access takes effect immediately — the member is signed out on their next request. | การเปลี่ยนบทบาทหรือยกเลิกสิทธิ์จะมีผลทันที และสมาชิกจะถูกออกจากระบบเมื่อมีการส่งคำขอครั้งถัดไป | admin panel | `"Changing a role or revoking access takes effect immediately — the member is signed out on their next request.": "การเปลี่ยนบทบาทหรือยกเลิกสิทธิ์จะมีผลทันที และสมาชิกจะถูกออกจากระบบเมื่อมีการส่งคำขอครั้งถัดไป",` |
-| Participants join meetings. Facilitators run them. Admins manage the workspace. | ผู้เข้าร่วมเข้าประชุม ผู้ดำเนินการเป็นคนนำการประชุม และผู้ดูแลจัดการเวิร์กสเปซ | admin panel | `"Participants join meetings. Facilitators run them. Admins manage the workspace.": "ผู้เข้าร่วมเข้าประชุม ผู้ดำเนินการเป็นคนนำการประชุม และผู้ดูแลจัดการเวิร์กสเปซ",` |
+| Participants join meetings. Facilitators run them. Admins manage the workspace. | ผู้เข้าร่วมเข้าประชุม ผู้ดำเนินการประชุมเป็นคนนำการประชุม และผู้ดูแลจัดการเวิร์กสเปซ | admin panel | `"Participants join meetings. Facilitators run them. Admins manage the workspace.": "ผู้เข้าร่วมเข้าประชุม ผู้ดำเนินการประชุมเป็นคนนำการประชุม และผู้ดูแลจัดการเวิร์กสเปซ",` |
 | Participant | ผู้เข้าร่วม | summaryExport, offline demo data, admin panel | `Participant: "ผู้เข้าร่วม",` |
 | Facilitator | ผู้ดำเนินการประชุม | summaryExport, offline demo data, admin panel | `Facilitator: "ผู้ดำเนินการประชุม",` |
 | Account created | สร้างบัญชีเมื่อ | admin panel | `"Account created": "สร้างบัญชีเมื่อ",` |
 | Suspend | ระงับ | admin panel | `Suspend: "ระงับ",` |
 | Restore | คืนสิทธิ์ | admin panel, project document | `Restore: "คืนสิทธิ์",` |
 | Revoke | ยกเลิกสิทธิ์ | admin panel | `Revoke: "ยกเลิกสิทธิ์",` |
-| revoked | ยกเลิกสิทธิ์แล้ว | AuthContext, useSuggestionSocket, http | `revoked: "ยกเลิกสิทธิ์แล้ว",` |
-| suspended | ถูกระงับ | AuthContext, http, offline demo data | `suspended: "ถูกระงับ",` |
+| revoked | ยกเลิกสิทธิ์แล้ว | session handling, useSuggestionSocket, http | `revoked: "ยกเลิกสิทธิ์แล้ว",` |
+| suspended | ถูกระงับ | session handling, http, offline demo data | `suspended: "ถูกระงับ",` |
 | active | ใช้งานอยู่ | app shell / header, shared page panels, left sidebar | `active: "ใช้งานอยู่",` |
-| Done | เสร็จสิ้น | app shell / header, MeetingTransition, empty / loading states | `Done: "เสร็จสิ้น",` |
+| Done | เสร็จสิ้น | app shell / header, meeting entry animation, empty / loading states | `Done: "เสร็จสิ้น",` |
 | Sign everyone out | ออกจากระบบทุกคน | admin panel | `"Sign everyone out": "ออกจากระบบทุกคน",` |
 | End every session this member has open | จบทุกเซสชันที่สมาชิกคนนี้เปิดอยู่ | admin panel | `"End every session this member has open": "จบทุกเซสชันที่สมาชิกคนนี้เปิดอยู่",` |
 | Check no session is active. A forced sign-out cuts a live recording. | ตรวจสอบให้แน่ใจก่อนว่าไม่มีเซสชันที่กำลังใช้งานอยู่ เพราะการบังคับออกจากระบบจะหยุดการบันทึกที่กำลังดำเนินอยู่ | admin panel | `"Check no session is active. A forced sign-out cuts a live recording.": "ตรวจสอบให้แน่ใจก่อนว่าไม่มีเซสชันที่กำลังใช้งานอยู่ เพราะการบังคับออกจากระบบจะหยุดการบันทึกที่กำลังดำเนินอยู่",` |
@@ -616,7 +624,7 @@ people's names, dates).
 | low | ต่ำ | app shell / header, AmbientBackground, end-of-meeting checkpoint | `low: "ต่ำ",` |
 | answered | ตอบแล้ว | live suggestion cards, useLang, useSuggestionSocket | `answered: "ตอบแล้ว",` |
 | open | ยังค้างอยู่ | app shell / header, end-of-meeting checkpoint, first-run language choice | `open: "ยังค้างอยู่",` |
-| Start | เริ่ม | new meeting dialog, start recording dialog, useCreateMeeting | `Start: "เริ่ม",` |
+| Start | เริ่ม | new meeting dialog, start recording dialog, meeting creation | `Start: "เริ่ม",` |
 
 ## Docket / projects list chrome
 
@@ -626,7 +634,7 @@ people's names, dates).
 | S |  | app shell / header, main, vite-env.d | `S: "",` |
 | meeting | การประชุม | app shell / header, end-of-meeting checkpoint, CurtainTransition | `meeting: "การประชุม",` |
 | meetings | การประชุม | first-run language choice, start recording dialog, docketCarry.test | `meetings: "การประชุม",` |
-| Session | เซสชัน | NodeTypes, AuthContext, useCreateMeeting | `Session: "เซสชัน",` |
+| Session | เซสชัน | NodeTypes, session handling, meeting creation | `Session: "เซสชัน",` |
 | PROJECT | โปรเจกต์ | new meeting dialog, index.d, offline demo data | `PROJECT: "โปรเจกต์",` |
 | PROJECTS | โปรเจกต์ | index.d, offline demo data | `PROJECTS: "โปรเจกต์",` |
 | · last: | · ล่าสุด: | projects list | `"· last:": "· ล่าสุด:",` |
@@ -700,7 +708,7 @@ people's names, dates).
 | Start recording? | เริ่มบันทึกเสียงหรือไม่ | start recording dialog | `"Start recording?": "เริ่มบันทึกเสียงหรือไม่",` |
 | Start recording | เริ่มบันทึกเสียง | start recording dialog | `"Start recording": "เริ่มบันทึกเสียง",` |
 | Starting… | กำลังเริ่ม… | start recording dialog, docket | `"Starting…": "กำลังเริ่ม…",` |
-| Length | ความยาว | feedback dialog, start recording dialog, invite link screen | `Length: "ความยาว",` |
+| Length | ระยะเวลา | feedback dialog, start recording dialog, invite link screen | `Length: "ระยะเวลา",` |
 | Goal | เป้าหมาย | new meeting dialog, start recording dialog, docket | `Goal: "เป้าหมาย",` |
 | No goal set — Stratis has nothing to aim at | ยังไม่ได้ตั้งเป้าหมาย — Stratis จะไม่รู้ว่าต้องช่วยเรื่องอะไร | start recording dialog | `"No goal set — Stratis has nothing to aim at": "ยังไม่ได้ตั้งเป้าหมาย — Stratis จะไม่รู้ว่าต้องช่วยเรื่องอะไร",` |
 | The microphone opens as soon as you confirm, and everyone in the room should know they are being recorded. | ไมโครโฟนจะเปิดทันทีที่ยืนยัน และทุกคนในห้องควรรู้ว่ากำลังถูกบันทึกเสียง | not found in the UI source — may be dead | `"The microphone opens as soon as you confirm, and everyone in the room should know they are being recorded.": "ไมโครโฟนจะเปิดทันทีที่ยืนยัน และทุกคนในห้องควรรู้ว่ากำลังถูกบันทึกเสียง",` |

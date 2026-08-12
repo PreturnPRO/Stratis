@@ -1,6 +1,14 @@
 // English source string -> Thai. Anything absent stays English.
 // The DOM translator (i18n/translateDom.ts) matches whole text nodes and a few
 // attributes against these keys, so no component has to call a t() function.
+//
+// The key on the left is load-bearing: editing it stops the string translating,
+// silently. Only the Thai side is safe to change.
+//
+// Terminology, voice, and the positioning rule live in docs/i18n-thai-style.md.
+// Short version: facilitator is ผู้ดำเนินการประชุม, a decision is การตัดสินใจ
+// (never มติ), an assumption is ข้อสมมติ, an open question is คำถามที่ยังค้างอยู่,
+// and nothing here may make Stratis sound like a transcription tool.
 export const TH: Record<string, string> = {
   // --- Sidebar / global nav ---
   Dashboard: "แดชบอร์ด",
@@ -551,7 +559,7 @@ export const TH: Record<string, string> = {
   "Changing a role or revoking access takes effect immediately — the member is signed out on their next request.":
     "การเปลี่ยนบทบาทหรือยกเลิกสิทธิ์จะมีผลทันที และสมาชิกจะถูกออกจากระบบเมื่อมีการส่งคำขอครั้งถัดไป",
   "Participants join meetings. Facilitators run them. Admins manage the workspace.":
-    "ผู้เข้าร่วมเข้าประชุม ผู้ดำเนินการเป็นคนนำการประชุม และผู้ดูแลจัดการเวิร์กสเปซ",
+    "ผู้เข้าร่วมเข้าประชุม ผู้ดำเนินการประชุมเป็นคนนำการประชุม และผู้ดูแลจัดการเวิร์กสเปซ",
   Participant: "ผู้เข้าร่วม",
   Facilitator: "ผู้ดำเนินการประชุม",
   "Account created": "สร้างบัญชีเมื่อ",
@@ -691,7 +699,7 @@ export const TH: Record<string, string> = {
   "Start recording?": "เริ่มบันทึกเสียงหรือไม่",
   "Start recording": "เริ่มบันทึกเสียง",
   "Starting…": "กำลังเริ่ม…",
-  Length: "ความยาว",
+  Length: "ระยะเวลา",
   Goal: "เป้าหมาย",
   "No goal set — Stratis has nothing to aim at":
     "ยังไม่ได้ตั้งเป้าหมาย — Stratis จะไม่รู้ว่าต้องช่วยเรื่องอะไร",

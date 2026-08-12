@@ -11,6 +11,7 @@ to touch. Read `02` and `03` before writing any code.**
 | [`03-engineering.md`](03-engineering.md) | Architecture, conventions, security posture, verification standard | Any code change |
 | [`04-environment.md`](04-environment.md) | How to run things, **commands that do not work and what to use instead** | Before running an unfamiliar command; whenever one fails |
 | [`05-corrections.md`](05-corrections.md) | Corrections the human has made, dated, with what changed | Start of a session; before repeating a past approach |
+| [`../i18n-thai-style.md`](../i18n-thai-style.md) | Thai terminology table, voice, and what Stratis must never sound like | Writing or reviewing any Thai string |
 | [`../DECISIONS.md`](../DECISIONS.md) | Long-form reasoning behind non-obvious code | When code looks wrong and you are tempted to "simplify" it |
 
 ---

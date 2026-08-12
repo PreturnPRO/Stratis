@@ -69,6 +69,19 @@ one is here because it had to be said more than once.
   comments in `th.ts` so nobody "fixes" them again.
 - Translation is DOM-based (`i18n/translateDom.ts`) — no `t()` calls in
   components. Keys are whole text nodes.
+- **The English key is load-bearing.** The translator matches rendered text
+  against it, so editing a key silently stops the string translating. Only the
+  Thai side is safe to change.
+- **Thai copy follows [`docs/i18n-thai-style.md`](../i18n-thai-style.md)** —
+  terminology table, voice, and the rule that Stratis must not read as a
+  transcription or note-taking tool. Facilitator is always ผู้ดำเนินการประชุม,
+  decision is การตัดสินใจ (never มติ), assumption is ข้อสมมติ, an open question
+  is คำถามที่ยังค้างอยู่. `docs/i18n-review-th.md` is the side-by-side working
+  file for a review pass.
+- **Dates and times localise too.** Every formatter takes `localeTag()` from
+  `i18n/locale.ts`, which reads the language actually rendering. A formatter
+  passing `undefined` gets the browser's locale and prints English months under
+  Thai headings.
 
 ## Theme and colour
 
