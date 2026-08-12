@@ -47,11 +47,21 @@ interface WaitingItem {
   since: string;
 }
 
+interface ProjectFilterOption {
+  id: string;
+  name: string;
+  openCount: number;
+}
+
 interface DocketPayload {
   meetings?: DocketMeeting[];
   waiting?: WaitingItem[];
   waitingTotal?: number;
+  projects?: ProjectFilterOption[];
 }
+
+/** One screenful. "Show more" asks the server for the next size up. */
+const OPEN_PAGE = 25;
 
 type Band = "now" | "week" | "later";
 
@@ -106,9 +116,19 @@ export default function Docket({
   const [resolving, setResolving] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<StartTarget | null>(null);
 
+  // The filter and the page size live in the cache key: each combination is a
+  // different answer, and keying them together is what stops a filtered view
+  // being served from the unfiltered copy.
+  const [projectFilter, setProjectFilter] = useState<string | null>(null);
+  const [openLimit, setOpenLimit] = useState(OPEN_PAGE);
+
   const query = useCachedQuery<DocketPayload>(
-    "docket",
-    useCallback(() => apiFetch<DocketPayload>("/api/meeting/docket"), []),
+    `docket:${projectFilter ?? "all"}:${openLimit}`,
+    useCallback(() => {
+      const params = new URLSearchParams({ limit: String(openLimit) });
+      if (projectFilter) params.set("project", projectFilter);
+      return apiFetch<DocketPayload>(`/api/meeting/docket?${params.toString()}`);
+    }, [projectFilter, openLimit]),
     { scope: user?.id, enabled: Boolean(token) },
   );
 
@@ -123,6 +143,7 @@ export default function Docket({
   const meetings = useMemo(() => query.data?.meetings ?? [], [query.data]);
   const waiting = useMemo(() => query.data?.waiting ?? [], [query.data]);
   const waitingTotal = query.data?.waitingTotal ?? waiting.length;
+  const projectOptions = useMemo(() => query.data?.projects ?? [], [query.data]);
 
   const grouped = useMemo(() => {
     const out: Record<Band, DocketMeeting[]> = { now: [], week: [], later: [] };
@@ -443,6 +464,34 @@ export default function Docket({
                 )}
               </p>
 
+              {projectOptions.length > 1 && (
+                <div style={styles.filters}>
+                  <Button
+                    variant={projectFilter === null ? "primary" : "ghost"}
+                    size="sm"
+                    onClick={() => {
+                      setProjectFilter(null);
+                      setOpenLimit(OPEN_PAGE);
+                    }}
+                  >
+                    All projects
+                  </Button>
+                  {projectOptions.map((p) => (
+                    <Button
+                      key={p.id}
+                      variant={projectFilter === p.id ? "primary" : "ghost"}
+                      size="sm"
+                      onClick={() => {
+                        setProjectFilter(p.id);
+                        setOpenLimit(OPEN_PAGE);
+                      }}
+                    >
+                      {p.name} · {p.openCount}
+                    </Button>
+                  ))}
+                </div>
+              )}
+
               <div style={styles.awaitBox}>
                 {waiting.map((w) => (
                   <div key={w.id} style={styles.awaitRow}>
@@ -483,6 +532,21 @@ export default function Docket({
                   </div>
                 ))}
               </div>
+
+              {waiting.length < waitingTotal && (
+                <div style={{ marginTop: SPACE[1.5] }}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={query.loading}
+                    onClick={() => setOpenLimit((n) => n + OPEN_PAGE)}
+                  >
+                    {query.loading
+                      ? "Loading…"
+                      : `Show ${Math.min(OPEN_PAGE, waitingTotal - waiting.length)} more`}
+                  </Button>
+                </div>
+              )}
             </section>
           )}
         </>
@@ -674,6 +738,12 @@ function makeStyles(colors: ReturnType<typeof useTheme>["colors"]): Record<strin
       flexWrap: "wrap",
       padding: "11px 2px",
       borderBottom: `1px solid ${colors.border}`,
+    },
+    filters: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 6,
+      marginBottom: SPACE[1.5],
     },
     awaitProject: {
       flexShrink: 0,

@@ -472,13 +472,29 @@ interface WaitingRow {
   total_count: string;
 }
 
-/** Cap on unresolved decisions returned with the docket. */
-const OPEN_ITEM_LIMIT = 200;
+/**
+ * How many unresolved decisions one docket request may carry.
+ *
+ * The page used to ask for every open question in the org on every visit — 200
+ * rows and their joins whether or not anyone scrolled that far. A workspace a
+ * year in pays that on every navigation. The default page is what fits on the
+ * screen; `limit` raises it when the reader asks for more, and the hard cap is
+ * what stops a crafted query pulling the whole table.
+ */
+const OPEN_ITEM_PAGE = 25;
+const OPEN_ITEM_MAX = 200;
 
 meetingRouter.get("/docket", requireAuth, async (req, res) => {
   try {
     const orgId = req.auth!.orgId;
     const ts = now();
+    const openLimit = parseLimit(req.query.limit, OPEN_ITEM_PAGE, OPEN_ITEM_MAX);
+    // One project at a time is how the questions are actually read: they belong
+    // to different documents and mixing them is what makes the list unreadable.
+    const projectFilter =
+      typeof req.query.project === "string" && req.query.project.trim()
+        ? req.query.project.trim()
+        : null;
 
     const meetingsResult = await db.query<DocketMeetingRow>(
       `
@@ -548,6 +564,7 @@ meetingRouter.get("/docket", requireAuth, async (req, res) => {
       JOIN meetings dm ON dm.id = d.meeting_id
       LEFT JOIN projects p ON p.id = dm.project_id
       WHERE dm.org_id = $1
+        AND ($2::text IS NULL OR dm.project_id = $2)
         AND d.dismissed = FALSE
         -- Ticked off counts as resolved here even though the status column is
         -- untouched: this list answers "what still needs deciding", and a
@@ -556,7 +573,34 @@ meetingRouter.get("/docket", requireAuth, async (req, res) => {
         AND d.done_at IS NULL
         AND d.status IN ('open', 'incomplete')
       ORDER BY d.created_at ASC
-      LIMIT ${OPEN_ITEM_LIMIT}
+      LIMIT $3
+      `,
+      [orgId, projectFilter, openLimit],
+    );
+
+    /**
+     * The filter's own row: one line per project with open questions, so the
+     * chips can be drawn without fetching the questions themselves. Counting in
+     * the database is what keeps this cheap — the alternative was shipping
+     * every row to the client and counting there, which is the thing being
+     * fixed.
+     */
+    const projectSummary = await db.query<{ id: string; name: string | null; open_count: string }>(
+      `
+      SELECT
+        dm.project_id AS id,
+        COALESCE(p.name, dm.project_id) AS name,
+        COUNT(*) AS open_count
+      FROM decisions d
+      JOIN meetings dm ON dm.id = d.meeting_id
+      LEFT JOIN projects p ON p.id = dm.project_id
+      WHERE dm.org_id = $1
+        AND d.dismissed = FALSE
+        AND d.done_at IS NULL
+        AND d.status IN ('open', 'incomplete')
+      GROUP BY dm.project_id, p.name
+      ORDER BY COUNT(*) DESC
+      LIMIT 12
       `,
       [orgId],
     );
@@ -577,6 +621,13 @@ meetingRouter.get("/docket", requireAuth, async (req, res) => {
             row.active_session_id && row.active_session_status
               ? { id: row.active_session_id, status: row.active_session_status }
               : null,
+        })),
+        projectFilter,
+        openLimit,
+        projects: projectSummary.rows.map((row) => ({
+          id: row.id,
+          name: row.name ?? row.id,
+          openCount: Number(row.open_count),
         })),
         waiting: waitingResult.rows.map((row) => ({
           id: row.id,

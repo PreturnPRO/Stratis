@@ -365,7 +365,26 @@ function route(path: string, method: string): Response | null {
   }
 
   if (path.includes("/api/meeting/docket")) {
-    return json({ meetings: MEETINGS, waiting: WAITING, waitingTotal: WAITING.length });
+    {
+      const url = new URL(path, location.origin);
+      const project = url.searchParams.get("project");
+      const limit = Number(url.searchParams.get("limit") ?? 25);
+      const scoped = project ? WAITING.filter((w) => w.projectId === project) : WAITING;
+      const projects = Object.values(
+        WAITING.reduce<Record<string, { id: string; name: string; openCount: number }>>((acc, w) => {
+          const id = w.projectId ?? "none";
+          acc[id] ??= { id, name: w.projectName ?? id, openCount: 0 };
+          acc[id].openCount += 1;
+          return acc;
+        }, {}),
+      );
+      return json({
+        meetings: MEETINGS,
+        waiting: scoped.slice(0, limit),
+        waitingTotal: scoped.length,
+        projects,
+      });
+    }
   }
 
   if (path.includes("/api/meeting/projects")) {
