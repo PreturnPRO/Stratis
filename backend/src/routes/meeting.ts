@@ -45,6 +45,7 @@ interface SummaryRow {
   created_at: string;
   meeting_title: string | null;
   project_id: string | null;
+  project_name: string | null;
 }
 
 function isIdentityFkViolation(error: unknown): boolean {
@@ -337,10 +338,14 @@ meetingRouter.get("/dashboard", requireAuth, async (req, res) => {
         ps.summary_title AS title,
         ps.created_at,
         m.title  AS meeting_title,
-        m.project_id AS project_id
+        m.project_id AS project_id,
+        -- Same reason as the docket: the card said "stratis1" where the rest
+        -- of the app says "Stratis1".
+        COALESCE(p.name, m.project_id) AS project_name
       FROM participant_summaries ps
       JOIN sessions s ON s.id = ps.session_id
       JOIN meetings m ON m.id = s.meeting_id
+      LEFT JOIN projects p ON p.id = m.project_id
       WHERE m.org_id = $1
         AND s.facilitator_id = $2
       ORDER BY ps.created_at DESC

@@ -22,6 +22,7 @@ import { useCachedQuery } from "../lib/cache";
 import { ApiError, apiFetch } from "../lib/http";
 import { track } from "../lib/track";
 import { FONT, SPACE } from "../tokens/colors";
+import { localeTag } from "../i18n/locale";
 
 interface ProfileResponse {
   profile: User;
@@ -228,7 +229,7 @@ function ProfileTab({
         />
         <ReadOnlyRow
           label="Member since"
-          value={profile ? new Date(profile.createdAt).toLocaleDateString() : placeholder}
+          value={profile ? new Date(profile.createdAt).toLocaleDateString(localeTag()) : placeholder}
         />
       </Card>
     </>
@@ -629,7 +630,7 @@ function SecurityTab({
         </p>
         {profile?.lastActiveAt && (
           <p style={{ margin: `${SPACE[1.5]}px 0 0`, fontSize: FONT.size.label, color: colors.textMuted }}>
-            Last seen {new Date(profile.lastActiveAt).toLocaleString()}
+            Last seen {new Date(profile.lastActiveAt).toLocaleString(localeTag())}
           </p>
         )}
       </Card>

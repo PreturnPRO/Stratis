@@ -12,6 +12,7 @@ import AmbientBackground from "../components/AmbientBackground";
 
 import { useCachedQuery } from "../lib/cache";
 import { apiFetch } from "../lib/http";
+import { localeTag } from "../i18n/locale";
 
 type Colors = ReturnType<typeof useTheme>["colors"];
 
@@ -55,6 +56,7 @@ interface BackendSummary {
   created_at?: string;
   meeting_title?: string | null;
   project_id?: string | null;
+  project_name?: string | null;
 }
 
 interface DashboardPayload {
@@ -76,7 +78,7 @@ function formatDate(value?: string | null): string {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
 
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(localeTag(), {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -296,14 +298,16 @@ function DashboardPanels({
         {loading ? (
           <LoadingState count={3} />
         ) : ordered.length === 0 ? (
-          // "No meetings yet" is a claim about the data. When the request
-          // failed we do not have the data, and telling a team with thirty
-          // meetings to create their first one is worse than saying nothing.
+          // "No meetings yet" is a claim about the data, and two claims can be
+          // wrong here. When the request failed we do not have the data at all.
+          // And since a meeting leaves this list once it has been run, a
+          // workspace with a year of history behind it lands on the empty
+          // state — being told to create its first meeting.
           <EmptyState
             message={
               failed
                 ? "Your meetings could not be loaded. They are safe — this screen just could not reach the server."
-                : "No meetings yet. Create your first meeting."
+                : "Nothing waiting to start. New meetings and anything you have scheduled appear here."
             }
           />
         ) : (
@@ -416,7 +420,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
         id: summary.id,
         sessionId: summary.session_id ?? undefined,
         title: summary.title,
-        project: summary.project_id ?? summary.meeting_title ?? "Project summary",
+        project: summary.project_name ?? summary.project_id ?? summary.meeting_title ?? "Project summary",
         date: summary.created_at,
       }))
     );
@@ -467,7 +471,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
     if (sessionId) setShowNewMeeting(false);
   };
 
-  const todayLabel = new Intl.DateTimeFormat(undefined, {
+  const todayLabel = new Intl.DateTimeFormat(localeTag(), {
     weekday: "short",
     month: "short",
     day: "numeric",

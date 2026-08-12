@@ -25,6 +25,7 @@ import { usePcmStream } from "../hooks/usePcmStream";
 import { mergeTranscripts } from "../lib/mergeTranscripts";
 import { loadSeen, saveSeen, shouldInterruptEnd, unreviewedIds } from "../lib/checkpointReview";
 import { ApiError, apiFetch } from "../lib/http";
+import { localeTag } from "../i18n/locale";
 
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 
@@ -86,7 +87,7 @@ function isRealSessionId(value: string | null | undefined): value is string {
 function formatTime(value: string): string {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(localeTag(), {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",

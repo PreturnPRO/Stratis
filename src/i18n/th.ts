@@ -681,4 +681,25 @@ export const TH: Record<string, string> = {
   Blocked: "ติดขัด",
   "Needs input": "ต้องการข้อมูลเพิ่มเติม",
   "Strategy map": "แผนกลยุทธ์",
+
+  // --- Docket: resolving an open question ---
+  "Mark done": "ทำเสร็จแล้ว",
+  "Marking…": "กำลังบันทึก…",
+  "Nothing booked yet": "ยังไม่มีการประชุมที่นัดไว้",
+
+  // --- Starting a meeting ---
+  "Start recording?": "เริ่มบันทึกเสียงหรือไม่",
+  "Start recording": "เริ่มบันทึกเสียง",
+  "Starting…": "กำลังเริ่ม…",
+  Length: "ความยาว",
+  Goal: "เป้าหมาย",
+  "No goal set — Stratis has nothing to aim at":
+    "ยังไม่ได้ตั้งเป้าหมาย — Stratis จะไม่รู้ว่าต้องช่วยเรื่องอะไร",
+  "The microphone opens as soon as you confirm, and everyone in the room should know they are being recorded.":
+    "ไมโครโฟนจะเปิดทันทีที่ยืนยัน และทุกคนในห้องควรรู้ว่ากำลังถูกบันทึกเสียง",
+  "Nothing waiting to start. New meetings and anything you have scheduled appear here.":
+    "ยังไม่มีการประชุมที่รอเริ่ม การประชุมใหม่และที่นัดไว้จะแสดงที่นี่",
+
+  // --- Settings ---
+  "Email & password": "อีเมลและรหัสผ่าน",
 };

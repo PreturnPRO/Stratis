@@ -14,6 +14,7 @@ import { useUpdateGuard } from "./hooks/useUpdateGuard";
 import { installTrackFlush, track } from "./lib/track";
 import { apiFetch } from "./lib/http";
 import type { User } from "@shared/types";
+import { localeTag } from "./i18n/locale";
 
 const Landing = lazy(() => import("./pages/Landing"));
 const Login = lazy(() => import("./pages/Login"));
@@ -89,8 +90,8 @@ function LiveClock({ colors }: { colors: { accent: string } }) {
     };
   }, []);
 
-  const time = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit" }).format(now);
-  const tz = new Intl.DateTimeFormat(undefined, { timeZoneName: "short" })
+  const time = new Intl.DateTimeFormat(localeTag(), { hour: "2-digit", minute: "2-digit" }).format(now);
+  const tz = new Intl.DateTimeFormat(localeTag(), { timeZoneName: "short" })
     .formatToParts(now)
     .find((p) => p.type === "timeZoneName")?.value ?? "";
 

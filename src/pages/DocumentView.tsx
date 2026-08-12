@@ -13,6 +13,7 @@ import {
   type PmDocumentVersion,
 } from '../../shared/types'
 import { apiFetch } from '../lib/http'
+import { localeTag } from "../i18n/locale";
 
 type Decision = 'pending' | 'approved' | 'rejected'
 
@@ -667,7 +668,7 @@ function ProposedChange({
 
 function formatDate(value: string): string {
   const d = new Date(value)
-  return Number.isNaN(d.getTime()) ? value : d.toLocaleString()
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleString(localeTag())
 }
 
 function makeStyles(colors: Record<string, string>): Record<string, React.CSSProperties> {

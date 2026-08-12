@@ -8,6 +8,7 @@ import { useTheme } from "../hooks/useTheme";
 import AmbientBackground from "../components/AmbientBackground";
 import { useCachedQuery } from "../lib/cache";
 import { apiFetch } from "../lib/http";
+import { localeTag } from "../i18n/locale";
 
 interface Props {
   onNav?: (id: string, params?: Record<string, string>) => void;
@@ -24,7 +25,7 @@ function formatDate(value?: string | null): string {
   if (!value) return "No meetings yet";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(d);
+  return new Intl.DateTimeFormat(localeTag(), { month: "short", day: "numeric", year: "numeric" }).format(d);
 }
 
 function colorFor(name: string, dotColors: readonly string[]): string {

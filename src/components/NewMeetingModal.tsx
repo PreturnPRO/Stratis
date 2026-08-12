@@ -6,6 +6,7 @@ import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
 import { apiFetch } from "../lib/http";
 import { DURATION_PRESETS } from "../hooks/useCreateMeeting";
+import { localeTag } from "../i18n/locale";
 
 export interface LockedProject {
   id: string;
@@ -136,7 +137,7 @@ function toIso(dateStr: string, timeStr: string): string | null {
 function describeWhen(dateStr: string, timeStr: string): string {
   const iso = toIso(dateStr, timeStr);
   if (!iso) return "Pick a date and time";
-  return new Date(iso).toLocaleString(undefined, {
+  return new Date(iso).toLocaleString(localeTag(), {
     weekday: "short",
     day: "numeric",
     month: "short",

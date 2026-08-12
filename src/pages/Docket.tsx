@@ -11,6 +11,7 @@ import { NewMeetingModal, type MeetingSeed, type NewMeetingFormValues } from "..
 import { StartMeetingConfirm, type StartTarget } from "../components/StartMeetingConfirm";
 import { useCreateMeeting, projectIdFromTitle } from "../hooks/useCreateMeeting";
 import { carriedInto, unownedCount } from "../lib/docketCarry";
+import { localeTag } from "../i18n/locale";
 
 // The Docket is deliberately NOT a calendar. A month grid answers "when am I
 // busy?" — a question every team already has Google Calendar for, and which
@@ -70,7 +71,7 @@ const BAND_LABEL: Record<Band, string> = {
 
 function dayStamp(iso: string | null): string {
   if (!iso) return "Unscheduled";
-  return new Date(iso).toLocaleDateString(undefined, {
+  return new Date(iso).toLocaleDateString(localeTag(), {
     weekday: "short",
     day: "numeric",
     month: "short",
@@ -79,7 +80,7 @@ function dayStamp(iso: string | null): string {
 
 function timeStamp(iso: string | null): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString(localeTag(), { hour: "2-digit", minute: "2-digit" });
 }
 
 function daysOpen(iso: string): number {

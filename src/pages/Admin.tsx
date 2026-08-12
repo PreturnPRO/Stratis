@@ -27,6 +27,7 @@ import { useTheme } from "../hooks/useTheme";
 import { apiFetch } from "../lib/http";
 import { track } from "../lib/track";
 import { FONT, RADIUS, SPACE } from "../tokens/colors";
+import { localeTag } from "../i18n/locale";
 
 /**
  * Monitoring first, administration second.
@@ -148,7 +149,7 @@ function TeamTab() {
                 <div style={{ fontSize: FONT.size.caption, color: colors.textDim }}>
                   {member.email}
                   {member.lastActiveAt
-                    ? ` · active ${new Date(member.lastActiveAt).toLocaleDateString()}`
+                    ? ` · active ${new Date(member.lastActiveAt).toLocaleDateString(localeTag())}`
                     : " · never signed in"}
                 </div>
               </div>
@@ -500,7 +501,7 @@ function InvitesTab() {
                   <div style={{ fontSize: FONT.size.caption, color: colors.textDim }}>
                     {invite.role} · used {invite.usedCount}
                     {invite.maxUses !== null ? ` of ${invite.maxUses}` : ""}
-                    {invite.expiresAt ? ` · expires ${new Date(invite.expiresAt).toLocaleDateString()}` : ""}
+                    {invite.expiresAt ? ` · expires ${new Date(invite.expiresAt).toLocaleDateString(localeTag())}` : ""}
                   </div>
                 </div>
                 {invite.revokedAt ? (
@@ -669,7 +670,7 @@ function FeedbackTab() {
             <Chip>{item.kind}</Chip>
             {item.rating !== null && <Chip>{item.rating}/5</Chip>}
             <span style={{ fontSize: FONT.size.caption, color: colors.textDim }}>
-              {item.userName ?? "Anonymous"} · {new Date(item.createdAt).toLocaleString()}
+              {item.userName ?? "Anonymous"} · {new Date(item.createdAt).toLocaleString(localeTag())}
               {item.surface ? ` · ${item.surface}` : ""}
             </span>
             <div style={{ marginLeft: "auto" }}>
