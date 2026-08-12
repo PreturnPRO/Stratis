@@ -130,6 +130,15 @@ async function listMeetings(req: Request, res: Response) {
     if (!includePast) {
       where.push(`(m.scheduled_at IS NULL OR m.scheduled_at >= $${pIdx++})`);
       params.push(ts);
+      // A meeting that has already been run is past, whether or not it ever
+      // carried a date. Same rule as the dashboard's "Ready to start".
+      where.push(`(
+        EXISTS (
+          SELECT 1 FROM sessions s_live
+          WHERE s_live.meeting_id = m.id AND s_live.status IN ('created', 'active')
+        )
+        OR NOT EXISTS (SELECT 1 FROM sessions s_any WHERE s_any.meeting_id = m.id)
+      )`);
     }
 
     const limitParam = `$${pIdx}`;
@@ -215,7 +224,22 @@ meetingRouter.get("/dashboard", requireAuth, async (req, res) => {
     const ts = now();
 
     const meetingParams: unknown[] = [req.auth!.orgId, ts];
-    const meetingWhere: string[] = ["m.org_id = $1", "(m.scheduled_at IS NULL OR m.scheduled_at >= $2)"];
+    const meetingWhere: string[] = [
+      "m.org_id = $1",
+      "(m.scheduled_at IS NULL OR m.scheduled_at >= $2)",
+      // "Ready to start" means exactly that: never run, or holding a session
+      // that has not ended. Without this an ad-hoc meeting stayed on the list
+      // for ever, so the panel filled with meetings that had already happened —
+      // one of them four times over — and the facilitator had to remember which
+      // of them was real.
+      `(
+        EXISTS (
+          SELECT 1 FROM sessions s_live
+          WHERE s_live.meeting_id = m.id AND s_live.status IN ('created', 'active')
+        )
+        OR NOT EXISTS (SELECT 1 FROM sessions s_any WHERE s_any.meeting_id = m.id)
+      )`,
+    ];
     let pIdx = 3;
 
     if (req.auth!.role === "facilitator") {
@@ -418,6 +442,7 @@ interface DocketMeetingRow {
   id: string;
   title: string;
   project_id: string;
+  project_name: string | null;
   goal: string | null;
   duration_minutes: number | null;
   scheduled_at: string | null;
@@ -428,6 +453,7 @@ interface DocketMeetingRow {
 
 interface WaitingRow {
   id: string;
+  session_id: string;
   text: string;
   status: "open" | "incomplete";
   owner: string | null;
@@ -436,6 +462,7 @@ interface WaitingRow {
   source_meeting_id: string;
   source_at: string;
   project_id: string | null;
+  project_name: string | null;
   since: string;
   total_count: string;
 }
@@ -454,6 +481,7 @@ meetingRouter.get("/docket", requireAuth, async (req, res) => {
         m.id,
         m.title,
         m.project_id,
+        COALESCE(p.name, m.project_id) AS project_name,
         m.goal,
         m.duration_minutes,
         m.scheduled_at,
@@ -461,6 +489,7 @@ meetingRouter.get("/docket", requireAuth, async (req, res) => {
         live.id     AS active_session_id,
         live.status AS active_session_status
       FROM meetings m
+      LEFT JOIN projects p ON p.id = m.project_id
       LEFT JOIN LATERAL (
         SELECT s.id, s.status
         FROM sessions s
@@ -495,6 +524,7 @@ meetingRouter.get("/docket", requireAuth, async (req, res) => {
       `
       SELECT
         d.id,
+        d.session_id,
         d.text,
         d.status,
         d.owner,
@@ -502,13 +532,23 @@ meetingRouter.get("/docket", requireAuth, async (req, res) => {
         dm.title      AS source_meeting,
         dm.id         AS source_meeting_id,
         dm.project_id AS project_id,
+        -- The slug is not a name. "testing-the-sound-for-stratis" is what the
+        -- row used to show, on a list whose whole job is telling two projects
+        -- apart at a glance.
+        COALESCE(p.name, dm.project_id) AS project_name,
         COALESCE(dm.scheduled_at, dm.created_at) AS source_at,
         d.created_at  AS since,
         COUNT(*) OVER () AS total_count
       FROM decisions d
       JOIN meetings dm ON dm.id = d.meeting_id
+      LEFT JOIN projects p ON p.id = dm.project_id
       WHERE dm.org_id = $1
         AND d.dismissed = FALSE
+        -- Ticked off counts as resolved here even though the status column is
+        -- untouched: this list answers "what still needs deciding", and a
+        -- question whose work is finished does not. Without this, Mark done
+        -- wrote to the database and the row stayed exactly where it was.
+        AND d.done_at IS NULL
         AND d.status IN ('open', 'incomplete')
       ORDER BY d.created_at ASC
       LIMIT ${OPEN_ITEM_LIMIT}
@@ -523,6 +563,7 @@ meetingRouter.get("/docket", requireAuth, async (req, res) => {
           id: row.id,
           title: row.title,
           projectId: row.project_id,
+          projectName: row.project_name,
           goal: row.goal,
           durationMinutes: row.duration_minutes,
           scheduledAt: row.scheduled_at,
@@ -534,6 +575,9 @@ meetingRouter.get("/docket", requireAuth, async (req, res) => {
         })),
         waiting: waitingResult.rows.map((row) => ({
           id: row.id,
+          // The decision PATCH is scoped to its session, so the row has to
+          // carry it or the Docket cannot resolve what it displays.
+          sessionId: row.session_id,
           text: row.text,
           status: row.status,
           owner: row.owner,
@@ -542,6 +586,7 @@ meetingRouter.get("/docket", requireAuth, async (req, res) => {
           sourceMeetingId: row.source_meeting_id,
           sourceAt: row.source_at,
           projectId: row.project_id,
+          projectName: row.project_name,
           since: row.since,
         })),
         // Total before the cap, so the UI can say when it is showing a slice.

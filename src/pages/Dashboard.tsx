@@ -5,6 +5,8 @@ import { EmptyState, LoadingState } from "../components/states";
 import { NewMeetingModal } from "../components/NewMeetingModal";
 import { useAuth } from "../context/AuthContext";
 import { useCreateMeeting, ACTIVE_SESSION_KEY, projectIdFromTitle } from "../hooks/useCreateMeeting";
+import type { NewMeetingFormValues } from "../components/NewMeetingModal";
+import { StartMeetingConfirm, type StartTarget } from "../components/StartMeetingConfirm";
 import { useTheme } from "../hooks/useTheme";
 import AmbientBackground from "../components/AmbientBackground";
 
@@ -385,6 +387,8 @@ export default function Dashboard({ onNav }: DashboardProps) {
   const { theme, colors } = useTheme();
 
   const [startError, setStartError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<StartTarget | null>(null);
+  const [startingConfirmed, setStartingConfirmed] = useState(false);
   const [showNewMeeting, setShowNewMeeting] = useState(false);
 
   const create = useCreateMeeting(onNav);
@@ -450,17 +454,11 @@ export default function Dashboard({ onNav }: DashboardProps) {
     }
   };
 
-  const handleCreateMeeting = async (input: {
-    title: string;
-    projectName: string;
-    durationMinutes: number;
-    goal: string;
-    brief: string;
-    scheduledAt: string | null;
-  }) => {
+  const handleCreateMeeting = async (input: NewMeetingFormValues) => {
     const sessionId = await create.createMeeting({
       title: input.title,
-      projectId: projectIdFromTitle(input.projectName),
+      // The chosen project wins; the slug is only for a genuinely new name.
+      projectId: input.projectId ?? projectIdFromTitle(input.projectName),
       goal: input.goal,
       brief: input.brief,
       durationMinutes: input.durationMinutes,
@@ -540,10 +538,41 @@ export default function Dashboard({ onNav }: DashboardProps) {
           meetings={meetings}
           summaries={summaries}
           onRefresh={loadDashboard}
-          onStartMeeting={(m) => void handleStartExisting(m)}
+          onStartMeeting={(m) => {
+            // Resuming a live session is not a new recording, so it goes
+            // straight through; starting a fresh one asks first.
+            if (m.activeSession?.id) {
+              void handleStartExisting(m);
+              return;
+            }
+            setConfirming({
+              id: m.id,
+              title: m.title,
+              projectLabel: m.projectId ?? m.project ?? "No project",
+              goal: null,
+              durationMinutes: null,
+            });
+          }}
           onOpenSummary={handleOpenSummary}
           onNav={onNav}
         />
+
+        {confirming && (
+          <StartMeetingConfirm
+            target={confirming}
+            busy={startingConfirmed}
+            onCancel={() => setConfirming(null)}
+            onConfirm={() => {
+              const m = meetings.find((x) => x.id === confirming.id);
+              if (!m) return;
+              setStartingConfirmed(true);
+              void handleStartExisting(m).finally(() => {
+                setStartingConfirmed(false);
+                setConfirming(null);
+              });
+            }}
+          />
+        )}
 
         <NewMeetingModal
           open={showNewMeeting}

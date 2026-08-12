@@ -15,6 +15,13 @@ export interface LockedProject {
 export interface NewMeetingFormValues {
   title: string;
   projectName: string;
+  /**
+   * The id of an existing project when one was chosen, null when the name is
+   * new. Callers used to derive the id by slugifying whatever was typed, so
+   * "Stratis 1" quietly became a second project beside "Stratis" and the two
+   * halves of one project's history stopped being able to see each other.
+   */
+  projectId: string | null;
   durationMinutes: number;
   goal: string;
   brief: string;
@@ -183,6 +190,7 @@ export function NewMeetingModal({
   const [title, setTitle] = useState("");
   const [autoTitle, setAutoTitle] = useState("");
   const [projectName, setProjectName] = useState("");
+  const [projectId, setProjectId] = useState<string | null>(null);
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [customDuration, setCustomDuration] = useState(false);
   const [goal, setGoal] = useState("");
@@ -296,8 +304,11 @@ export function NewMeetingModal({
     }
   };
 
-  const pickProject = (name: string) => {
+  const pickProject = (name: string, id?: string) => {
     setProjectName(name);
+    // Picking from the list binds to that project. Typing clears the binding
+    // (below), so the id can never belong to a name no longer on screen.
+    setProjectId(id ?? projects.find((p) => p.name === name)?.id ?? null);
     setTypingProject(false);
     retitle(kind, name);
   };
@@ -328,9 +339,13 @@ export function NewMeetingModal({
   });
 
   const projectChips = projects.slice(0, PROJECT_CHIP_LIMIT);
-  const knownProject = projects.some(
+  const nameMatch = projects.find(
     (p) => p.name.trim().toLowerCase() === projectName.trim().toLowerCase(),
   );
+  // Typed-to-match counts as chosen: someone who types "Stratis" exactly means
+  // the Stratis they can see in the list.
+  const matchedProjectId = projectId ?? nameMatch?.id ?? null;
+  const knownProject = Boolean(nameMatch);
   const showProjectInput = typingProject || (!!projectName && !knownProject) || projects.length === 0;
   const typedMatches = typingProject
     ? projects
@@ -344,6 +359,7 @@ export function NewMeetingModal({
     void onSubmit({
       title: title.trim(),
       projectName: finalProject,
+      projectId: lockedProject?.id ?? matchedProjectId,
       durationMinutes,
       goal,
       brief,
@@ -493,7 +509,7 @@ export function NewMeetingModal({
                         key={p.id}
                         type="button"
                         aria-pressed={selected}
-                        onClick={() => pickProject(p.name)}
+                        onClick={() => pickProject(p.name, p.id)}
                         style={chipStyle(selected)}
                       >
                         {p.name}
@@ -517,6 +533,7 @@ export function NewMeetingModal({
                     onClick={() => {
                       setTypingProject(true);
                       setProjectName("");
+                      setProjectId(null);
                     }}
                     style={{
                       ...chipStyle(false),
@@ -538,11 +555,24 @@ export function NewMeetingModal({
                   onChange={(e) => {
                     setTypingProject(true);
                     setProjectName(e.target.value);
+                    // Editing the text drops any binding; it is re-established
+                    // below only by an exact match or by pressing a chip.
+                    setProjectId(null);
                     retitle(kind, e.target.value);
                   }}
                   placeholder="Name a new project"
                   autoComplete="off"
                 />
+              )}
+
+              {/* The one signifier this screen never had: whether the name in
+                  the box joins something that exists or makes a new thing. */}
+              {showProjectInput && projectName.trim().length >= 2 && (
+                <span style={{ fontSize: FONT.size.micro, color: matchedProjectId ? colors.accent : colors.amber }}>
+                  {matchedProjectId
+                    ? `Adds to the existing project “${projectName.trim()}”`
+                    : `Creates a new project “${projectName.trim()}”`}
+                </span>
               )}
 
               {typedMatches.length > 0 && projectName.trim().length >= 2 && (
@@ -555,7 +585,7 @@ export function NewMeetingModal({
                       <button
                         key={p.id}
                         type="button"
-                        onClick={() => pickProject(p.name)}
+                        onClick={() => pickProject(p.name, p.id)}
                         style={chipStyle(
                           p.name.trim().toLowerCase() === projectName.trim().toLowerCase(),
                         )}

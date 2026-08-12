@@ -8,6 +8,7 @@ import { apiFetch } from "../lib/http";
 import { Button } from "../components/ui";
 import { EmptyState, LoadingState } from "../components/states";
 import { NewMeetingModal, type MeetingSeed, type NewMeetingFormValues } from "../components/NewMeetingModal";
+import { StartMeetingConfirm, type StartTarget } from "../components/StartMeetingConfirm";
 import { useCreateMeeting, projectIdFromTitle } from "../hooks/useCreateMeeting";
 import { carriedInto, unownedCount } from "../lib/docketCarry";
 
@@ -22,6 +23,7 @@ interface DocketMeeting {
   id: string;
   title: string;
   projectId: string;
+  projectName: string | null;
   goal: string | null;
   durationMinutes: number | null;
   scheduledAt: string | null;
@@ -31,6 +33,7 @@ interface DocketMeeting {
 
 interface WaitingItem {
   id: string;
+  sessionId: string;
   text: string;
   status: "open" | "incomplete";
   owner: string | null;
@@ -39,6 +42,7 @@ interface WaitingItem {
   sourceMeetingId: string;
   sourceAt: string;
   projectId: string | null;
+  projectName: string | null;
   since: string;
 }
 
@@ -98,6 +102,8 @@ export default function Docket({
   const [seed, setSeed] = useState<MeetingSeed | undefined>(undefined);
   const [starting, setStarting] = useState<string | null>(null);
   const [lockedProject, setLockedProject] = useState<{ id: string; name: string } | undefined>();
+  const [resolving, setResolving] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<StartTarget | null>(null);
 
   const query = useCachedQuery<DocketPayload>(
     "docket",
@@ -140,7 +146,8 @@ export default function Docket({
   const handleCreate = async (input: NewMeetingFormValues) => {
     const created = await create.createMeeting({
       title: input.title,
-      projectId: lockedProject?.id ?? projectIdFromTitle(input.projectName),
+      // The chosen project wins; the slug is only for a genuinely new name.
+      projectId: lockedProject?.id ?? input.projectId ?? projectIdFromTitle(input.projectName),
       goal: input.goal,
       brief: input.brief,
       durationMinutes: input.durationMinutes,
@@ -151,10 +158,37 @@ export default function Docket({
     if (input.scheduledAt) void load();
   };
 
+  /**
+   * Clear an open question without holding a meeting about it.
+   *
+   * `done` is the work axis, not the structure one: the decision keeps whatever
+   * status the checkpoint gave it, and this says the thing it asked for has
+   * happened. The row leaves the list because the list is "what still needs
+   * deciding" — it is still in the meeting's own record.
+   */
+  const markDone = async (w: WaitingItem) => {
+    setResolving(w.id);
+    setLocalError(null);
+    try {
+      await apiFetch(`/api/session/${w.sessionId}/decisions/${w.id}`, {
+        method: "PATCH",
+        body: { done: true },
+      });
+      await load();
+    } catch (err) {
+      setLocalError(
+        err instanceof Error ? err.message : "Could not mark that question done.",
+      );
+    } finally {
+      setResolving(null);
+    }
+  };
+
   const startScheduled = async (m: DocketMeeting) => {
     setStarting(m.id);
     try {
       await create.startSessionForMeeting(m.id, m.durationMinutes ?? 60);
+      setConfirming(null);
     } finally {
       setStarting(null);
     }
@@ -254,7 +288,7 @@ export default function Docket({
                       <div style={styles.body}>
                         <div style={styles.topRow}>
                           <span style={styles.title}>{m.title}</span>
-                          <span style={styles.proj}>{m.projectId}</span>
+                          <span style={styles.proj}>{m.projectName ?? m.projectId}</span>
                         </div>
 
                         {m.goal ? (
@@ -344,7 +378,15 @@ export default function Docket({
                               variant="primary"
                               size="sm"
                               disabled={starting === m.id}
-                              onClick={() => void startScheduled(m)}
+                              onClick={() =>
+                                setConfirming({
+                                  id: m.id,
+                                  title: m.title,
+                                  projectLabel: m.projectName ?? m.projectId,
+                                  goal: m.goal,
+                                  durationMinutes: m.durationMinutes,
+                                })
+                              }
                             >
                               {starting === m.id ? "Starting…" : "Start"}
                             </Button>
@@ -403,6 +445,10 @@ export default function Docket({
               <div style={styles.awaitBox}>
                 {waiting.map((w) => (
                   <div key={w.id} style={styles.awaitRow}>
+                    {/* Which project, then which meeting. Both were missing:
+                        the row showed a question with no way to tell whose it
+                        was, on a list whose entire job is triage. */}
+                    <span style={styles.awaitProject}>{w.projectName ?? w.projectId ?? "No project"}</span>
                     <span style={styles.awaitSrc}>{w.sourceMeeting ?? "Checkpoint"}</span>
                     <span style={styles.awaitText}>{w.text}</span>
                     <span style={styles.awaitAge}>open {daysOpen(w.since)}d</span>
@@ -421,12 +467,36 @@ export default function Docket({
                     >
                       Schedule
                     </Button>
+                    {/* The API has taken `done` since the checkpoint shipped;
+                        the one screen listing open questions had no way to send
+                        it, so the only way to clear a question was to hold
+                        another meeting about it. */}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={resolving === w.id}
+                      onClick={() => void markDone(w)}
+                    >
+                      {resolving === w.id ? "Marking…" : "Mark done"}
+                    </Button>
                   </div>
                 ))}
               </div>
             </section>
           )}
         </>
+      )}
+
+      {confirming && (
+        <StartMeetingConfirm
+          target={confirming}
+          busy={starting === confirming.id}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => {
+            const m = meetings.find((x) => x.id === confirming.id);
+            if (m) void startScheduled(m);
+          }}
+        />
       )}
 
       <NewMeetingModal
@@ -603,6 +673,18 @@ function makeStyles(colors: ReturnType<typeof useTheme>["colors"]): Record<strin
       flexWrap: "wrap",
       padding: "11px 2px",
       borderBottom: `1px solid ${colors.border}`,
+    },
+    awaitProject: {
+      flexShrink: 0,
+      maxWidth: 150,
+      padding: "2px 9px",
+      borderRadius: RADIUS.pill,
+      border: `1px solid ${colors.border}`,
+      fontSize: FONT.size.caption,
+      color: colors.textMuted,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
     },
     awaitSrc: {
       width: 110,
