@@ -1,12 +1,15 @@
 import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { COLORS, FONT, LETTER_SPACING, RADIUS, SPACE } from "./constants";
+// No COLORS here on purpose: it is the dark palette constant, and light is the
+// default theme. Every colour in this shell comes from useTheme().
+import { FONT, LETTER_SPACING, RADIUS, SPACE } from "./constants";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import Sidebar from "./components/Sidebar";
 import CurtainTransition, { type CurtainState } from "./components/CurtainTransition";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { BackLink } from "./components/ui";
 import { useTheme, ThemeProvider } from "./hooks/useTheme";
-import { LangProvider } from "./hooks/useLang";
+import { LangProvider, useLang } from "./hooks/useLang";
 import { useUpdateGuard } from "./hooks/useUpdateGuard";
 import { installTrackFlush, track } from "./lib/track";
 import { apiFetch } from "./lib/http";
@@ -25,6 +28,8 @@ const Settings = lazy(() => import("./pages/Settings"));
 const Admin = lazy(() => import("./pages/Admin"));
 const Pricing = lazy(() => import("./pages/Pricing"));
 const Join = lazy(() => import("./pages/Join"));
+const Room = lazy(() => import("./pages/Room"));
+const LanguageGate = lazy(() => import("./components/LanguageGate"));
 const FeedbackModal = lazy(() => import("./components/FeedbackModal"));
 
 function RouteFallback({ colors }: { colors: { textDim: string } }) {
@@ -112,7 +117,7 @@ function renderPage(
       return <Dashboard onNav={handleNav} />;
     case "summary":
       return (
-        <SummaryView sessionId={navParams?.sessionId} />
+        <SummaryView sessionId={navParams?.sessionId} onNav={handleNav} />
       );
     case "document":
       return (
@@ -163,6 +168,7 @@ function OAuthLanding({
   onDone: (error: string | null) => void;
 }) {
   const { login } = useAuth();
+  const { colors } = useTheme();
   const doneRef = useRef(false);
 
   useEffect(() => {
@@ -188,7 +194,7 @@ function OAuthLanding({
   }, [params, login, onDone]);
 
   return (
-    <div style={{ padding: 40, color: COLORS.textMuted, fontSize: FONT.size.body }}>
+    <div style={{ padding: 40, color: colors.textMuted, fontSize: FONT.size.body }}>
       Finishing sign-in…
     </div>
   );
@@ -199,7 +205,12 @@ function hashToEntry(): { page: AppPage; params: Record<string, string> } {
   const [page, query] = hash.split("?");
   const params: Record<string, string> = {};
   if (query) new URLSearchParams(query).forEach((v, k) => { params[k] = v; });
-  return { page: (page || "dashboard") as AppPage, params };
+  // Validated, not cast. `#/room` and `#/join` are public routes that the
+  // signed-in shell has no page for, and casting them straight to AppPage put
+  // a breadcrumb labelled "room" in the nav trail that led nowhere. Anything
+  // this shell does not own resolves to the dashboard.
+  const known = Object.prototype.hasOwnProperty.call(PAGE_LABELS, page);
+  return { page: (known ? page : "dashboard") as AppPage, params };
 }
 
 function entryToHash(page: AppPage, params: Record<string, string>): string {
@@ -292,11 +303,34 @@ function AppShell() {
   const initialEntry = hashToEntry();
   const [active, setActive] = useState<AppPage>(initialEntry.page);
   const [navParams, setNavParams] = useState<Record<string, string>>(initialEntry.params);
-  const { theme, toggleTheme, colors } = useTheme();
+  const { theme, colors } = useTheme();
+  const { chosen: langChosen } = useLang();
 
   const [entryRoute, setEntryRoute] = useState(() => readEntryRoute());
   const [oauthError, setOauthError] = useState<string | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+
+  /**
+   * Into the room-code screen from the public pages. The hash is written as
+   * well as the state so the page can be reloaded, and shared, from there.
+   */
+  const goToRoom = () => {
+    window.history.pushState(null, "", "#/room");
+    setEntryRoute({ page: "room", params: {} });
+  };
+
+  /** The public plans page, reachable without an account. */
+  const goToPricing = () => {
+    window.history.pushState(null, "", "#/pricing");
+    setEntryRoute({ page: "pricing", params: {} });
+  };
+
+  /** Back out of a public entry screen to the marketing site. */
+  const goToLanding = () => {
+    window.history.pushState(null, "", "#/");
+    setEntryRoute({ page: "", params: {} });
+    setAuthPage("landing");
+  };
 
   useEffect(() => {
     const onHashChange = () => setEntryRoute(readEntryRoute());
@@ -374,10 +408,15 @@ function AppShell() {
     commitNav(id, params);
   };
 
+  // Only the signed-in shell owns the hash. Unauthenticated, this still wrote
+  // `#/dashboard` over whatever public page was on screen, so backing out of
+  // Sign in to the landing page left a URL that described somewhere else — and
+  // sharing it sent someone to the wrong door.
   useEffect(() => {
+    if (!isAuthed) return;
     const hash = entryToHash(active, navParams);
     if (window.location.hash !== hash) window.history.pushState(null, "", hash);
-  }, [active, navParams]);
+  }, [active, navParams, isAuthed]);
 
   useEffect(() => {
     const onPopState = () => {
@@ -411,6 +450,30 @@ function AppShell() {
   const canBack = historyIndex > 0;
   const canForward = historyIndex < history.length - 1;
 
+  // Before any route renders. Someone arriving for the first time picks their
+  // language before they see the product, not after they have already read a
+  // screen of English.
+  if (!langChosen) {
+    return (
+      <Suspense fallback={null}>
+        <LanguageGate />
+      </Suspense>
+    );
+  }
+
+  // The room code is the one route a participant reaches with no account, no
+  // invite link and no signup — they were told six characters across a table.
+  // It renders ahead of the auth gate for exactly that reason.
+  if (entryRoute.page === "room") {
+    return (
+      <ErrorBoundary area="room">
+        <Suspense fallback={<RouteFallback colors={colors} />}>
+          <Room code={entryRoute.params.code} onBack={goToLanding} />
+        </Suspense>
+      </ErrorBoundary>
+    );
+  }
+
   // An invite link and an OAuth return both have to render before, and
   // independently of, the signed-in shell.
   if (entryRoute.page === "join" && entryRoute.params.token) {
@@ -439,9 +502,13 @@ function AppShell() {
   // should not have to make an account to read the plans.
   if (!isAuthed && entryRoute.page === "pricing") {
     return (
-      <div style={{ height: "100dvh", overflow: "auto", background: COLORS.bg, color: COLORS.text }}>
+      // COLORS is the dark palette constant, not the themed one, so this page
+      // rendered dark whatever the user had chosen — visible the moment light
+      // became the default.
+      <div style={{ height: "100dvh", overflow: "auto", background: colors.bg, color: colors.text }}>
         <ErrorBoundary area="pricing">
           <Suspense fallback={<RouteFallback colors={colors} />}>
+            <BackLink onClick={goToLanding} />
             <Pricing
               onNav={() => {
                 window.history.replaceState(null, "", "#/");
@@ -477,8 +544,8 @@ function AppShell() {
       <div
         style={{
           height: "100dvh",
-          background: COLORS.bg,
-          color: COLORS.text,
+          background: colors.bg,
+          color: colors.text,
           display: "flex",
           flexDirection: "column",
         }}
@@ -497,12 +564,19 @@ function AppShell() {
         <main style={{ flex: 1, minHeight: 0 }}>
           <ErrorBoundary key={authPage} area={authPage}>
             <Suspense fallback={<RouteFallback colors={colors} />}>
-              {authPage === "landing" && <Landing onNavigate={setAuthPage} />}
+              {authPage === "landing" && (
+                <Landing
+                  onNavigate={setAuthPage}
+                  onJoinRoom={goToRoom}
+                  onPricing={goToPricing}
+                />
+              )}
               {authPage === "login" && (
                 <Login
                   onNavigate={(p) =>
                     p === "app" ? setAuthPage("app") : setAuthPage(p)
                   }
+                  onJoinRoom={goToRoom}
                 />
               )}
               {authPage === "register" && (
@@ -542,8 +616,6 @@ function AppShell() {
           logout();
           setAuthPage("landing");
         }}
-        theme={theme}
-        onToggleTheme={toggleTheme}
         isAdmin={isAdmin}
         onFeedback={() => setFeedbackOpen(true)}
       />
@@ -570,7 +642,7 @@ function AppShell() {
         <header
           style={{
             height: 40,
-            borderBottom: `1px solid ${COLORS.border}`,
+            borderBottom: `1px solid ${colors.border}`,
             display: "flex",
             alignItems: "center",
             padding: "0 12px",
@@ -590,7 +662,7 @@ function AppShell() {
               borderRadius: 5,
               background: "transparent",
               border: "none",
-              color: canBack ? COLORS.textMuted : COLORS.textDim,
+              color: canBack ? colors.textMuted : colors.textDim,
               cursor: canBack ? "pointer" : "default",
               display: "flex",
               alignItems: "center",
@@ -612,7 +684,7 @@ function AppShell() {
               borderRadius: 5,
               background: "transparent",
               border: "none",
-              color: canForward ? COLORS.textMuted : COLORS.textDim,
+              color: canForward ? colors.textMuted : colors.textDim,
               cursor: canForward ? "pointer" : "default",
               display: "flex",
               alignItems: "center",
@@ -644,7 +716,7 @@ function AppShell() {
                   {i > 0 && (
                     <span
                       style={{
-                        color: COLORS.textMuted,
+                        color: colors.textMuted,
                         fontSize: FONT.size.label,
                         userSelect: "none",
                       }}
@@ -666,7 +738,7 @@ function AppShell() {
                       padding: "6px 4px",
                       fontSize: FONT.size.label,
                       fontWeight: isCurrent ? 500 : 400,
-                      color: isCurrent ? COLORS.text : COLORS.textMuted,
+                      color: isCurrent ? colors.text : colors.textMuted,
                       cursor: isClickable ? "pointer" : "default",
                       borderRadius: RADIUS.sm,
                     }}
