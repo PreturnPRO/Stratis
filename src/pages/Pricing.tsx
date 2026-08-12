@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Check } from "lucide-react";
+import { Check, Minus } from "lucide-react";
 import type { FeatureKey, PlanDefinition } from "@shared/types";
 import { Button, Chip } from "../components/ui";
 import { Banner, Card, PageShell } from "../components/panels";
@@ -15,6 +15,17 @@ import { FONT, RADIUS, SPACE } from "../tokens/colors";
  * server's tier definitions are enforcement. No price is printed: pricing has
  * not been validated, and a number shown here would be read as a commitment.
  */
+/** The two limit lines share the feature rows' layout so the list reads as one. */
+function limitRowStyle(colors: { textMuted: string }) {
+  return {
+    display: "flex",
+    gap: 7,
+    alignItems: "flex-start",
+    fontSize: FONT.size.label,
+    color: colors.textMuted,
+  } as const;
+}
+
 const FEATURE_LABELS: Record<FeatureKey, string> = {
   live_suggestions: "Live suggestion cards while you facilitate",
   checkpoint: "End-of-meeting alignment checkpoint",
@@ -113,12 +124,18 @@ export default function Pricing({ onNav }: { onNav?: (id: string) => void }) {
               <p style={{ margin: 0, fontSize: FONT.size.body, color: colors.textMuted }}>{plan.tagline}</p>
 
               <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "grid", gap: 7 }}>
-                <li style={{ fontSize: FONT.size.label, color: colors.textMuted }}>
+                {/* A dash, not a check: what the plan allows you is not the
+                    same kind of line as what the plan gives you, and without
+                    any mark at all these two read as a stray paragraph above
+                    the list. */}
+                <li style={limitRowStyle(colors)}>
+                  <Minus size={13} style={{ marginTop: 2, color: colors.textDim, flexShrink: 0 }} />
                   {plan.limits.meetingsPerMonth === null
                     ? "Unlimited meetings"
                     : `${plan.limits.meetingsPerMonth} meetings a month`}
                 </li>
-                <li style={{ fontSize: FONT.size.label, color: colors.textMuted }}>
+                <li style={limitRowStyle(colors)}>
+                  <Minus size={13} style={{ marginTop: 2, color: colors.textDim, flexShrink: 0 }} />
                   {plan.limits.seats === null ? "Unlimited members" : `Up to ${plan.limits.seats} members`}
                 </li>
                 {plan.features.map((feature) => (
@@ -141,7 +158,10 @@ export default function Pricing({ onNav }: { onNav?: (id: string) => void }) {
               <div style={{ marginTop: "auto", paddingTop: SPACE[1.5] }}>
                 {!isAuthed ? (
                   <Button fullWidth variant="primary" onClick={() => onNav?.("dashboard")}>
-                    Get started
+                    {/* Pro cannot be bought yet, and the paragraph at the top of
+                        this page says so — a button reading "Get started" under
+                        it promised a checkout that does not exist. */}
+                    {plan.id === "pro" ? "Join the wishlist" : "Get started"}
                   </Button>
                 ) : isCurrent ? (
                   <Button fullWidth disabled>
@@ -154,7 +174,7 @@ export default function Pricing({ onNav }: { onNav?: (id: string) => void }) {
                     disabled={busy !== null}
                     onClick={() => void request(plan.id)}
                   >
-                    {busy === plan.id ? "Adding…" : `Wishlist ${plan.name}`}
+                    {busy === plan.id ? "Adding…" : "Join the wishlist"}
                   </Button>
                 )}
               </div>
