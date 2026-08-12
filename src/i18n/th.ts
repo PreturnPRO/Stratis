@@ -729,6 +729,8 @@ export const TH: Record<string, string> = {
 
   // --- Docket: carrying questions into a meeting ---
   Clear: "ล้างที่เลือก",
+  "Select all": "เลือกทั้งหมด",
+  "or tick the ones the next meeting has to settle": "หรือเลือกเฉพาะข้อที่การประชุมถัดไปต้องหาข้อสรุป",
   "question selected": "คำถามที่เลือก",
   "questions selected": "คำถามที่เลือก",
   "Schedule a meeting for it": "นัดประชุมเพื่อหาข้อสรุป",

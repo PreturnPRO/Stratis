@@ -219,6 +219,20 @@ export default function Docket({
   const selectedItems = waiting.filter((w) => selected.includes(w.id));
   const selectionProject = selectedItems[0]?.projectId ?? null;
 
+  /**
+   * Which project a bulk pick would act on, and how many questions that is.
+   *
+   * The count has to be the number this button will actually tick, not the
+   * number of rows on screen — selection is locked to one project, so on an
+   * unfiltered list those differ and the label would promise more than it does.
+   */
+  const bulkProject = selectionProject ?? waiting[0]?.projectId ?? null;
+  const selectableNow = waiting.filter((w) => w.projectId === bulkProject);
+
+  const selectAllVisible = () => {
+    setSelected(selectableNow.map((w) => w.id));
+  };
+
   const toggleSelected = (w: WaitingItem) => {
     setSelected((prev) =>
       prev.includes(w.id) ? prev.filter((id) => id !== w.id) : [...prev, w.id],
@@ -530,6 +544,23 @@ export default function Docket({
                 </div>
               )}
 
+              {/* Bulk first. A meeting is called to settle a handful of
+                  questions, so picking a handful has to be one gesture — not
+                  five, and not a separate meeting per question. */}
+              {selectableNow.length > 1 && selectedItems.length === 0 && (
+                <div style={styles.selectHint}>
+                  <Button variant="ghost" size="sm" onClick={selectAllVisible}>
+                    <span>Select all</span>
+                    <span style={{ fontFamily: FONT.mono, marginLeft: 5 }}>
+                      {selectableNow.length}
+                    </span>
+                  </Button>
+                  <span style={{ fontSize: FONT.size.caption, color: colors.textDim }}>
+                    or tick the ones the next meeting has to settle
+                  </span>
+                </div>
+              )}
+
               {selectedItems.length > 0 && (
                 <div style={styles.selectBar}>
                   {/* One string per text node. The translator matches whole
@@ -562,13 +593,15 @@ export default function Docket({
               )}
 
               <div style={styles.awaitBox}>
-                {waiting.map((w) => (
+                {waiting.map((w) => {
+                  const blocked = Boolean(selectionProject) && w.projectId !== selectionProject;
+                  return (
                   <div
                     key={w.id}
                     style={{
                       ...styles.awaitRow,
-                      opacity:
-                        selectionProject && w.projectId !== selectionProject ? 0.45 : 1,
+                      opacity: blocked ? 0.45 : 1,
+                      background: selected.includes(w.id) ? colors.surfaceMuted : "transparent",
                     }}
                   >
                     {/* Several questions, one meeting. The checkbox is what
@@ -587,23 +620,13 @@ export default function Docket({
                         was, on a list whose entire job is triage. */}
                     <span style={styles.awaitProject}>{w.projectName ?? w.projectId ?? "No project"}</span>
                     <span style={styles.awaitSrc}>{w.sourceMeeting ?? "Checkpoint"}</span>
-                    <span style={styles.awaitText}>{w.text}</span>
-                    <span style={styles.awaitAge}>open {daysOpen(w.since)}d</span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        openModal(
-                          {
-                            goal: `Decide: ${w.text.replace(/\?+$/, "")}`,
-                            title: "Decision meeting",
-                          },
-                          w.projectId ? { id: w.projectId, name: w.projectId } : undefined,
-                        )
-                      }
+                    <span
+                      style={{ ...styles.awaitText, cursor: blocked ? "default" : "pointer" }}
+                      onClick={() => !blocked && toggleSelected(w)}
                     >
-                      Schedule
-                    </Button>
+                      {w.text}
+                    </span>
+                    <span style={styles.awaitAge}>open {daysOpen(w.since)}d</span>
                     {/* The API has taken `done` since the checkpoint shipped;
                         the one screen listing open questions had no way to send
                         it, so the only way to clear a question was to hold
@@ -617,7 +640,8 @@ export default function Docket({
                       {resolving === w.id ? "Marking…" : "Mark done"}
                     </Button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
 
               {waiting.length < waitingTotal && (
@@ -825,6 +849,13 @@ function makeStyles(colors: ReturnType<typeof useTheme>["colors"]): Record<strin
       flexWrap: "wrap",
       padding: "11px 2px",
       borderBottom: `1px solid ${colors.border}`,
+    },
+    selectHint: {
+      display: "flex",
+      alignItems: "center",
+      gap: SPACE[1],
+      flexWrap: "wrap",
+      marginBottom: SPACE[1.5],
     },
     selectBar: {
       display: "flex",
