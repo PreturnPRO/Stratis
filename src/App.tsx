@@ -737,59 +737,37 @@ function AppShell() {
             <ChevronRight size={15} strokeWidth={1.75} />
           </button>
 
+          {/* Where you are, not where you have been.
+              This was a trail of every page visited — "Dashboard › Docket ›
+              Projects › Document › Settings › Meeting" — which looks like a
+              hierarchy and is really browser history. It duplicated the
+              sidebar, and the deeper someone worked the more of it there was to
+              read and the less any of it meant. The name of the current screen
+              is the whole of what the header owes the reader; back and forward
+              already handle the history. */}
           <div
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 4,
+              gap: 6,
               marginLeft: 4,
               minWidth: 0,
               overflow: "hidden",
             }}
           >
-            {history.slice(0, historyIndex + 1).map((entry, i) => {
-              const isCurrent = i === historyIndex;
-              const isClickable = !isCurrent;
-              return (
-                <div
-                  key={`${entry.page}-${i}`}
-                  style={{ display: "flex", alignItems: "center", gap: 4 }}
-                >
-                  {i > 0 && (
-                    <span
-                      style={{
-                        color: colors.textMuted,
-                        fontSize: FONT.size.label,
-                        userSelect: "none",
-                      }}
-                    >
-                      ›
-                    </span>
-                  )}
-                  <button
-                    onClick={() => {
-                      if (!isClickable) return;
-                      setActive(entry.page);
-                      setHistoryIndex(i);
-                      setNavParams(entry.params);
-                    }}
-                    aria-current={isCurrent ? "page" : undefined}
-                    style={{
-                      background: "transparent",
-                      border: "none",
-                      padding: "6px 4px",
-                      fontSize: FONT.size.label,
-                      fontWeight: isCurrent ? 500 : 400,
-                      color: isCurrent ? colors.text : colors.textMuted,
-                      cursor: isClickable ? "pointer" : "default",
-                      borderRadius: RADIUS.sm,
-                    }}
-                  >
-                    {PAGE_LABELS[entry.page] ?? entry.page}
-                  </button>
-                </div>
-              );
-            })}
+            <span
+              aria-current="page"
+              style={{
+                fontSize: FONT.size.label,
+                fontWeight: 500,
+                color: colors.text,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {PAGE_LABELS[active] ?? active}
+            </span>
           </div>
 
           <span
