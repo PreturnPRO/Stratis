@@ -42,7 +42,18 @@ export async function attentionCounts(orgId: string, userId: string): Promise<At
     SELECT
       COUNT(*) FILTER (WHERE d.status = 'open')                       AS open_questions,
       COUNT(*) FILTER (WHERE d.status = 'incomplete')                 AS in_progress,
-      COUNT(*) FILTER (WHERE d.due_date IS NOT NULL AND d.due_date <= NOW()) AS follow_ups_due
+      -- due_date is TEXT on purpose (schema.sql:278): the room often gives a
+      -- phrase — "end of month", "ก่อนสงกรานต์" — and we keep what was said.
+      -- So it can only be compared as a date when it actually looks like one.
+      -- Postgres has no implicit text/timestamptz cast, so the obvious
+      -- a bare "d.due_date <= NOW()" does not merely miss rows: it fails to
+      -- parse, on zero rows, and took the whole dashboard down with it.
+      COUNT(*) FILTER (
+        WHERE CASE
+          WHEN d.due_date ~ '^\d{4}-\d{2}-\d{2}' THEN d.due_date::date <= CURRENT_DATE
+          ELSE FALSE
+        END
+      ) AS follow_ups_due
     FROM decisions d
     JOIN meetings m ON m.id = d.meeting_id
     WHERE m.org_id = $1

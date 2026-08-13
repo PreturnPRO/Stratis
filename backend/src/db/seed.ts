@@ -16,7 +16,29 @@ function futureISO(days: number): string {
   return d.toISOString();
 }
 
+/**
+ * Demo accounts have a known password, so they may only be created somewhere
+ * that does not matter. This repository is public: `admin@stratis.dev` with a
+ * published password was created against the hosted database at some point and
+ * stayed active — a workspace admin login available to anyone who read the
+ * README.
+ */
+function refuseIfNotLocal(): void {
+  const url = process.env.DATABASE_URL ?? "";
+  const looksLocal = /@(localhost|127\.0\.0\.1|host\.docker\.internal)[:/]/.test(url);
+  if (looksLocal || process.env.I_UNDERSTAND_THIS_SEEDS_KNOWN_PASSWORDS === "yes") return;
+
+  const host = url.replace(/^[^@]*@/, "").split(/[:/]/)[0] || "(unset DATABASE_URL)";
+  console.error(
+    `[seed] REFUSING to seed ${host}.\n` +
+      "  These accounts share one well-known password and this repository is public.\n" +
+      "  Seed a local database, or set I_UNDERSTAND_THIS_SEEDS_KNOWN_PASSWORDS=yes.",
+  );
+  process.exit(1);
+}
+
 async function seed() {
+  refuseIfNotLocal();
   try {
     console.log("[seed] starting database backfill under Final ER Diagram constraints...");
     

@@ -50,6 +50,29 @@ if (isProd) {
     );
   }
 
+  // The asymmetry that made this dangerous: AI_PROVIDER defaults to a hosted
+  // provider, so a missing key stops the boot — but STT_PROVIDER defaults to
+  // "mock", so a var that was never set, or set with a typo, boots clean, passes
+  // the health check, and writes "[mock transcript]" into real customer
+  // meetings. In production the choice has to be stated.
+  if (!process.env.STT_PROVIDER) {
+    throw new Error(
+      "[env] STT_PROVIDER is not set. Refusing to start: the default is the mock " +
+        "transcriber, so an unset variable would record placeholder text into real " +
+        "meetings and nothing would look wrong. Set STT_PROVIDER=google with a " +
+        "service-account credential, or STT_PROVIDER=mock deliberately.",
+    );
+  }
+
+  if (!process.env.CLIENT_ORIGIN) {
+    throw new Error(
+      "[env] CLIENT_ORIGIN is not set. Refusing to start: it defaults to " +
+        "http://localhost:5173, so every request from the real front end would be " +
+        "CORS-blocked and OAuth would redirect to localhost — which presents as " +
+        "'the backend is down'. Set it to the deployed front end's origin.",
+    );
+  }
+
   if ((process.env.STT_PROVIDER ?? "mock") === "google") {
     const hasCredential =
       process.env.GOOGLE_APPLICATION_CREDENTIALS ||

@@ -4,6 +4,8 @@ import jwt from "jsonwebtoken";
 import type { Role } from "@shared/types";
 import { env } from "../config/env";
 import { db } from "../db/database";
+import { PUBLIC_USER_COLUMNS, toPublicUser, type PublicUserRow } from "../lib/publicUser";
+import { authLimiter } from "../middleware/rateLimit";
 import { newId, now } from "../lib/ids";
 import { signToken } from "./jwt";
 import { consumeInviteForSignup, peekWorkspaceInvite } from "../lib/invites";
@@ -275,7 +277,7 @@ async function upsertGoogleUser(
  * ID token directly. Accepting it here means the frontend can use the widget
  * without a redirect; the token is verified exactly as in the redirect flow.
  */
-googleRouter.post("/google/id-token", async (req, res) => {
+googleRouter.post("/google/id-token", authLimiter, async (req, res) => {
   if (!env.google.clientId) {
     return res.status(503).json({ ok: false, error: "Google sign-in is not configured" });
   }
@@ -288,8 +290,15 @@ googleRouter.post("/google/id-token", async (req, res) => {
     const result = await upsertGoogleUser(profile, invite);
     if ("error" in result) return res.status(403).json({ ok: false, error: result.error });
 
-    const userRow = await db.query(`SELECT * FROM users WHERE id = $1`, [result.userId]);
-    res.json({ ok: true, data: { token: result.token, user: userRow.rows[0] } });
+    // Named columns, not `SELECT *`: this response used to carry the row
+    // straight from the table, password_hash included.
+    const userRow = await db.query<PublicUserRow>(
+      `SELECT ${PUBLIC_USER_COLUMNS} FROM users WHERE id = $1`,
+      [result.userId],
+    );
+    const user = userRow.rows[0];
+    if (!user) return res.status(404).json({ ok: false, error: "Account not found" });
+    res.json({ ok: true, data: { token: result.token, user: toPublicUser(user) } });
   } catch (error) {
     console.error("[google] id-token error:", error);
     res.status(401).json({ ok: false, error: "Could not verify that Google account" });
