@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { firstCall, structuredCall } from "@ai/index";
 import { requireAuth } from "../auth/middleware";
+import { requireSessionAccess } from "../middleware/requireSessionAccess";
 import * as suggestions from "../realtime/suggestions";
 import { detectAnswered } from "../realtime/autodetect";
 import { pushSuggestion, pushAnswered } from "../realtime/hub";
@@ -68,7 +69,7 @@ aiRouter.post("/structure", requireAuth, async (req, res, next) => {
   }
 });
 
-aiRouter.post("/suggest", requireAuth, async (req, res, next) => {
+aiRouter.post("/suggest", requireAuth, requireSessionAccess(), async (req, res, next) => {
   try {
     const sessionId =
       typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
@@ -108,7 +109,7 @@ aiRouter.post("/suggest", requireAuth, async (req, res, next) => {
   }
 });
 
-aiRouter.post("/suggest/scan", requireAuth, (req, res) => {
+aiRouter.post("/suggest/scan", requireAuth, requireSessionAccess(), (req, res) => {
   const sessionId =
     typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
   const transcript =
@@ -135,7 +136,7 @@ aiRouter.post("/suggest/scan", requireAuth, (req, res) => {
   res.json({ ok: true, data: { sessionId, answered } });
 });
 
-aiRouter.post("/suggest/answer", requireAuth, (req, res) => {
+aiRouter.post("/suggest/answer", requireAuth, requireSessionAccess(), (req, res) => {
   const sessionId =
     typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
   const cardId = typeof req.body?.cardId === "string" ? req.body.cardId : "";
@@ -166,7 +167,7 @@ aiRouter.post("/suggest/answer", requireAuth, (req, res) => {
   res.json({ ok: true, data: { card } });
 });
 
-aiRouter.post("/suggest/dismiss", requireAuth, (req, res) => {
+aiRouter.post("/suggest/dismiss", requireAuth, requireSessionAccess(), (req, res) => {
   const sessionId =
     typeof req.body?.sessionId === "string" ? req.body.sessionId : "";
   const cardId = typeof req.body?.cardId === "string" ? req.body.cardId : "";
@@ -191,7 +192,7 @@ aiRouter.post("/suggest/dismiss", requireAuth, (req, res) => {
   res.json({ ok: true, data: { card } });
 });
 
-aiRouter.get("/suggest/:sessionId", requireAuth, async (req, res, next) => {
+aiRouter.get("/suggest/:sessionId", requireAuth, requireSessionAccess("params"), async (req, res, next) => {
   try {
     await suggestions.hydrate(req.params.sessionId);
     const cards = suggestions.allCards(req.params.sessionId);

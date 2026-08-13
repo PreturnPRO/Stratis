@@ -2,7 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { randomBytes } from "node:crypto";
 import type { AdminUserRow, BetaMetrics, FeedbackRecord, Role } from "@shared/types";
-import { requireAuth, requireRole } from "../auth/middleware";
+import { requireAuth, requireRole, requirePlatformAdmin } from "../auth/middleware";
 import { db } from "../db/database";
 import { newId, now } from "../lib/ids";
 import { effectivePlan, getPlan, PLANS } from "../lib/plans";
@@ -485,8 +485,15 @@ adminRouter.patch("/feedback/:id", async (req, res) => {
  * Publish a release. With forceLogout, every token issued before this instant
  * stops working — which is how a deploy clears clients still running the old
  * bundle instead of letting them talk to an API that moved.
+ *
+ * The cutoff is global — `app_releases` has no org column and `getReleaseCutoff`
+ * reads the newest row for the whole product — so this is an operator action,
+ * not a workspace one. Behind `requireRole("admin")` alone it was reachable by
+ * anyone at all: signup accepts a self-declared role, so thirty seconds of
+ * account creation bought the ability to sign out every user in every
+ * workspace and drop every live meeting's WebSocket, on repeat.
  */
-adminRouter.post("/release", async (req, res) => {
+adminRouter.post("/release", requirePlatformAdmin, async (req, res) => {
   try {
     const version = typeof req.body?.version === "string" ? req.body.version.trim() : "";
     if (!version) return res.status(400).json({ ok: false, error: "version is required" });
