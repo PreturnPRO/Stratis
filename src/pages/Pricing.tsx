@@ -130,9 +130,15 @@ export default function Pricing({ onNav }: { onNav?: (id: string) => void }) {
                     the list. */}
                 <li style={limitRowStyle(colors)}>
                   <Minus size={13} style={{ marginTop: 2, color: colors.textDim, flexShrink: 0 }} />
-                  {plan.limits.meetingsPerMonth === null
+                  {plan.limits.recordedMinutesPerMonth === null
                     ? "Unlimited meetings"
-                    : `${plan.limits.meetingsPerMonth} meetings a month`}
+                    : `${plan.limits.recordedMinutesPerMonth} recorded minutes a month`}
+                </li>
+                <li style={limitRowStyle(colors)}>
+                  <Minus size={13} style={{ marginTop: 2, color: colors.textDim, flexShrink: 0 }} />
+                  {plan.limits.projects === null
+                    ? "Unlimited projects"
+                    : `Up to ${plan.limits.projects} projects`}
                 </li>
                 <li style={limitRowStyle(colors)}>
                   <Minus size={13} style={{ marginTop: 2, color: colors.textDim, flexShrink: 0 }} />

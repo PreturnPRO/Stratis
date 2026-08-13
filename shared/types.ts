@@ -322,6 +322,15 @@ export type FeatureKey =
 export interface PlanLimits {
   /** Meetings that may be created per calendar month. null = unlimited. Enforced. */
   meetingsPerMonth: number | null;
+  /**
+   * Recorded minutes per calendar month. null = unlimited. Enforced when a
+   * session starts: the trial is an amount of listening, not a number of
+   * calendar entries, because five meetings nobody recorded costs nothing and
+   * proves nothing.
+   */
+  recordedMinutesPerMonth: number | null;
+  /** Projects the workspace may hold. null = unlimited. Enforced on create. */
+  projects: number | null;
   /** Active accounts in the workspace. null = unlimited. Enforced. */
   seats: number | null;
   /**
@@ -362,6 +371,9 @@ export interface PlanUsage {
   meetingsThisMonth: number;
   seatsUsed: number;
   sessionsThisMonth: number;
+  /** Minutes recorded this calendar month, running sessions included. */
+  recordedMinutesThisMonth: number;
+  projectsUsed: number;
 }
 
 export interface SubscriptionView {

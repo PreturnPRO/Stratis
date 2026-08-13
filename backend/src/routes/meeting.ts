@@ -2,7 +2,9 @@ import { Router, type Request, type Response } from "express";
 import { requireAuth } from "../auth/middleware";
 import { db } from "../db/database";
 import { newId, now } from "../lib/ids";
-import { enforceMeetingQuota } from "../lib/entitlements";
+import { enforceMeetingQuota, projectsExceeded } from "../lib/entitlements";
+import { effectivePlan } from "../lib/plans";
+import { AUTH_ERROR_CODES } from "@shared/types";
 import { attentionCounts, recentDecisions, unresolvedForProject } from "../lib/attention";
 
 export const meetingRouter = Router();
@@ -424,6 +426,28 @@ meetingRouter.post("/", requireAuth, enforceMeetingQuota, async (req, res) => {
     );
 
     if (projectCheck.rows.length === 0) {
+      // A new project is the thing the plan counts, so the cap is checked here
+      // rather than on a projects screen — this is where projects are actually
+      // born, from a name typed into the new-meeting dialog.
+      const orgRow = await db.query<{ plan: string | null; plan_status: string | null; plan_expires_at: string | null }>(
+        `SELECT plan, plan_status, plan_expires_at FROM organizations WHERE id = $1`,
+        [req.auth!.orgId],
+      );
+      const plan = effectivePlan(
+        orgRow.rows[0]?.plan ?? null,
+        orgRow.rows[0]?.plan_status ?? null,
+        orgRow.rows[0]?.plan_expires_at ?? null,
+      );
+      const capped = await projectsExceeded(req.auth!.orgId, plan);
+      if (capped) {
+        return res.status(402).json({
+          ok: false,
+          error: capped,
+          code: AUTH_ERROR_CODES.quotaExceeded,
+          data: { limit: plan.limits.projects, plan: plan.id },
+        });
+      }
+
       const projectName = titleFromProjectId(projectId);
       const ts = now();
       await db.query(

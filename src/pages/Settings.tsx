@@ -510,6 +510,20 @@ function PlanTab({
       <Card title={`${plan.name} plan`} description={plan.tagline}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: SPACE[1.5] }}>
           <StatTile
+            label="Recorded minutes"
+            value={usage.recordedMinutesThisMonth}
+            hint={
+              limits.recordedMinutesPerMonth === null
+                ? "Unlimited"
+                : `of ${limits.recordedMinutesPerMonth} this month`
+            }
+          />
+          <StatTile
+            label="Projects"
+            value={usage.projectsUsed}
+            hint={limits.projects === null ? "Unlimited" : `of ${limits.projects}`}
+          />
+          <StatTile
             label="Meetings this month"
             value={usage.meetingsThisMonth}
             hint={meetingLimit === null ? "Unlimited" : `of ${meetingLimit}`}

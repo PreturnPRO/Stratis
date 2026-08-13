@@ -13,6 +13,9 @@ import {
   type DecisionPatch,
 } from "../lib/decisions";
 import { generateAndSaveSummary } from "../lib/summaryStore";
+import { effectivePlan } from "../lib/plans";
+import { recordedMinutesExceeded } from "../lib/entitlements";
+import { AUTH_ERROR_CODES } from "@shared/types";
 
 export const sessionRouter = Router();
 
@@ -268,6 +271,29 @@ sessionRouter.post("/", requireAuth, async (req, res) => {
       return res.status(403).json({
         ok: false,
         error: "You cannot create a session for this meeting",
+      });
+    }
+
+    // The trial's real boundary. Checked here rather than at meeting creation
+    // because the cost is listening, not calendar entries — and checked before
+    // the mic opens, since stopping someone mid-sentence is worse than not
+    // starting.
+    const orgRow = await db.query<{ plan: string | null; plan_status: string | null; plan_expires_at: string | null }>(
+      `SELECT plan, plan_status, plan_expires_at FROM organizations WHERE id = $1`,
+      [meeting.org_id],
+    );
+    const plan = effectivePlan(
+      orgRow.rows[0]?.plan ?? null,
+      orgRow.rows[0]?.plan_status ?? null,
+      orgRow.rows[0]?.plan_expires_at ?? null,
+    );
+    const overBudget = await recordedMinutesExceeded(meeting.org_id, plan);
+    if (overBudget) {
+      return res.status(402).json({
+        ok: false,
+        error: overBudget,
+        code: AUTH_ERROR_CODES.quotaExceeded,
+        data: { limit: plan.limits.recordedMinutesPerMonth, plan: plan.id },
       });
     }
 

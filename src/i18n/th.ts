@@ -460,6 +460,7 @@ export const TH: Record<string, string> = {
   "Sign-in method": "วิธีเข้าสู่ระบบ",
   "Member since": "เป็นสมาชิกตั้งแต่",
   "Plan & usage": "แพ็กเกจและการใช้งาน",
+  "Recorded minutes": "นาทีที่บันทึกแล้ว",
   "Meetings this month": "การประชุมเดือนนี้",
   "Sessions this month": "เซสชันเดือนนี้",
   "Change plan": "เปลี่ยนแพ็กเกจ",
