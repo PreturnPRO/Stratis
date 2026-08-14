@@ -571,3 +571,43 @@ CREATE INDEX IF NOT EXISTS idx_decisions_meeting_id ON decisions(meeting_id);
 -- backfill can race; the unique index makes the second writer a no-op.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_participant_summaries_session
   ON participant_summaries(session_id);
+-- 27. PLAN CODES (the beta bypass)
+-- A code the Stratis team hands a beta team so their workspace gets the plan
+-- without anyone editing the database by hand. Redeeming is what a workspace
+-- admin can do; issuing is a platform-operator action, because the grant is
+-- worth money and `role = 'admin'` is self-declared at signup.
+CREATE TABLE IF NOT EXISTS plan_codes (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    plan TEXT NOT NULL,
+    label TEXT,
+    -- How long the grant lasts once redeemed. NULL means no end date, which is
+    -- deliberate for the beta programme and reviewable in the admin list.
+    grant_days INTEGER,
+    -- When the CODE stops being redeemable, as distinct from when the grant it
+    -- hands out expires.
+    expires_at TIMESTAMPTZ,
+    max_uses INTEGER,
+    used_count INTEGER NOT NULL DEFAULT 0,
+    revoked_at TIMESTAMPTZ,
+    created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_plan_codes_code ON plan_codes(code);
+
+-- One row per workspace that redeemed a code: the audit trail behind a plan
+-- that someone will eventually ask why about, and the uniqueness that stops a
+-- workspace redeeming the same code twice.
+CREATE TABLE IF NOT EXISTS plan_code_redemptions (
+    id TEXT PRIMARY KEY,
+    code_id TEXT NOT NULL REFERENCES plan_codes(id) ON DELETE CASCADE,
+    org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    redeemed_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+    granted_plan TEXT NOT NULL,
+    granted_until TIMESTAMPTZ,
+    redeemed_at TIMESTAMPTZ NOT NULL,
+    UNIQUE (code_id, org_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_plan_code_redemptions_org ON plan_code_redemptions(org_id);
