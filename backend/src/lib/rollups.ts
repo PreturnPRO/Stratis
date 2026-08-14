@@ -43,6 +43,47 @@ export async function writeSessionRollup(sessionId: string): Promise<void> {
   );
 }
 
+export interface UsageDay {
+  /** YYYY-MM-DD, the server's day. */
+  day: string;
+  meetings: number;
+  recordedMinutes: number;
+}
+
+/**
+ * One row per day in the window, including the days nothing happened.
+ *
+ * `generate_series` rather than grouping what exists: a chart built only from
+ * days with meetings silently compresses a quiet fortnight into a busy-looking
+ * line. A zero is a fact and gets a bar of its own.
+ */
+export async function usageByDay(days: number): Promise<UsageDay[]> {
+  const result = await db.query<{ day: string; meetings: string; recorded_minutes: string }>(
+    `
+    SELECT
+      to_char(d.day, 'YYYY-MM-DD') AS day,
+      COUNT(r.session_id) AS meetings,
+      COALESCE(SUM(r.recorded_minutes), 0) AS recorded_minutes
+    FROM generate_series(
+           date_trunc('day', NOW()) - (($1 - 1) || ' days')::interval,
+           date_trunc('day', NOW()),
+           '1 day'
+         ) AS d(day)
+    LEFT JOIN session_rollups r
+      ON r.ended_at >= d.day AND r.ended_at < d.day + INTERVAL '1 day'
+    GROUP BY d.day
+    ORDER BY d.day ASC
+    `,
+    [String(days)],
+  );
+
+  return result.rows.map((row) => ({
+    day: row.day,
+    meetings: Number(row.meetings ?? 0),
+    recordedMinutes: Number(row.recorded_minutes ?? 0),
+  }));
+}
+
 export interface OperatorUsage {
   orgId: string;
   orgName: string;

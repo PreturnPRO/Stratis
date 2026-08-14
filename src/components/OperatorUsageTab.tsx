@@ -30,6 +30,12 @@ interface WorkspaceUsage {
   lastMeetingAt: string | null;
 }
 
+interface UsageDay {
+  day: string;
+  meetings: number;
+  recordedMinutes: number;
+}
+
 interface UsagePayload {
   days: number;
   totals: {
@@ -39,6 +45,74 @@ interface UsagePayload {
     activeWorkspaces: number;
   };
   workspaces: WorkspaceUsage[];
+  byDay: UsageDay[];
+}
+
+/**
+ * A bar that says its own number.
+ *
+ * Colour alone encodes nothing here: reading a value off an axis is a guess,
+ * and a legend is a second lookup. Every bar carries its figure, a zero prints
+ * as 0 rather than vanishing, and the tallest bar sets the scale so a quiet
+ * fortnight does not get stretched into a busy-looking one.
+ */
+function LabelledBars({
+  title,
+  data,
+  value,
+  format,
+}: {
+  title: string;
+  data: UsageDay[];
+  value: (d: UsageDay) => number;
+  format?: (n: number) => string;
+}) {
+  const { colors } = useTheme();
+  const peak = Math.max(1, ...data.map(value));
+  const show = format ?? ((n: number) => String(n));
+
+  return (
+    <Card title={title} description={`${data.length} days. Every bar is the real count for that day.`}>
+      {data.length === 0 ? (
+        <EmptyState message="No finished meetings in this window." />
+      ) : (
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 3, overflowX: "auto", paddingBottom: 4 }}>
+          {data.map((d) => {
+            const n = value(d);
+            const height = Math.round((n / peak) * 90);
+            return (
+              <div
+                key={d.day}
+                title={`${d.day}: ${show(n)}`}
+                style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, minWidth: 26 }}
+              >
+                <span
+                  style={{
+                    fontFamily: FONT.mono,
+                    fontSize: FONT.size.micro,
+                    color: n > 0 ? colors.text : colors.textDim,
+                  }}
+                >
+                  {show(n)}
+                </span>
+                <div
+                  style={{
+                    width: 18,
+                    height: Math.max(2, height),
+                    borderRadius: 3,
+                    background: n > 0 ? colors.accent : colors.border,
+                  }}
+                />
+                <span style={{ fontSize: FONT.size.micro, color: colors.textDim, fontFamily: FONT.mono }}>
+                  {d.day.slice(8)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
 }
 
 function hours(minutes: number): string {
@@ -103,6 +177,14 @@ export function OperatorUsageTab() {
           <StatTile label="Decisions" value={data.totals.decisions} />
         </div>
       </Card>
+
+      <LabelledBars title="Meetings a day" data={data.byDay ?? []} value={(d) => d.meetings} />
+      <LabelledBars
+        title="Minutes recorded a day"
+        data={data.byDay ?? []}
+        value={(d) => d.recordedMinutes}
+        format={(n) => (n >= 60 ? `${Math.round(n / 60)}h` : String(n))}
+      />
 
       <Card title="By workspace" description="Most recently active first.">
         {data.workspaces.length === 0 ? (

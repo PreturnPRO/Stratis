@@ -2,7 +2,6 @@ import { Router, type Request, type Response } from "express";
 import { requireAuth } from "../auth/middleware";
 import { db } from "../db/database";
 import { newId, now } from "../lib/ids";
-import { enforceMeetingQuota, projectsExceeded } from "../lib/entitlements";
 import { effectivePlan } from "../lib/plans";
 import { AUTH_ERROR_CODES } from "@shared/types";
 import {
@@ -89,7 +88,9 @@ async function getMeeting(id: string): Promise<MeetingRow | undefined> {
 function canRead(req: Request, meeting: MeetingRow): boolean {
   if (!req.auth) return false;
   if (meeting.org_id !== req.auth.orgId) return false;
-  if (req.auth.role === "participant") return true;
+  // Your own meetings, and nobody else's. The participant branch that used to
+  // sit here opened every meeting in the container to an account type that no
+  // longer exists.
   return meeting.created_by === req.auth.sub;
 }
 
@@ -408,7 +409,7 @@ meetingRouter.get("/dashboard", requireAuth, async (req, res) => {
   }
 });
 
-meetingRouter.post("/", requireAuth, enforceMeetingQuota, async (req, res) => {
+meetingRouter.post("/", requireAuth, async (req, res) => {
   try {
     const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
     const projectId = typeof req.body?.projectId === "string" ? req.body.projectId.trim() : typeof req.body?.project_id === "string" ? req.body.project_id.trim() : "";
@@ -431,35 +432,31 @@ meetingRouter.post("/", requireAuth, enforceMeetingQuota, async (req, res) => {
       [projectId, req.auth!.orgId]
     );
 
+    /**
+     * A project name that someone else has used is not an error.
+     *
+     * `projects.id` is derived from the name and is the table's PRIMARY KEY —
+     * global, while the check above is scoped to this workspace. So "Stratis1"
+     * created in any other workspace made this INSERT violate the key, and the
+     * catch below turned that into "Internal server error creating meeting":
+     * the meeting simply would not start, and nothing on screen said why.
+     *
+     * The id gets a suffix when it is taken; the *name* is untouched, because
+     * the name is the thing the room recognises and two teams are allowed to
+     * both have a Pricing project.
+     */
+    let projectRef = projectId;
     if (projectCheck.rows.length === 0) {
-      // A new project is the thing the plan counts, so the cap is checked here
-      // rather than on a projects screen — this is where projects are actually
-      // born, from a name typed into the new-meeting dialog.
-      const orgRow = await db.query<{ plan: string | null; plan_status: string | null; plan_expires_at: string | null }>(
-        `SELECT plan, plan_status, plan_expires_at FROM organizations WHERE id = $1`,
-        [req.auth!.orgId],
-      );
-      const plan = effectivePlan(
-        orgRow.rows[0]?.plan ?? null,
-        orgRow.rows[0]?.plan_status ?? null,
-        orgRow.rows[0]?.plan_expires_at ?? null,
-      );
-      const capped = await projectsExceeded(req.auth!.orgId, plan);
-      if (capped) {
-        return res.status(402).json({
-          ok: false,
-          error: capped,
-          code: AUTH_ERROR_CODES.quotaExceeded,
-          data: { limit: plan.limits.projects, plan: plan.id },
-        });
-      }
-
       const projectName = titleFromProjectId(projectId);
       const ts = now();
+      const taken = await db.query(`SELECT id FROM projects WHERE id = $1 LIMIT 1`, [projectId]);
+      if (taken.rows.length > 0) projectRef = `${projectId}-${newId("p").slice(-6)}`;
+
       await db.query(
         `INSERT INTO projects (id, org_id, name, slug, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [projectId, req.auth!.orgId, projectName, projectId, ts, ts]
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (id) DO NOTHING`,
+        [projectRef, req.auth!.orgId, projectName, projectRef, ts, ts]
       );
     }
 
@@ -470,7 +467,7 @@ meetingRouter.post("/", requireAuth, enforceMeetingQuota, async (req, res) => {
       `INSERT INTO meetings (
         id, org_id, project_id, title, goal, brief, duration_minutes, scheduled_at, created_by, created_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [id, req.auth!.orgId, projectId, title, goal, brief, durationMinutes, scheduledAt, req.auth!.sub, timestamp]
+      [id, req.auth!.orgId, projectRef, title, goal, brief, durationMinutes, scheduledAt, req.auth!.sub, timestamp]
     );
 
     const createdMeeting = await getMeeting(id);
@@ -479,6 +476,14 @@ meetingRouter.post("/", requireAuth, enforceMeetingQuota, async (req, res) => {
   } catch (error) {
     console.error("Meeting creation error:", error);
     if (isIdentityFkViolation(error)) return replyIdentityGone(res);
+    // Backstop for any unique violation that still gets through: say what the
+    // caller can do about it rather than "internal server error".
+    if ((error as { code?: string } | null)?.code === "23505") {
+      return res.status(409).json({
+        ok: false,
+        error: "A project with that name already exists. Give this one a slightly different name.",
+      });
+    }
     res.status(500).json({ ok: false, error: "Internal server error creating meeting" });
   }
 });

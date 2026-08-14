@@ -380,20 +380,8 @@ sessionRouter.post("/", requireAuth, async (req, res) => {
 
 sessionRouter.get("/recover", requireAuth, async (req, res) => {
   try {
-    const role = req.auth!.role;
     const userId = req.auth!.sub;
     const orgId = req.auth!.orgId;
-
-    if (role === "participant") {
-      return res.json({
-        ok: true,
-        data: {
-          recovered: false,
-          session: null,
-          reason: "participants_do_not_recover_facilitator_sessions",
-        },
-      });
-    }
 
     const result = await db.query(
       `
@@ -444,6 +432,19 @@ sessionRouter.get("/recover", requireAuth, async (req, res) => {
       data: {
         recovered: true,
         session: row,
+        /**
+         * The server's clock, so the meeting timer can stop trusting the
+         * browser's.
+         *
+         * Elapsed time belongs to the session, not to the tab looking at it:
+         * close the laptop for five minutes and the meeting was still running,
+         * which is exactly what the biller already counts
+         * (`COALESCE(ended_at, NOW()) - started_at`). The client subtracts this
+         * from its own clock once and applies the offset from then on, so a
+         * device with a wrong time still shows the right elapsed figure — and
+         * the number on screen matches the minutes being deducted.
+         */
+        serverNow: now(),
       },
     });
   } catch (error) {

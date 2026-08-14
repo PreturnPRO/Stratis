@@ -227,26 +227,16 @@ async function upsertGoogleUser(
     };
   }
 
-  // New account. An invite decides the workspace and role; without one the user
-  // gets their own workspace, same as an email signup.
-  let orgId: string;
-  let role: Role = "facilitator";
-  let invitedBy: string | null = null;
-
-  if (inviteToken) {
-    const invite = await peekWorkspaceInvite(inviteToken);
-    if (!invite.ok) return { error: invite.reason };
-    orgId = invite.invite.org_id;
-    role = invite.invite.role;
-    invitedBy = invite.invite.created_by;
-  } else {
-    orgId = newId("org");
-    await db.query(`INSERT INTO organizations (id, name, created_at) VALUES ($1, $2, $3)`, [
-      orgId,
-      `${profile.name ?? email.split("@")[0]}'s workspace`,
-      ts,
-    ]);
-  }
+  // New account. Everyone gets their own invisible container and the only role
+  // there is — workspace invites are gone with the workspace screens.
+  const role: Role = "facilitator";
+  const invitedBy: string | null = null;
+  const orgId = newId("org");
+  await db.query(`INSERT INTO organizations (id, name, created_at) VALUES ($1, $2, $3)`, [
+    orgId,
+    `${profile.name ?? email.split("@")[0]}'s meetings`,
+    ts,
+  ]);
 
   const userId = newId("usr");
   await db.query(

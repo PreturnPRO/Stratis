@@ -1,5 +1,5 @@
 import { Router } from "express";
-import type { InvitePreview, InviteWithLink, Role } from "@shared/types";
+import type { InvitePreview, InviteWithLink } from "@shared/types";
 import { requireAuth, requireRole } from "../auth/middleware";
 import { inviteLimiter } from "../middleware/rateLimit";
 import { signGuestToken } from "../auth/jwt";
@@ -12,61 +12,55 @@ import {
   inviteUrl,
   redeemInvite,
   toInviteRecord,
+  type GuestRole,
   type InviteRow,
 } from "../lib/invites";
 import { effectivePlan, hasFeature } from "../lib/plans";
-import { enforceSeatQuota } from "../lib/entitlements";
 import { invalidateAccount } from "../lib/accountState";
 import { track } from "../lib/analytics";
 
 export const inviteRouter = Router();
 
-const VALID_ROLES: Role[] = ["facilitator", "participant"];
-
 /**
- * Create an invite link.
+ * Create a link into one meeting.
  *
- * Facilitators only, and a facilitator may hand out either role. There is no
- * rank between them to protect any more: both are workspace members, and the
- * one who can already run every meeting in the workspace gains nothing by
- * inviting a second of themselves.
+ * Workspace links are gone with the workspace: there is nothing to be invited
+ * *to* any more. Every link is for a session, and everyone who follows one
+ * arrives as a guest of that session — which is why the role is fixed here
+ * rather than read from the request.
  */
 inviteRouter.post("/", requireAuth, requireRole("facilitator"), async (req, res) => {
   try {
-    const kind = req.body?.kind === "session" ? "session" : "workspace";
-    const requestedRole = typeof req.body?.role === "string" ? (req.body.role as Role) : "participant";
-    const role = VALID_ROLES.includes(requestedRole) ? requestedRole : "participant";
+    const kind = "session" as const;
+    const role: GuestRole = "participant";
 
     const plan = req.account!.plan;
-    let sessionId: string | null = null;
     let meetingId: string | null = null;
 
-    if (kind === "session") {
-      if (!hasFeature(plan, "session_invites")) {
-        return res.status(402).json({
-          ok: false,
-          error: `Session invite links are not included in ${plan.name}`,
-          data: { feature: "session_invites", plan: plan.id },
-        });
-      }
-
-      sessionId = typeof req.body?.sessionId === "string" ? req.body.sessionId : null;
-      if (!sessionId) {
-        return res.status(400).json({ ok: false, error: "sessionId is required for a session invite" });
-      }
-
-      const session = await db.query<{ id: string; meeting_id: string; org_id: string }>(
-        `SELECT s.id, s.meeting_id, m.org_id
-         FROM sessions s JOIN meetings m ON m.id = s.meeting_id
-         WHERE s.id = $1`,
-        [sessionId],
-      );
-      const row = session.rows[0];
-      if (!row || row.org_id !== req.auth!.orgId) {
-        return res.status(404).json({ ok: false, error: "Session not found" });
-      }
-      meetingId = row.meeting_id;
+    if (!hasFeature(plan, "session_invites")) {
+      return res.status(402).json({
+        ok: false,
+        error: `Meeting links are not included in ${plan.name}`,
+        data: { feature: "session_invites", plan: plan.id },
+      });
     }
+
+    const sessionId = typeof req.body?.sessionId === "string" ? req.body.sessionId : null;
+    if (!sessionId) {
+      return res.status(400).json({ ok: false, error: "sessionId is required" });
+    }
+
+    const session = await db.query<{ id: string; meeting_id: string; org_id: string }>(
+      `SELECT s.id, s.meeting_id, m.org_id
+       FROM sessions s JOIN meetings m ON m.id = s.meeting_id
+       WHERE s.id = $1`,
+      [sessionId],
+    );
+    const sessionRow = session.rows[0];
+    if (!sessionRow || sessionRow.org_id !== req.auth!.orgId) {
+      return res.status(404).json({ ok: false, error: "Session not found" });
+    }
+    meetingId = sessionRow.meeting_id;
 
     const allowGuest = Boolean(req.body?.allowGuest) && hasFeature(plan, "guest_access");
     if (req.body?.allowGuest && !allowGuest) {
@@ -282,56 +276,6 @@ inviteRouter.post("/:token/accept", requireAuth, async (req, res) => {
       });
     }
 
-    // Workspace invite.
-    if (req.auth!.orgId === invite.org_id) {
-      return res.json({ ok: true, data: { kind: "workspace", orgId: invite.org_id, alreadyMember: true } });
-    }
-
-    const owned = await db.query<{ count: string }>(
-      `SELECT (SELECT COUNT(*) FROM meetings WHERE created_by = $1) AS count`,
-      [userId],
-    );
-    if (Number(owned.rows[0]?.count ?? 0) > 0) {
-      return res.status(409).json({
-        ok: false,
-        error:
-          "This account already owns meetings in another workspace. Ask the admin to invite a different email address.",
-      });
-    }
-
-    const orgRow = await db.query<{ plan: string | null; plan_status: string | null; plan_expires_at: string | null; name: string }>(
-      `SELECT plan, plan_status, name FROM organizations WHERE id = $1`,
-      [invite.org_id],
-    );
-    const plan = effectivePlan(orgRow.rows[0]?.plan ?? null, orgRow.rows[0]?.plan_status ?? null, orgRow.rows[0]?.plan_expires_at ?? null);
-
-    const seatError = await enforceSeatQuota(invite.org_id, plan);
-    if (seatError) return res.status(402).json({ ok: false, error: seatError });
-
-    await db.query(`UPDATE users SET org_id = $1, role = $2, invited_by = $3 WHERE id = $4`, [
-      invite.org_id,
-      invite.role,
-      invite.created_by,
-      userId,
-    ]);
-    await redeemInvite({ inviteId: invite.id, userId });
-
-    // The org and role in the caller's token are now wrong — force a fresh one.
-    await db.query(`UPDATE users SET token_valid_after = NOW() WHERE id = $1`, [userId]);
-    invalidateAccount(userId);
-
-    track({ event: "invite_accepted", orgId: invite.org_id, userId, props: { kind: "workspace" } });
-
-    res.json({
-      ok: true,
-      data: {
-        kind: "workspace",
-        orgId: invite.org_id,
-        orgName: orgRow.rows[0]?.name ?? null,
-        role: invite.role,
-        reauthRequired: true,
-      },
-    });
   } catch (error) {
     console.error("Invite accept error:", error);
     res.status(500).json({ ok: false, error: "Could not accept that invite" });

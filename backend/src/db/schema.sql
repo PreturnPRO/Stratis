@@ -641,6 +641,19 @@ CREATE TABLE IF NOT EXISTS session_rollups (
 CREATE INDEX IF NOT EXISTS idx_session_rollups_org ON session_rollups(org_id);
 CREATE INDEX IF NOT EXISTS idx_session_rollups_ended ON session_rollups(ended_at);
 
+-- 30. ONE ROLE
+-- Accounts are facilitators. Participants are not accounts: they arrive with a
+-- code and live in session_guests, which has no org and no role. Anyone still
+-- carrying the participant role is converted — they keep their meetings, and
+-- they gain the ability to run one.
+--
+-- invites.role is NOT converted: that column says what a link makes you inside
+-- one session, which is a different question from what an account is.
+UPDATE users SET role = 'facilitator' WHERE role <> 'facilitator';
+
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role = 'facilitator');
+
 -- 29. TWO ROLES, NOT THREE
 -- The workspace-admin role is gone: it was self-declared at signup, bought
 -- nothing the facilitator could not have, and read as a Stratis-wide power it

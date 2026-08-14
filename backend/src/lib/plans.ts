@@ -25,10 +25,7 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
       // one, which is enough to find out whether the checkpoint is worth
       // anything. Meetings themselves are not capped — booking one costs us
       // nothing and blocking it teaches the team nothing.
-      meetingsPerMonth: null,
       recordedMinutesPerMonth: 30,
-      projects: 2,
-      seats: 3,
       sessionMinutes: 45,
       retentionDays: 30,
     },
@@ -55,13 +52,10 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
     name: "Pro",
     tagline: "Unlimited meetings for the whole workspace.",
     limits: {
-      meetingsPerMonth: null,
       recordedMinutesPerMonth: null,
       // Unlimited meetings, ten projects. A workspace with more than ten live
       // projects is an organisation, and organisations are a different
       // conversation from a team subscription.
-      projects: 10,
-      seats: null,
       sessionMinutes: 240,
       retentionDays: null,
     },
@@ -81,10 +75,7 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
     tagline: "Full access for invited beta workspaces.",
     internal: true,
     limits: {
-      meetingsPerMonth: null,
       recordedMinutesPerMonth: null,
-      projects: null,
-      seats: 25,
       sessionMinutes: 240,
       retentionDays: null,
     },
@@ -95,7 +86,6 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
       "transcript_export",
       "session_invites",
       "guest_access",
-      "analytics_dashboard",
       "custom_theme",
     ],
   },

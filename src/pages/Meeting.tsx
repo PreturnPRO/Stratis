@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Mic, Square, ChevronDown, ClipboardCheck } from "lucide-react";
+import { Mic, Square, ChevronDown, ClipboardCheck, Users } from "lucide-react";
 import type { AIBlock } from "../../shared/types";
 import { FONT, SHADOW, LETTER_SPACING, RADIUS, SPACE } from "../tokens/colors";
 import { useTheme } from "../hooks/useTheme";
@@ -30,6 +30,14 @@ import { localeTag } from "../i18n/locale";
 import { saveLocalTranscript } from "../lib/localTranscript";
 
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
+
+interface RosterPerson {
+  displayName: string;
+  joinedAt: string;
+  lastSeenAt: string | null;
+  /** Seen within the last two minutes. Away, not gone — a slept phone is still in the room. */
+  present: boolean;
+}
 
 const CHUNK_MAX_MS = 6000;
 
@@ -373,6 +381,45 @@ export default function Meeting({ onNav }: MeetingProps) {
     }
   }, [sessionId, openingRoom]);
 
+  /**
+   * The code is opened as soon as the meeting is, not when someone goes
+   * looking for it.
+   *
+   * It used to be minted on demand from inside the checkpoint panel, which is
+   * the one screen a facilitator opens last — so the answer to "what's the
+   * code?" was three clicks into a panel, mid-sentence, in front of the room.
+   * A Free workspace still gets the Pro prompt, just not as a surprise.
+   */
+  useEffect(() => {
+    if (!sessionId || roomCode || openingRoom) return;
+    void openRoom();
+  }, [sessionId, roomCode, openingRoom, openRoom]);
+
+  /** Who is actually in the room. Polled while the meeting is on screen. */
+  const [roster, setRoster] = useState<{ present: number; total: number; people: RosterPerson[] }>({
+    present: 0,
+    total: 0,
+    people: [],
+  });
+  const [rosterOpen, setRosterOpen] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    const pull = () => {
+      void apiFetch<{ present: number; total: number; people: RosterPerson[] }>(
+        `/api/room/session/${sessionId}/roster`,
+      )
+        .then(setRoster)
+        .catch(() => {
+          // Not knowing who joined must never interrupt the meeting.
+        });
+    };
+    pull();
+    const timer = setInterval(pull, 15_000);
+    return () => clearInterval(timer);
+  }, [sessionId]);
+
   useEffect(() => {
     if (!sessionId || !roomCode || !checkpointVisible) return;
     const pull = () => {
@@ -611,6 +658,17 @@ export default function Meeting({ onNav }: MeetingProps) {
     void pingStartEndpoint();
   }, [sessionId, token]);
 
+  /**
+   * The clock belongs to the session, not to this tab.
+   *
+   * `started_at` is a server timestamp and the meeting keeps running while
+   * nobody is watching — close the laptop for five minutes and five minutes of
+   * meeting happened, which is exactly what the biller counts
+   * (`COALESCE(ended_at, NOW()) - started_at` in `entitlements.ts`). Falling
+   * back to `Date.now()` is what made the timer restart on every refresh and
+   * disagree with the minutes being deducted; now an unstarted session simply
+   * has no elapsed time to show.
+   */
   useEffect(() => {
     if (!sessionId) {
       setStartMs(null);
@@ -619,7 +677,7 @@ export default function Meeting({ onNav }: MeetingProps) {
     const serverStart = recovery.session?.started_at
       ? new Date(recovery.session.started_at).getTime()
       : NaN;
-    setStartMs((prev) => (Number.isFinite(serverStart) ? serverStart : prev ?? Date.now()));
+    setStartMs(Number.isFinite(serverStart) ? serverStart : null);
   }, [sessionId, recovery.session?.started_at]);
 
   const recoveredDuration = recovery.session?.id === sessionId ? recovery.session?.duration_minutes : null;
@@ -647,7 +705,16 @@ useEffect(() => {
   useEffect(() => {
     if (!sessionId) return;
     const t = setInterval(() => setNowMs(Date.now()), 1000);
-    return () => clearInterval(t);
+    // A tab that was backgrounded gets throttled, so the interval alone can be
+    // seconds behind by the time anyone looks at it again. Re-read on focus.
+    const resync = () => setNowMs(Date.now());
+    window.addEventListener("focus", resync);
+    document.addEventListener("visibilitychange", resync);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("focus", resync);
+      document.removeEventListener("visibilitychange", resync);
+    };
   }, [sessionId]);
 
   const handleTranscriptScroll = useCallback(() => {
@@ -697,7 +764,12 @@ useEffect(() => {
     : 0;
 
   const canRecord = !!sessionId && !!token && !ending;
-  const elapsed = sessionId && startMs != null ? Math.max(0, Math.floor((nowMs - startMs) / 1000)) : null;
+  // `nowMs + skew` is the server's clock, so this is the same subtraction the
+  // biller does. A device with the wrong time still reads the right meeting.
+  const elapsed =
+    sessionId && startMs != null
+      ? Math.max(0, Math.floor((nowMs + recovery.serverSkewMs - startMs) / 1000))
+      : null;
 
   const WRAP_UP_SEC = 15 * 60;
   const remainingSec = durationMin != null && elapsed != null ? durationMin * 60 - elapsed : null;
@@ -818,10 +890,69 @@ useEffect(() => {
             >
               {meetingTitle}
             </h1>
-            <div style={{ display: "flex", alignItems: "center", gap: SPACE[2.5] }}>
+            <div style={{ display: "flex", alignItems: "center", gap: SPACE[2.5], flexWrap: "wrap" }}>
               <Chip icon={isRecording ? <RecDot /> : <StatusDot color={colors.textDim} />} mono>
                 {isRecording ? "LIVE" : "STANDBY"}
               </Chip>
+
+              {/* The answer to "what's the code?", without leaving the screen
+                  you are running the meeting from. */}
+              {roomCode && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(roomCode);
+                    setCodeCopied(true);
+                    window.setTimeout(() => setCodeCopied(false), 1600);
+                  }}
+                  aria-label={`Meeting code ${roomCode.split("").join(" ")} — copy`}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "4px 10px",
+                    borderRadius: RADIUS.pill,
+                    border: `1px solid ${colors.border}`,
+                    background: colors.surfaceElevated,
+                    color: colors.text,
+                    fontFamily: FONT.mono,
+                    fontSize: FONT.size.label,
+                    letterSpacing: LETTER_SPACING.wide,
+                    cursor: "pointer",
+                  }}
+                >
+                  {roomCode}
+                  <span style={{ fontSize: FONT.size.micro, color: colors.textDim }}>
+                    {codeCopied ? "COPIED" : "COPY"}
+                  </span>
+                </button>
+              )}
+
+              {/* Who actually turned up. Zero is worth showing: it is the
+                  difference between "nobody joined" and "I never shared it". */}
+              <button
+                type="button"
+                onClick={() => setRosterOpen((open) => !open)}
+                aria-label={`${roster.present} in the room of ${roster.total} joined`}
+                aria-expanded={rosterOpen}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "4px 10px",
+                  borderRadius: RADIUS.pill,
+                  border: `1px solid ${colors.border}`,
+                  background: "transparent",
+                  color: roster.present > 0 ? colors.text : colors.textMuted,
+                  fontSize: FONT.size.label,
+                  cursor: "pointer",
+                }}
+              >
+                <Users size={13} />
+                {roster.present}
+                {roster.total > roster.present ? ` / ${roster.total}` : ""}
+              </button>
+
               <span style={{ fontSize: FONT.size.caption, color: colors.textMuted, fontFamily: FONT.mono }}>
                 Session {sessionShort}
               </span>
@@ -838,6 +969,53 @@ useEffect(() => {
                 provider={ai.provider}
               />
             </div>
+
+            {rosterOpen && (
+              <div
+                style={{
+                  marginTop: SPACE[1.5],
+                  padding: SPACE[1.5],
+                  borderRadius: RADIUS.md,
+                  border: `1px solid ${colors.border}`,
+                  background: colors.surface,
+                  maxWidth: 320,
+                }}
+              >
+                {roster.people.length === 0 ? (
+                  <div style={{ fontSize: FONT.size.label, color: colors.textDim }}>
+                    Nobody has joined yet. Read out the code above.
+                  </div>
+                ) : (
+                  roster.people.map((person) => (
+                    <div
+                      key={`${person.displayName}-${person.joinedAt}`}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "3px 0",
+                        fontSize: FONT.size.label,
+                        color: person.present ? colors.text : colors.textDim,
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: "50%",
+                          background: person.present ? colors.accent : colors.borderLight,
+                          flexShrink: 0,
+                        }}
+                      />
+                      {person.displayName}
+                      {!person.present && (
+                        <span style={{ fontSize: FONT.size.micro, color: colors.textDim }}>away</span>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: SPACE[4] }}>

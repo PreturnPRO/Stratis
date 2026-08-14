@@ -33,7 +33,9 @@ function routes(): Array<{ method: string; path: string; guard: string }> {
 
 test("every /api/admin route names its own guard", () => {
   const found = routes();
-  assert.ok(found.length > 10, `expected to parse the admin routes, found ${found.length}`);
+  // A floor, not a count: the file legitimately shrinks when a surface is
+  // deleted, and this only needs to prove the regex still matches routes.
+  assert.ok(found.length >= 8, `expected to parse the admin routes, found ${found.length}`);
 
   const ungated = found
     .filter((r) => r.guard !== "requireFacilitator" && r.guard !== "requirePlatformAdmin")

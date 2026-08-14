@@ -1,5 +1,14 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { InviteKind, InviteRecord, Role } from "@shared/types";
+import type { InviteKind, InviteRecord } from "@shared/types";
+
+/**
+ * What a link makes you *in one meeting*, which is not an account role.
+ *
+ * Accounts have exactly one role now, so `Role` cannot describe this column any
+ * more: a guest is a participant of a session and nothing anywhere else. Kept
+ * as its own type so the two never get confused again.
+ */
+export type GuestRole = "participant";
 import { db } from "../db/database";
 import { generateRoomCode, isRoomCodeShape, normalizeRoomCode } from "./roomCode";
 import { env } from "../config/env";
@@ -10,7 +19,7 @@ export interface InviteRow {
   org_id: string;
   kind: InviteKind;
   token_hash: string;
-  role: Role;
+  role: GuestRole;
   session_id: string | null;
   meeting_id: string | null;
   email: string | null;
@@ -211,7 +220,7 @@ export async function ensureSessionRoomCode(input: {
 export async function createInvite(input: {
   orgId: string;
   kind: InviteKind;
-  role: Role;
+  role: GuestRole;
   sessionId?: string | null;
   meetingId?: string | null;
   email?: string | null;

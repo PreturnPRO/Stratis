@@ -316,10 +316,6 @@ documentRouter.post("/session/:sessionId/commit", requireAuth, async (req, res, 
 
 documentRouter.patch("/:projectId/section", requireAuth, async (req, res, next) => {
   try {
-    if (req.auth!.role === "participant") {
-      return res.status(403).json({ ok: false, error: "Only a facilitator can edit the document" });
-    }
-
     const sectionKey =
       typeof req.body?.sectionKey === "string" ? (req.body.sectionKey as PmSectionKey) : ("" as PmSectionKey);
     const content = typeof req.body?.content === "string" ? req.body.content : "";
@@ -352,10 +348,6 @@ documentRouter.patch("/:projectId/section", requireAuth, async (req, res, next) 
 
 documentRouter.delete("/:projectId", requireAuth, async (req, res, next) => {
   try {
-    if (req.auth!.role === "participant") {
-      return res.status(403).json({ ok: false, error: "Only a facilitator can delete the document" });
-    }
-
     const row = await getDocumentRow(req.auth!.orgId, req.params.projectId);
     if (!row) return res.status(404).json({ ok: false, error: "No document for this project" });
 
@@ -389,10 +381,6 @@ documentRouter.get("/:projectId/version/:version", requireAuth, async (req, res,
 
 documentRouter.post("/:projectId/restore", requireAuth, async (req, res, next) => {
   try {
-    if (req.auth!.role === "participant") {
-      return res.status(403).json({ ok: false, error: "Only a facilitator can restore a version" });
-    }
-
     const targetVersion = Number(req.body?.version);
     if (!Number.isInteger(targetVersion) || targetVersion < 1) {
       return res.status(400).json({ ok: false, error: "Invalid version" });

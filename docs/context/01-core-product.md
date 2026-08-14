@@ -61,10 +61,17 @@ Workspace-based subscription — one price for the team, no per-seat maths.
 "monthly/yearly workspace subscription". The plans page is a **wishlist**: Pro is
 not on sale, the button adds interest so the team can email them later.
 
-**Two roles.** A **facilitator** runs meetings and owns the workspace — team,
-invites, plan, beta codes. A **participant** joins meetings; they need no
-workspace of their own. There is no admin role, and the Stratis team's own
-access is an email allowlist, not a role. See `03-engineering.md`.
+**One user.** A **facilitator** runs their own meetings. Everyone else arrives
+with a code, the way they would join a Kahoot — no account, no adding people
+one by one, nothing to manage before a meeting can run. There is no workspace
+in the product: the organisation row survives as an invisible container so
+queries stay scoped, and no screen names it. The Stratis team's own access is
+an email allowlist, not a role. See `03-engineering.md`.
+
+**Free is capped on recorded minutes and nothing else.** Seats, meetings a
+month and a projects cap were three more numbers to explain for limits that no
+longer mean anything; minutes is the one that tracks what a meeting costs to
+serve, and it is counted from the same clock the meeting screen shows.
 
 | Plan | Carries |
 |---|---|

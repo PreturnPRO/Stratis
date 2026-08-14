@@ -24,10 +24,17 @@ reports the resolved provider names for exactly this reason.
 **Every query that reads or writes meeting content must be scoped by
 `org_id`, and no role is ever a substitute for it.**
 
-- **There are two roles: `facilitator` and `participant`.** The workspace-admin
-  role is gone — it was self-declared at signup, so every check written against
-  it was an open door for anyone who could register. The facilitator owns the
-  workspace: team, invites, plan, beta-code redemption.
+- **There is one role: `facilitator`.** Every account runs its own meetings.
+  Participants are not accounts — they arrive with a code and live in
+  `session_guests` (no org, no role, token dies with the session).
+  `roleSurface.test.ts` fails the build if `Role` grows a second member, if a
+  guard names another role, or if signup starts reading a role from the body.
+  A guest's role *inside a meeting* is `SessionRole`, which is a different type
+  on purpose.
+- **The organisation still scopes every query, and no screen shows it.** One
+  container per account, auto-created at signup, never named by anyone. Keeping
+  it is what let the workspace disappear from the product without rewriting the
+  isolation that protects meetings.
 - **The Stratis team is not a role.** `PLATFORM_ADMIN_EMAILS` +
   `requirePlatformAdmin` is the only operator path, it is resolved from the
   database row behind the token, and it reaches usage and beta codes — never a
@@ -49,6 +56,30 @@ reports the resolved provider names for exactly this reason.
   force-logout cutoff with no org column — behind `requireRole("admin")` that was
   a product-wide kill switch reachable by anyone who signed up. Anything without
   an `org_id` belongs behind `requirePlatformAdmin`.
+
+## The meeting clock is the session's, not the tab's
+
+Elapsed time is `now − started_at` where `started_at` is a **server** timestamp
+and `now` is corrected by the offset in `serverNow` from `/api/session/recover`.
+A browser that closed for five minutes missed five minutes of meeting.
+
+**The screen and the biller run the same subtraction.** `entitlements.ts`
+counts `COALESCE(ended_at, NOW()) − started_at`; the display counting from page
+load instead is what made the timer restart on every refresh and disagree with
+the minutes deducted. `meetingClock.test.ts` holds the two together. An
+unstarted session shows no elapsed time — never `Date.now()`.
+
+The sweeper's rule is unchanged: an *abandoned* session still ends at the last
+moment audio arrived. A facilitator who kept the meeting open is a different
+case from one whose laptop closed.
+
+## Every way into a meeting records presence
+
+Joining by code writes `session_guests` **and** `session_participants`, and the
+guest's checkpoint poll refreshes `last_seen_at`. It wrote neither for months —
+only the invite-link path did — so the facilitator saw nobody and the usage
+rollup counted an empty room. `presence.test.ts` fails the build if a join path
+skips it. Two minutes without a poll reads as *away*, never as gone.
 
 ## Concurrency
 
