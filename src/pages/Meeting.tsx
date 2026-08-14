@@ -397,10 +397,19 @@ export default function Meeting({ onNav }: MeetingProps) {
    * code?" was three clicks into a panel, mid-sentence, in front of the room.
    * A Free workspace still gets the Pro prompt, just not as a surprise.
    */
+  const autoOpenedRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!sessionId || roomCode || openingRoom) return;
+    if (!sessionId || roomCode) return;
+    // Once per session, and the ref is what makes that true. Keying the effect
+    // on `openingRoom` instead meant a failure re-armed it: the flag went back
+    // to false, the effect re-ran, the code was still null, and it called again
+    // — a tight retry loop against a backend that had just said no, which on a
+    // cold start is exactly when it can least afford one. A failure now leaves
+    // the header without a code until the facilitator presses the button.
+    if (autoOpenedRef.current === sessionId) return;
+    autoOpenedRef.current = sessionId;
     void openRoom(true);
-  }, [sessionId, roomCode, openingRoom, openRoom]);
+  }, [sessionId, roomCode, openRoom]);
 
   /** Who is actually in the room. Polled while the meeting is on screen. */
   const [roster, setRoster] = useState<{ present: number; total: number; people: RosterPerson[] }>({

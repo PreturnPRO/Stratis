@@ -64,17 +64,21 @@ export async function usageByDay(days: number): Promise<UsageDay[]> {
       to_char(d.day, 'YYYY-MM-DD') AS day,
       COUNT(r.session_id) AS meetings,
       COALESCE(SUM(r.recorded_minutes), 0) AS recorded_minutes
+    -- make_interval with an explicit ::int rather than building a string and
+    -- casting it. The string form leaned on Postgres inferring the parameter's
+    -- type from an arithmetic operator, which is a coin flip worth not tossing
+    -- in a query that only ever runs in production.
     FROM generate_series(
-           date_trunc('day', NOW()) - (($1 - 1) || ' days')::interval,
+           date_trunc('day', NOW()) - make_interval(days => $1::int - 1),
            date_trunc('day', NOW()),
-           '1 day'
+           INTERVAL '1 day'
          ) AS d(day)
     LEFT JOIN session_rollups r
       ON r.ended_at >= d.day AND r.ended_at < d.day + INTERVAL '1 day'
     GROUP BY d.day
     ORDER BY d.day ASC
     `,
-    [String(days)],
+    [days],
   );
 
   return result.rows.map((row) => ({
@@ -122,12 +126,12 @@ export async function operatorUsage(days: number): Promise<OperatorUsage[]> {
     FROM organizations o
     LEFT JOIN session_rollups r
       ON r.org_id = o.id
-     AND r.ended_at > NOW() - ($1 || ' days')::interval
+     AND r.ended_at > NOW() - make_interval(days => $1::int)
     GROUP BY o.id, o.name, o.plan
     ORDER BY MAX(r.ended_at) DESC NULLS LAST, o.name ASC
     LIMIT 200
     `,
-    [String(days)],
+    [days],
   );
 
   return result.rows.map((row) => ({

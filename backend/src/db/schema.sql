@@ -571,7 +571,7 @@ CREATE INDEX IF NOT EXISTS idx_decisions_meeting_id ON decisions(meeting_id);
 -- backfill can race; the unique index makes the second writer a no-op.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_participant_summaries_session
   ON participant_summaries(session_id);
--- 27. PLAN CODES (the beta bypass)
+-- 31. PLAN CODES (the beta bypass)
 -- A code the Stratis team hands a beta team so their workspace gets the plan
 -- without anyone editing the database by hand. Redeeming is what a workspace
 -- admin can do; issuing is a platform-operator action, because the grant is
@@ -612,7 +612,7 @@ CREATE TABLE IF NOT EXISTS plan_code_redemptions (
 
 CREATE INDEX IF NOT EXISTS idx_plan_code_redemptions_org ON plan_code_redemptions(org_id);
 
--- 28. SESSION ROLLUPS — what the operator console reads
+-- 30. SESSION ROLLUPS — what the operator console reads
 -- One row per finished meeting, written once when the session ends.
 --
 -- The console could compute all of this live, and during a launch that is
@@ -641,36 +641,33 @@ CREATE TABLE IF NOT EXISTS session_rollups (
 CREATE INDEX IF NOT EXISTS idx_session_rollups_org ON session_rollups(org_id);
 CREATE INDEX IF NOT EXISTS idx_session_rollups_ended ON session_rollups(ended_at);
 
--- 30. ONE ROLE
+-- 32. ONE ACCOUNT ROLE
 -- Accounts are facilitators. Participants are not accounts: they arrive with a
--- code and live in session_guests, which has no org and no role. Anyone still
--- carrying the participant role is converted — they keep their meetings, and
--- they gain the ability to run one.
+-- code and live in session_guests, which has no org and no role. Anything still
+-- carrying another role is converted — those people keep their meetings and
+-- gain the ability to run one.
 --
--- invites.role is NOT converted: that column says what a link makes you inside
--- one session, which is a different question from what an account is.
+-- This file is replayed top to bottom on every boot, so ORDER IS BEHAVIOUR.
+-- Two blocks used to narrow this constraint: an earlier one to two roles and a
+-- later one to one. The one-role block was written above the two-role block, so
+-- every boot narrowed the constraint and then immediately widened it again —
+-- leaving production accepting 'participant' rows while the code insisted there
+-- was one role. They are one block now, ending on the narrow constraint, which
+-- is the only version that can be true.
 UPDATE users SET role = 'facilitator' WHERE role <> 'facilitator';
-
-ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
-ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role = 'facilitator');
-
--- 29. TWO ROLES, NOT THREE
--- The workspace-admin role is gone: it was self-declared at signup, bought
--- nothing the facilitator could not have, and read as a Stratis-wide power it
--- never was. Existing admins become facilitators — that is the role that keeps
--- every ability they actually used (team, invites, plan).
---
--- Run before the constraint swap: rows must satisfy the new CHECK first.
-UPDATE users SET role = 'facilitator' WHERE role = 'admin';
-UPDATE invites SET role = 'participant' WHERE role = 'admin';
 
 -- DROP then ADD rather than ADD alone: a CHECK cannot be narrowed in place, and
 -- IF EXISTS keeps a re-run from failing on the drop. Should the original
--- constraint carry a non-default name, it simply stays alongside the new one —
+-- constraint carry a non-default name it simply stays alongside this one —
 -- both hold, and the narrower wins.
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
-ALTER TABLE users ADD CONSTRAINT users_role_check
-    CHECK (role IN ('facilitator', 'participant'));
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role = 'facilitator');
+
+-- invites.role is deliberately NOT narrowed with it. That column says what a
+-- link makes you inside one session — a guest is a participant of that meeting
+-- and nothing anywhere else — which is a different question from what an
+-- account is. Only 'admin' is converted, because that value is gone entirely.
+UPDATE invites SET role = 'participant' WHERE role = 'admin';
 
 ALTER TABLE invites DROP CONSTRAINT IF EXISTS invites_role_check;
 ALTER TABLE invites ADD CONSTRAINT invites_role_check
