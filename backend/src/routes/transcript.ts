@@ -90,6 +90,35 @@ async function saveTranscriptChunk(input: {
 
 const RECENT_WINDOW_ROWS = 24;
 
+/**
+ * Ceilings on what one live suggestion call may carry.
+ *
+ * A live call fires as often as every 15 seconds — roughly 180 times in a
+ * 45-minute meeting — and each one re-sent the entire project document. That
+ * document grows for the life of the project, so the cost of a meeting was
+ * rising with the age of the project rather than the length of the meeting:
+ * one workspace here is already 7.4k characters at version 17.
+ *
+ * The live pass does not need the whole record. It needs enough to recognise
+ * what has already been settled, which is the opening of it. The summary and
+ * decision-extraction passes still receive everything — they run once per
+ * meeting, where the full document is worth paying for.
+ */
+const LIVE_DOC_CHARS = 1_500;
+const LIVE_RECENT_CHARS = 3_000;
+const LIVE_MAX_OPEN_QUESTIONS = 8;
+
+/** Below this a chunk is filler — "ครับ", "ok", a cough — and buys nothing. */
+const MIN_CHUNK_CHARS_FOR_AI = 25;
+
+function capText(value: string | null, max: number): string | null {
+  if (!value) return value;
+  if (value.length <= max) return value;
+  const cut = value.slice(0, max);
+  const lastBreak = cut.lastIndexOf("\n");
+  return `${lastBreak > max * 0.6 ? cut.slice(0, lastBreak) : cut}\n…`;
+}
+
 const projectDocCache = new Map<string, string | null>();
 
 async function getProjectDocumentForSession(
@@ -156,10 +185,37 @@ async function buildLiveContext(sessionId: string, latestText: string): Promise<
     goal: meta?.goal ?? null,
     brief: meta?.brief ?? null,
     rollingSummary: meta?.rolling_summary ?? null,
-    surfacedQuestions: suggestions.allCards(sessionId).map((c) => c.question),
-    recentTranscript,
-    projectDocument,
+    // Open cards only. Answered and dismissed ones were still being sent on
+    // every call for the rest of the meeting — paying to tell the model about
+    // questions it had already closed.
+    surfacedQuestions: suggestions
+      .openCards(sessionId)
+      .slice(-LIVE_MAX_OPEN_QUESTIONS)
+      .map((c) => c.question),
+    recentTranscript: capText(recentTranscript, LIVE_RECENT_CHARS) ?? recentTranscript,
+    projectDocument: capText(projectDocument, LIVE_DOC_CHARS),
   };
+}
+
+/**
+ * Strike through any open card this text answers. Pure string matching against
+ * the cards already on screen — no model call, so it is worth running on every
+ * chunk however short.
+ */
+async function markAnswersFromText(sessionId: string, text: string): Promise<string[]> {
+  await suggestions.hydrate(sessionId);
+
+  const open = suggestions.openCards(sessionId);
+  const answered: string[] = [];
+
+  for (const id of detectAnswered(text, open)) {
+    if (suggestions.markAnswered(sessionId, id, "auto")) {
+      pushAnswered(sessionId, id, "auto");
+      answered.push(id);
+    }
+  }
+
+  return answered;
 }
 
 async function routeTextToAi(
@@ -168,18 +224,7 @@ async function routeTextToAi(
   role: string,
   transcriptId?: string,
 ) {
-  await suggestions.hydrate(sessionId);
-
-  const open = suggestions.openCards(sessionId);
-  const answeredIds = detectAnswered(text, open);
-
-  const answered: string[] = [];
-  for (const id of answeredIds) {
-    if (suggestions.markAnswered(sessionId, id, "auto")) {
-      pushAnswered(sessionId, id, "auto");
-      answered.push(id);
-    }
-  }
+  const answered = await markAnswersFromText(sessionId, text);
 
   const ctx = await buildLiveContext(sessionId, text);
   const result = await liveCardCall(ctx);
@@ -266,6 +311,20 @@ function scheduleAiRouting(
   role: string,
   transcriptId?: string,
 ): void {
+  // Filler costs the same as substance. "ครับ", "okay", "ใช่ ๆ" and a cough
+  // each bought a full model call carrying the goal, the rolling summary, the
+  // open questions and a slice of the document — and could never produce a
+  // suggestion worth showing. The 15-second gate limited how often that
+  // happened; it did not stop it.
+  //
+  // But a short line is exactly how a question gets answered — "ใช่ ตกลง",
+  // "Owen รับไป" — and that detection is local string matching, not a model
+  // call. It runs either way; only the paid half is skipped.
+  if (text.trim().length < MIN_CHUNK_CHARS_FOR_AI) {
+    void markAnswersFromText(sessionId, text);
+    return;
+  }
+
   const running = aiRoutingBySession.get(sessionId);
   if (running) {
     running.queued = { text, role, transcriptId };
