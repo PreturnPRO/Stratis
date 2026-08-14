@@ -245,6 +245,46 @@ export default function Meeting({ onNav }: MeetingProps) {
     return groups;
   }, [transcripts]);
 
+  /**
+   * The rendered rows, not just the grouped data.
+   *
+   * This page re-renders once a second for the clock and again on every interim
+   * word — and the transcript is the one part of it that grows without limit, so
+   * that rebuilt an hour of rows several times a second. Holding the elements
+   * themselves means React sees the same children and skips them entirely;
+   * nothing about what they look like changes.
+   */
+  const transcriptRows = useMemo(
+    () =>
+      transcriptGroups.map((row) => {
+        const spkColor = speakerColor(row.speaker, [colors.spkA, colors.spkB, colors.spkC]);
+        return (
+          <div
+            key={row.id}
+            style={{
+              borderLeft: `2px solid ${spkColor}`,
+              borderBottom: `1px solid ${colors.border}`,
+              paddingLeft: SPACE[2.5],
+              paddingBottom: SPACE[2.5],
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <span style={{ fontWeight: 600, fontSize: FONT.size.body, color: spkColor }}>
+                {row.speaker}
+              </span>
+              <span style={{ fontSize: FONT.size.micro, color: colors.textDim, fontFamily: FONT.mono }}>
+                {formatTime(row.timestamp)}
+              </span>
+            </div>
+            <p style={{ margin: 0, fontSize: FONT.size.body, color: colors.textMuted, lineHeight: 1.5 }}>
+              {row.text}
+            </p>
+          </div>
+        );
+      }),
+    [transcriptGroups, colors],
+  );
+
   const appendTranscript = useCallback((row: TranscriptRow) => {
     setTranscripts((prev) => {
       if (prev.some((p) => p.id === row.id)) return prev;
@@ -932,32 +972,7 @@ useEffect(() => {
                 </div>
               ) : (
                 <>
-                  {transcriptGroups.map((row) => {
-                    const spkColor = speakerColor(row.speaker, [colors.spkA, colors.spkB, colors.spkC]);
-                    return (
-                      <div
-                        key={row.id}
-                        style={{
-                          borderLeft: `2px solid ${spkColor}`,
-                          borderBottom: `1px solid ${colors.border}`,
-                          paddingLeft: SPACE[2.5],
-                          paddingBottom: SPACE[2.5],
-                        }}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                          <span style={{ fontWeight: 600, fontSize: FONT.size.body, color: spkColor }}>
-                            {row.speaker}
-                          </span>
-                          <span style={{ fontSize: FONT.size.micro, color: colors.textDim, fontFamily: FONT.mono }}>
-                            {formatTime(row.timestamp)}
-                          </span>
-                        </div>
-                        <p style={{ margin: 0, fontSize: FONT.size.body, color: colors.textMuted, lineHeight: 1.5 }}>
-                          {row.text}
-                        </p>
-                      </div>
-                    );
-                  })}
+                  {transcriptRows}
 
                   {(pendingText || liveText) && (
                     <div style={{ borderLeft: "2px solid transparent", paddingLeft: SPACE[2.5], paddingBottom: SPACE[2.5], opacity: 0.7 }}>
