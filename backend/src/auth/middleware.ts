@@ -8,6 +8,7 @@ import {
   type AccountState,
 } from "../lib/accountState";
 import { db } from "../db/database";
+import { decideGuestAccess, type GuestSessionRow } from "./guestAccess";
 
 declare global {
   namespace Express {
@@ -173,7 +174,7 @@ export async function requireGuest(req: Request, res: Response, next: NextFuncti
   }
 
   try {
-    const result = await db.query<{ status: string; revoked: boolean }>(
+    const result = await db.query<GuestSessionRow>(
       `SELECT s.status,
               EXISTS (
                 SELECT 1 FROM invites i
@@ -188,13 +189,9 @@ export async function requireGuest(req: Request, res: Response, next: NextFuncti
       [claims.sessionId],
     );
 
-    const row = result.rows[0];
-    if (!row) return res.status(401).json({ ok: false, error: "That meeting is no longer available" });
-    if (row.revoked) {
-      return res.status(401).json({ ok: false, error: "The organiser closed this room" });
-    }
-    if (row.status === "ended") {
-      return res.status(410).json({ ok: false, error: "This meeting has ended" });
+    const decision = decideGuestAccess(result.rows[0]);
+    if (!decision.allow) {
+      return res.status(decision.status).json({ ok: false, error: decision.error });
     }
 
     req.guest = claims;
