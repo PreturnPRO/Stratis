@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Lock } from "lucide-react";
 import { FONT, RADIUS, SPACE } from "../constants";
 import { useTheme } from "../hooks/useTheme";
@@ -30,6 +30,13 @@ export function ProLock({
 }) {
   const { colors } = useTheme();
   const [asking, setAsking] = useState(false);
+  const lockedRef = useRef<HTMLDivElement>(null);
+
+  // Set on the element rather than as a JSX prop: React 18's types have no
+  // `inert`, and dropping to `any` to satisfy them would cost more than it buys.
+  useEffect(() => {
+    if (lockedRef.current) lockedRef.current.inert = true;
+  }, [children]);
 
   if (!locked) return <>{children}</>;
 
@@ -38,8 +45,14 @@ export function ProLock({
       <div style={{ position: "relative" }}>
         {/* The controls stay visible and legible — this is a showroom window,
             not a disabled state. Pointer events are captured by the overlay so
-            nothing underneath can actually be operated. */}
-        <div style={{ opacity: 0.75 }} aria-hidden>
+            nothing underneath can actually be operated.
+
+            `inert` is what makes that true for the keyboard as well. Without
+            it the wrapped buttons stayed in the tab order while being
+            aria-hidden — focusable content a screen reader cannot describe,
+            and the route by which a Free workspace reached an Export that
+            answered 402 with nothing on screen. */}
+        <div ref={lockedRef} style={{ opacity: 0.75 }} aria-hidden>
           {children}
         </div>
 

@@ -56,7 +56,11 @@ roomRouter.post("/session/:sessionId/code", requireAuth, async (req, res, next) 
     if (session.org_id !== req.auth!.orgId) {
       return res.status(403).json({ ok: false, error: "You do not have access to this session" });
     }
-    if (req.auth!.role !== "admin" && session.facilitator_id !== req.auth!.sub) {
+    // No admin bypass, matching session/transcript/summary/document. Minting a
+    // code for a colleague's meeting was a way to read their decision record
+    // through the guest endpoint — the same record the account routes refuse
+    // an admin outright.
+    if (session.facilitator_id !== req.auth!.sub) {
       return res
         .status(403)
         .json({ ok: false, error: "Only the facilitator can open the room" });
@@ -110,7 +114,11 @@ roomRouter.get("/session/:sessionId/reactions", requireAuth, async (req, res, ne
     if (session.org_id !== req.auth!.orgId) {
       return res.status(403).json({ ok: false, error: "You do not have access to this session" });
     }
-    if (req.auth!.role !== "admin" && session.facilitator_id !== req.auth!.sub) {
+    // No admin bypass, matching session/transcript/summary/document. Minting a
+    // code for a colleague's meeting was a way to read their decision record
+    // through the guest endpoint — the same record the account routes refuse
+    // an admin outright.
+    if (session.facilitator_id !== req.auth!.sub) {
       return res.status(403).json({ ok: false, error: "Only the facilitator can see this" });
     }
 

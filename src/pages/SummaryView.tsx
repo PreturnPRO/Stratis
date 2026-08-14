@@ -8,6 +8,7 @@ import { useTheme } from '../hooks/useTheme';
 
 import { ApiError, apiFetch } from '../lib/http';
 import { downloadMarkdown, summaryFilename } from '../lib/summaryExport';
+import { clearLocalTranscript } from '../lib/localTranscript';
 import { ProLock } from '../components/ProLock';
 
 type UserRole = 'facilitator' | 'participant';
@@ -563,6 +564,12 @@ const SummaryView: React.FC<SummaryViewProps> = ({
 
         setSummary(data.summary);
         setDecisions(data.decisions ?? []);
+
+        // The record exists on the server, so the device no longer has to hold
+        // the only other copy. This is the one place that is allowed to delete
+        // it — deleting when the meeting ends would throw the transcript away
+        // at exactly the moment summary generation might still fail.
+        if (sessionId) clearLocalTranscript(sessionId);
         setCompletenessRate(data.metric?.completenessRate ?? null);
         setProvider(data.provider ?? null);
       } catch (err) {

@@ -15,6 +15,27 @@ async function run() {
     // --reset left half the database standing while schema.sql's own DROP block
     // wiped everything on EVERY run, reset or not.
     if (reset) {
+      // The local .env points DATABASE_URL at the hosted database, and this
+      // command drops 27 tables CASCADE. Nothing about `npm run db:reset`
+      // announces that it is about to do so to production, and there is no
+      // undo — so refuse unless the host looks local, or the operator has
+      // typed the override in full.
+      const url = process.env.DATABASE_URL ?? "";
+      const looksLocal = /@(localhost|127\.0\.0\.1|host\.docker\.internal)[:/]/.test(url);
+      const override = process.env.I_UNDERSTAND_THIS_DROPS_EVERY_TABLE === "yes";
+
+      if (!looksLocal && !override) {
+        const host = url.replace(/^[^@]*@/, "").split(/[:/]/)[0] || "(unset DATABASE_URL)";
+        console.error(
+          `[migrate] REFUSING --reset against ${host}.\n` +
+            "  This drops every table and all customer data, and the connection " +
+            "string is not a local one.\n" +
+            "  If you are certain, re-run with " +
+            "I_UNDERSTAND_THIS_DROPS_EVERY_TABLE=yes",
+        );
+        process.exit(1);
+      }
+
       const resetSql = readFileSync(resolve(__dirname, "reset.sql"), "utf-8");
       await db.query(resetSql);
       console.log("[migrate] dropped existing tables (--reset)");

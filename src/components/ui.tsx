@@ -77,7 +77,9 @@ function variantBase(
       return {
         background: hovered ? colors.accentHover : colors.accent,
         border: `1px solid ${hovered ? colors.accentHover : colors.accent}`,
-        color: "#10160b",
+        // Derived from the adapted accent, not hardcoded: this literal read at
+        // 1.78:1 on indigo and 2.00:1 on violet.
+        color: colors.onAccent,
       };
     case "danger":
       return {

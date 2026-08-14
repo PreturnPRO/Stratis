@@ -29,6 +29,8 @@ export async function getUsage(orgId: string): Promise<PlanUsage> {
   const result = await db.query<{
     meetings_this_month: string;
     sessions_this_month: string;
+    recorded_minutes_this_month: string;
+    projects_used: string;
     seats_used: string;
   }>(
     `SELECT
@@ -37,6 +39,18 @@ export async function getUsage(orgId: string): Promise<PlanUsage> {
        (SELECT COUNT(*) FROM sessions s
           JOIN meetings m ON m.id = s.meeting_id
          WHERE m.org_id = $1 AND s.created_at >= date_trunc('month', NOW())) AS sessions_this_month,
+       -- Minutes actually listened to this month. A session still running
+       -- counts up to now, so a workspace cannot sit on one open recording all
+       -- month and stay inside a budget it is spending.
+       (SELECT COALESCE(ROUND(SUM(
+            EXTRACT(EPOCH FROM (COALESCE(s.ended_at, NOW()) - s.started_at)) / 60
+          )), 0)
+          FROM sessions s
+          JOIN meetings m ON m.id = s.meeting_id
+         WHERE m.org_id = $1
+           AND s.started_at IS NOT NULL
+           AND s.started_at >= date_trunc('month', NOW())) AS recorded_minutes_this_month,
+       (SELECT COUNT(*) FROM projects WHERE org_id = $1) AS projects_used,
        (SELECT COUNT(*) FROM users
          WHERE org_id = $1 AND status = 'active') AS seats_used`,
     [orgId],
@@ -46,6 +60,8 @@ export async function getUsage(orgId: string): Promise<PlanUsage> {
   return {
     meetingsThisMonth: Number(row?.meetings_this_month ?? 0),
     sessionsThisMonth: Number(row?.sessions_this_month ?? 0),
+    recordedMinutesThisMonth: Number(row?.recorded_minutes_this_month ?? 0),
+    projectsUsed: Number(row?.projects_used ?? 0),
     seatsUsed: Number(row?.seats_used ?? 0),
   };
 }
@@ -89,4 +105,39 @@ export async function enforceSeatQuota(orgId: string, plan: { limits: { seats: n
     return `The ${plan.name} plan covers ${limit} members. This workspace has ${usage.seatsUsed}.`;
   }
   return null;
+}
+
+/**
+ * The trial's real boundary: minutes listened to, checked when a session is
+ * about to start rather than when a meeting is booked.
+ *
+ * Returns a sentence when the workspace is out, null when it may proceed. The
+ * caller decides the status code, because starting a session and creating a
+ * project fail differently.
+ */
+export async function recordedMinutesExceeded(
+  orgId: string,
+  plan: { limits: { recordedMinutesPerMonth: number | null }; name: string },
+): Promise<string | null> {
+  const limit = plan.limits.recordedMinutesPerMonth;
+  if (limit === null) return null;
+
+  const usage = await getUsage(orgId);
+  if (usage.recordedMinutesThisMonth < limit) return null;
+
+  return `The ${plan.name} plan covers ${limit} recorded minutes a month. This workspace has used ${usage.recordedMinutesThisMonth}.`;
+}
+
+/** Projects are capped on every tier that is not internal. */
+export async function projectsExceeded(
+  orgId: string,
+  plan: { limits: { projects: number | null }; name: string },
+): Promise<string | null> {
+  const limit = plan.limits.projects;
+  if (limit === null) return null;
+
+  const usage = await getUsage(orgId);
+  if (usage.projectsUsed < limit) return null;
+
+  return `The ${plan.name} plan covers ${limit} projects. This workspace has ${usage.projectsUsed}.`;
 }

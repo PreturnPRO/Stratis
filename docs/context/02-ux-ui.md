@@ -83,6 +83,19 @@ one is here because it had to be said more than once.
   passing `undefined` gets the browser's locale and prints English months under
   Thai headings.
 
+## The meeting outlives navigation
+
+- **Nothing ends a recording except the person who started it.** The meeting
+  renders in its own slot outside the keyed page container (`App.tsx`), mounted
+  while `active === "meeting"` **or** `RecordingContext.recording` is true, and
+  hidden — never unmounted — when another page is showing.
+- Leaving it mounted is not laziness: unmounting drops the socket, the
+  transcript and the AI state, and the capture hooks' unmount cleanups would
+  stop the microphone mid-meeting.
+- **A recording that survives navigation must stay visible.** The header shows a
+  pulsing Recording chip whenever capture is running and the meeting is not on
+  screen, and it navigates back.
+
 ## Theme and colour
 
 - **Light is the default**, in the hook *and* as the base `body` rule in
@@ -93,6 +106,11 @@ one is here because it had to be said more than once.
   Hand-picking a "safe" value per theme produces mud.
 - Swatches show the colour **as it will be applied** on the current theme, not
   the raw hue.
+- **Ink on the accent is derived, never declared.** `inkOn()` in
+  `tokens/accent.ts` picks near-black or near-white from the *adapted* fill's
+  luminance. A fixed `onAccent` token cannot work: the fill moves per accent and
+  per theme, and the pairing shipped at 2.57:1 on the default light matcha.
+  `accentContrast.test.ts` holds all nine accents to 4.5:1 in both themes.
 
 ## Visual system
 

@@ -8,6 +8,7 @@ import {
   type AccountState,
 } from "../lib/accountState";
 import { db } from "../db/database";
+import { decideGuestAccess, type GuestSessionRow } from "./guestAccess";
 
 declare global {
   namespace Express {
@@ -146,16 +147,58 @@ export async function requirePlatformAdmin(req: Request, res: Response, next: Ne
   }
 }
 
-/** Accepts a guest link token. Never sets `req.auth`. */
-export function requireGuest(req: Request, res: Response, next: NextFunction) {
+/**
+ * Accepts a guest link token.
+ *
+ * Signature and expiry are not enough. A guest token lives 12 hours and the
+ * decision record keeps changing after the meeting — every correction the
+ * facilitator makes on the Docket — so a token minted from a code that was
+ * later revoked, or for a meeting that has since ended, was still reading the
+ * record hours afterwards. Revoking a room code did nothing to the tokens it
+ * had already produced.
+ *
+ * So the session is re-read on every guest request. One indexed lookup against
+ * a room screen that polls every ten seconds is the right price for a link that
+ * can actually be withdrawn.
+ */
+export async function requireGuest(req: Request, res: Response, next: NextFunction) {
   const header = req.headers.authorization ?? "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
   if (!token) return res.status(401).json({ ok: false, error: "Missing guest token" });
+
+  let claims;
   try {
-    req.guest = verifyGuestToken(token);
-    next();
+    claims = verifyGuestToken(token);
   } catch {
     return res.status(401).json({ ok: false, error: "Invalid or expired guest link" });
+  }
+
+  try {
+    const result = await db.query<GuestSessionRow>(
+      `SELECT s.status,
+              EXISTS (
+                SELECT 1 FROM invites i
+                WHERE i.session_id = s.id
+                  AND i.revoked_at IS NOT NULL
+                  AND NOT EXISTS (
+                    SELECT 1 FROM invites live
+                    WHERE live.session_id = s.id AND live.revoked_at IS NULL
+                  )
+              ) AS revoked
+       FROM sessions s WHERE s.id = $1`,
+      [claims.sessionId],
+    );
+
+    const decision = decideGuestAccess(result.rows[0]);
+    if (!decision.allow) {
+      return res.status(decision.status).json({ ok: false, error: decision.error });
+    }
+
+    req.guest = claims;
+    next();
+  } catch (error) {
+    console.error("[auth] guest check failed:", error);
+    return res.status(500).json({ ok: false, error: "Could not verify your access" });
   }
 }
 

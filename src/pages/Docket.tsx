@@ -115,6 +115,15 @@ export default function Docket({
   const [lockedProject, setLockedProject] = useState<{ id: string; name: string } | undefined>();
   const [resolving, setResolving] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<StartTarget | null>(null);
+  /**
+   * Questions chosen to be settled together.
+   *
+   * One open question rarely justifies calling a meeting; four on the same
+   * project do. Selection is single-project on purpose — a meeting writes into
+   * one project's document, so a mixed agenda would split one decision history
+   * across two records.
+   */
+  const [selected, setSelected] = useState<string[]>([]);
 
   // The filter and the page size live in the cache key: each combination is a
   // different answer, and keying them together is what stops a filtered view
@@ -176,6 +185,7 @@ export default function Docket({
       scheduledAt: input.scheduledAt,
     });
     if (!created) return;
+    setSelected([]);
     closeModal();
     if (input.scheduledAt) void load();
   };
@@ -204,6 +214,48 @@ export default function Docket({
     } finally {
       setResolving(null);
     }
+  };
+
+  const selectedItems = waiting.filter((w) => selected.includes(w.id));
+  const selectionProject = selectedItems[0]?.projectId ?? null;
+
+  /**
+   * Which project a bulk pick would act on, and how many questions that is.
+   *
+   * The count has to be the number this button will actually tick, not the
+   * number of rows on screen — selection is locked to one project, so on an
+   * unfiltered list those differ and the label would promise more than it does.
+   */
+  const bulkProject = selectionProject ?? waiting[0]?.projectId ?? null;
+  const selectableNow = waiting.filter((w) => w.projectId === bulkProject);
+
+  const selectAllVisible = () => {
+    setSelected(selectableNow.map((w) => w.id));
+  };
+
+  const toggleSelected = (w: WaitingItem) => {
+    setSelected((prev) =>
+      prev.includes(w.id) ? prev.filter((id) => id !== w.id) : [...prev, w.id],
+    );
+  };
+
+  /** Carry every selected question into one meeting, agenda already written. */
+  const scheduleSelected = () => {
+    if (selectedItems.length === 0) return;
+    const first = selectedItems[0];
+    openModal(
+      {
+        title: selectedItems.length > 1 ? "Decision meeting" : "Decision meeting",
+        goal:
+          selectedItems.length === 1
+            ? `Decide: ${first.text.replace(/\?+$/, "")}`
+            : `Settle ${selectedItems.length} open questions on ${first.projectName ?? first.projectId ?? "this project"}`,
+        carried: selectedItems.map((w) => w.text),
+      },
+      first.projectId
+        ? { id: first.projectId, name: first.projectName ?? first.projectId }
+        : undefined,
+    );
   };
 
   const startScheduled = async (m: DocketMeeting) => {
@@ -457,8 +509,8 @@ export default function Docket({
                 <span style={styles.bandRule} />
               </div>
               <p style={styles.awaitNote}>
-                Unresolved from your checkpoints, oldest first. Scheduling one carries its wording
-                into the new meeting's goal.
+                Unresolved from your checkpoints, oldest first. Tick the ones the next meeting
+                has to settle — they travel in as its agenda.
                 {waitingTotal > waiting.length && (
                   <> Showing the {waiting.length} oldest of {waitingTotal}.</>
                 )}
@@ -492,31 +544,89 @@ export default function Docket({
                 </div>
               )}
 
+              {/* Bulk first. A meeting is called to settle a handful of
+                  questions, so picking a handful has to be one gesture — not
+                  five, and not a separate meeting per question. */}
+              {selectableNow.length > 1 && selectedItems.length === 0 && (
+                <div style={styles.selectHint}>
+                  <Button variant="ghost" size="sm" onClick={selectAllVisible}>
+                    <span>Select all</span>
+                    <span style={{ fontFamily: FONT.mono, marginLeft: 5 }}>
+                      {selectableNow.length}
+                    </span>
+                  </Button>
+                  <span style={{ fontSize: FONT.size.caption, color: colors.textDim }}>
+                    or tick the ones the next meeting has to settle
+                  </span>
+                </div>
+              )}
+
+              {selectedItems.length > 0 && (
+                <div style={styles.selectBar}>
+                  {/* One string per text node. The translator matches whole
+                      nodes, so an interpolated "it"/"them" mid-sentence leaves
+                      half the label in English — which is exactly what it did. */}
+                  <span style={{ fontSize: FONT.size.label, color: colors.text }}>
+                    <span style={{ fontFamily: FONT.mono }}>{selectedItems.length}</span>{" "}
+                    <span>
+                      {selectedItems.length === 1 ? "question selected" : "questions selected"}
+                    </span>
+                    {selectedItems[0]?.projectName && (
+                      <span style={{ color: colors.textMuted }}> · {selectedItems[0].projectName}</span>
+                    )}
+                  </span>
+                  <span style={{ flex: 1 }} />
+                  <Button variant="ghost" size="sm" onClick={() => setSelected([])}>
+                    Clear
+                  </Button>
+                  {/* Ghost, not primary, and it says "schedule". A green
+                      button appearing the moment you tick a checkbox reads as
+                      "record this now" — but choosing which questions matter is
+                      a decision about what to settle, not about when. The
+                      dialog it opens defaults to a date, not to starting. */}
+                  <Button variant="ghost" size="sm" onClick={scheduleSelected}>
+                    {selectedItems.length === 1
+                      ? "Schedule a meeting for it"
+                      : "Schedule a meeting for these"}
+                  </Button>
+                </div>
+              )}
+
               <div style={styles.awaitBox}>
-                {waiting.map((w) => (
-                  <div key={w.id} style={styles.awaitRow}>
+                {waiting.map((w) => {
+                  const blocked = Boolean(selectionProject) && w.projectId !== selectionProject;
+                  return (
+                  <div
+                    key={w.id}
+                    style={{
+                      ...styles.awaitRow,
+                      opacity: blocked ? 0.45 : 1,
+                      background: selected.includes(w.id) ? colors.surfaceMuted : "transparent",
+                    }}
+                  >
+                    {/* Several questions, one meeting. The checkbox is what
+                        turns this list from a queue you work one row at a time
+                        into the agenda for the next meeting. */}
+                    <input
+                      type="checkbox"
+                      aria-label={`Carry into the next meeting: ${w.text}`}
+                      checked={selected.includes(w.id)}
+                      disabled={Boolean(selectionProject) && w.projectId !== selectionProject}
+                      onChange={() => toggleSelected(w)}
+                      style={{ flexShrink: 0, width: 15, height: 15, accentColor: colors.accent, cursor: "pointer" }}
+                    />
                     {/* Which project, then which meeting. Both were missing:
                         the row showed a question with no way to tell whose it
                         was, on a list whose entire job is triage. */}
                     <span style={styles.awaitProject}>{w.projectName ?? w.projectId ?? "No project"}</span>
                     <span style={styles.awaitSrc}>{w.sourceMeeting ?? "Checkpoint"}</span>
-                    <span style={styles.awaitText}>{w.text}</span>
-                    <span style={styles.awaitAge}>open {daysOpen(w.since)}d</span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() =>
-                        openModal(
-                          {
-                            goal: `Decide: ${w.text.replace(/\?+$/, "")}`,
-                            title: "Decision meeting",
-                          },
-                          w.projectId ? { id: w.projectId, name: w.projectId } : undefined,
-                        )
-                      }
+                    <span
+                      style={{ ...styles.awaitText, cursor: blocked ? "default" : "pointer" }}
+                      onClick={() => !blocked && toggleSelected(w)}
                     >
-                      Schedule
-                    </Button>
+                      {w.text}
+                    </span>
+                    <span style={styles.awaitAge}>open {daysOpen(w.since)}d</span>
                     {/* The API has taken `done` since the checkpoint shipped;
                         the one screen listing open questions had no way to send
                         it, so the only way to clear a question was to hold
@@ -530,7 +640,8 @@ export default function Docket({
                       {resolving === w.id ? "Marking…" : "Mark done"}
                     </Button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
 
               {waiting.length < waitingTotal && (
@@ -738,6 +849,24 @@ function makeStyles(colors: ReturnType<typeof useTheme>["colors"]): Record<strin
       flexWrap: "wrap",
       padding: "11px 2px",
       borderBottom: `1px solid ${colors.border}`,
+    },
+    selectHint: {
+      display: "flex",
+      alignItems: "center",
+      gap: SPACE[1],
+      flexWrap: "wrap",
+      marginBottom: SPACE[1.5],
+    },
+    selectBar: {
+      display: "flex",
+      alignItems: "center",
+      gap: SPACE[1],
+      flexWrap: "wrap",
+      padding: `${SPACE[1]}px ${SPACE[1.5]}px`,
+      marginBottom: SPACE[1.5],
+      borderRadius: RADIUS.md,
+      border: `1px solid ${colors.border}`,
+      background: colors.surfaceMuted,
     },
     filters: {
       display: "flex",

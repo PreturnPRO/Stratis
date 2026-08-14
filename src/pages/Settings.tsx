@@ -21,7 +21,7 @@ import { ProLock } from "../components/ProLock";
 import { useCachedQuery } from "../lib/cache";
 import { ApiError, apiFetch } from "../lib/http";
 import { track } from "../lib/track";
-import { FONT, SPACE } from "../tokens/colors";
+import { FONT, RADIUS, SPACE } from "../tokens/colors";
 import { localeTag } from "../i18n/locale";
 
 interface ProfileResponse {
@@ -204,8 +204,8 @@ function ProfileTab({
           />
         </Field>
         <Field
-          label="Avatar image URL"
-          hint="An https link to an image. There is no file upload in this build yet."
+          label="Profile picture"
+          hint="A link to an image — jpg, png or gif."
         >
           <TextInput
             value={avatarUrl}
@@ -510,6 +510,20 @@ function PlanTab({
       <Card title={`${plan.name} plan`} description={plan.tagline}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: SPACE[1.5] }}>
           <StatTile
+            label="Recorded minutes"
+            value={usage.recordedMinutesThisMonth}
+            hint={
+              limits.recordedMinutesPerMonth === null
+                ? "Unlimited"
+                : `of ${limits.recordedMinutesPerMonth} this month`
+            }
+          />
+          <StatTile
+            label="Projects"
+            value={usage.projectsUsed}
+            hint={limits.projects === null ? "Unlimited" : `of ${limits.projects}`}
+          />
+          <StatTile
             label="Meetings this month"
             value={usage.meetingsThisMonth}
             hint={meetingLimit === null ? "Unlimited" : `of ${meetingLimit}`}
@@ -523,12 +537,93 @@ function PlanTab({
         </div>
       </Card>
 
+      <BetaCodeCard />
+
       <Card
         title="Change plan"
         description="During beta, upgrades are arranged by the Stratis team rather than charged in-app."
         footer={<Button variant="primary" onClick={onSeePricing}>See plans</Button>}
       />
     </>
+  );
+}
+
+/**
+ * Where a beta team turns the code they were given into a plan.
+ *
+ * The other half of this lives in the admin panel and is platform-operator
+ * only: a workspace admin is whoever ticked "admin" at signup, so they may
+ * redeem a grant but never issue one.
+ */
+function BetaCodeCard() {
+  const { colors } = useTheme();
+  const { refreshSubscription } = useAuth();
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+
+  const redeem = async () => {
+    if (!code.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+    setDone(null);
+    try {
+      const result = await apiFetch<{ plan: string; grantedUntil: string | null }>(
+        "/api/billing/redeem",
+        { method: "POST", body: { code } },
+      );
+      setDone(
+        result.grantedUntil
+          ? `Applied. This workspace is on ${result.plan} until ${new Date(result.grantedUntil).toLocaleDateString(localeTag())}.`
+          : `Applied. This workspace is on ${result.plan}.`,
+      );
+      setCode("");
+      await refreshSubscription();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not apply that code");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card
+      title="Beta access code"
+      description="If the Stratis team gave you a code, enter it here to unlock your workspace."
+    >
+      {error && <Banner tone="danger">{error}</Banner>}
+      {done && <Banner tone="success">{done}</Banner>}
+
+      <div style={{ display: "flex", gap: SPACE[1], flexWrap: "wrap", alignItems: "center" }}>
+        <input
+          id="beta-code"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void redeem();
+          }}
+          placeholder="H7KP-3RNM-XE4A"
+          autoComplete="off"
+          spellCheck={false}
+          style={{
+            flex: "1 1 220px",
+            minWidth: 200,
+            padding: "10px 12px",
+            fontFamily: FONT.mono,
+            letterSpacing: 1.5,
+            textTransform: "uppercase",
+            background: colors.surface,
+            border: `1px solid ${colors.border}`,
+            borderRadius: RADIUS.md,
+            color: colors.text,
+          }}
+        />
+        <Button variant="primary" disabled={busy || !code.trim()} onClick={() => void redeem()}>
+          {busy ? "Applying…" : "Apply code"}
+        </Button>
+      </div>
+    </Card>
   );
 }
 

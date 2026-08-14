@@ -460,6 +460,18 @@ export const TH: Record<string, string> = {
   "Sign-in method": "วิธีเข้าสู่ระบบ",
   "Member since": "เป็นสมาชิกตั้งแต่",
   "Plan & usage": "แพ็กเกจและการใช้งาน",
+  "This meeting has ended": "การประชุมนี้จบแล้ว",
+  "The organiser closed this room": "ผู้จัดได้ปิดห้องนี้แล้ว",
+  "An unsaved transcript is still on this device": "ยังมีบทถอดเสียงที่ยังไม่ได้บันทึกอยู่ในเครื่องนี้",
+  "Download the text": "ดาวน์โหลดข้อความ",
+  Discard: "ทิ้ง",
+  "Beta access code": "รหัสเข้าร่วมรุ่นเบต้า",
+  "If the Stratis team gave you a code, enter it here to unlock your workspace.":
+    "ถ้าทีม Stratis ให้รหัสไว้ กรอกที่นี่เพื่อเปิดใช้งานเวิร์กสเปซของคุณ",
+  "Apply code": "ใช้รหัส",
+  "Applying…": "กำลังใช้รหัส…",
+  "Could not apply that code": "ใช้รหัสนี้ไม่ได้",
+  "Recorded minutes": "นาทีที่บันทึกแล้ว",
   "Meetings this month": "การประชุมเดือนนี้",
   "Sessions this month": "เซสชันเดือนนี้",
   "Change plan": "เปลี่ยนแพ็กเกจ",
@@ -708,6 +720,40 @@ export const TH: Record<string, string> = {
   "Nothing waiting to start. New meetings and anything you have scheduled appear here.":
     "ยังไม่มีการประชุมที่รอเริ่ม การประชุมใหม่และที่นัดไว้จะแสดงที่นี่",
 
+  // --- Dashboard: the decision state ---
+  "What needs your attention": "สิ่งที่ต้องดูตอนนี้",
+  "Decisions in progress": "การตัดสินใจที่ยังไม่สมบูรณ์",
+  "Follow-ups due": "งานที่ต้องทำถึงกำหนดแล้ว",
+  "Next meeting": "การประชุมถัดไป",
+  "Recent decisions": "การตัดสินใจล่าสุด",
+  "Start meeting": "เริ่มการประชุม",
+  Recording: "กำลังบันทึกเสียง",
+  "Recording — back to the meeting": "กำลังบันทึกเสียง — กลับไปที่การประชุม",
+  "Rejoin meeting": "กลับเข้าการประชุม",
+  "Review what is unresolved": "ดูว่ายังเหลืออะไรที่ต้องตัดสินใจ",
+  "No date yet": "ยังไม่ได้กำหนดวัน",
+  "No project": "ยังไม่มีโปรเจกต์",
+  "Set a goal, talk it through, and Stratis tracks what is still unresolved.":
+    "ตั้งเป้าหมาย คุยกันให้จบ แล้ว Stratis จะติดตามว่าอะไรยังไม่ได้ข้อสรุป",
+  "No meeting is running. Start one and Stratis follows the discussion for what is still undecided.":
+    "ยังไม่มีการประชุมที่กำลังดำเนินอยู่ เริ่มการประชุมแล้ว Stratis จะติดตามว่ายังเหลืออะไรที่ต้องตัดสินใจ",
+
+  // --- Sidebar groups ---
+  Workspace: "เวิร์กสเปซ",
+
+  // --- Docket: carrying questions into a meeting ---
+  Clear: "ล้างที่เลือก",
+  "Select all": "เลือกทั้งหมด",
+  "or tick the ones the next meeting has to settle": "หรือเลือกเฉพาะข้อที่การประชุมถัดไปต้องหาข้อสรุป",
+  "question selected": "คำถามที่เลือก",
+  "questions selected": "คำถามที่เลือก",
+  "Schedule a meeting for it": "นัดประชุมเพื่อหาข้อสรุป",
+  "Schedule a meeting for these": "นัดประชุมเพื่อหาข้อสรุปทั้งหมดนี้",
+  "Unresolved from your checkpoints, oldest first. Tick the ones the next meeting has to settle — they travel in as its agenda.":
+    "คำถามที่ยังไม่ได้ข้อสรุปจากจุดตรวจสอบ เรียงจากเก่าที่สุด เลือกข้อที่การประชุมถัดไปต้องหาข้อสรุป แล้วระบบจะนำไปเป็นวาระการประชุมให้",
+
   // --- Settings ---
   "Email & password": "อีเมลและรหัสผ่าน",
+  "Profile picture": "รูปโปรไฟล์",
+  "A link to an image — jpg, png or gif.": "ลิงก์รูปภาพ — jpg, png หรือ gif",
 };

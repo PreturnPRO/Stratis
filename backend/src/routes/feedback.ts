@@ -31,8 +31,22 @@ feedbackRouter.post("/", optionalAuth, async (req, res) => {
     const rating =
       Number.isFinite(rawRating) && rawRating >= 1 && rawRating <= 5 ? Math.round(rawRating) : null;
 
-    const sessionId =
-      typeof req.body?.sessionId === "string" ? req.body.sessionId : req.guest?.sessionId ?? null;
+    // A guest's session comes from their own token and needs no check. An
+    // account naming a session in the body does: without this, anyone could
+    // file feedback against another workspace's meeting and have it appear in
+    // that workspace's admin inbox, attributed to their session.
+    const claimedSessionId =
+      typeof req.body?.sessionId === "string" ? req.body.sessionId : null;
+    let sessionId = req.guest?.sessionId ?? null;
+
+    if (!sessionId && claimedSessionId && req.auth) {
+      const owned = await db.query<{ id: string }>(
+        `SELECT s.id FROM sessions s JOIN meetings m ON m.id = s.meeting_id
+         WHERE s.id = $1 AND m.org_id = $2`,
+        [claimedSessionId, req.auth.orgId],
+      );
+      sessionId = owned.rows[0]?.id ?? null;
+    }
 
     // A guest has no org of their own, so without this their feedback lands
     // with org_id NULL and the admin inbox — which filters by org — never shows

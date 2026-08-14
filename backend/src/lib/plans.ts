@@ -20,7 +20,14 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
     name: "Free",
     tagline: "Try Stratis on a few meetings a month.",
     limits: {
-      meetingsPerMonth: 5,
+      // The free tier is a trial measured in listening, not in calendar
+      // entries: 30 recorded minutes a month is two short meetings or one real
+      // one, which is enough to find out whether the checkpoint is worth
+      // anything. Meetings themselves are not capped — booking one costs us
+      // nothing and blocking it teaches the team nothing.
+      meetingsPerMonth: null,
+      recordedMinutesPerMonth: 30,
+      projects: 2,
       seats: 3,
       sessionMinutes: 45,
       retentionDays: 30,
@@ -49,6 +56,11 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
     tagline: "Unlimited meetings for the whole workspace.",
     limits: {
       meetingsPerMonth: null,
+      recordedMinutesPerMonth: null,
+      // Unlimited meetings, ten projects. A workspace with more than ten live
+      // projects is an organisation, and organisations are a different
+      // conversation from a team subscription.
+      projects: 10,
       seats: null,
       sessionMinutes: 240,
       retentionDays: null,
@@ -70,6 +82,8 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
     internal: true,
     limits: {
       meetingsPerMonth: null,
+      recordedMinutesPerMonth: null,
+      projects: null,
       seats: 25,
       sessionMinutes: 240,
       retentionDays: null,

@@ -4,6 +4,12 @@ import { requireAuth, requireRole } from "../auth/middleware";
 import { db } from "../db/database";
 import { newId, now } from "../lib/ids";
 import { PLANS, effectivePlan, getPlan, isPlanId } from "../lib/plans";
+import {
+  checkPlanCode,
+  grantExpiry,
+  normalisePlanCode,
+  type PlanCodeRow,
+} from "../lib/planCodes";
 import { getUsage } from "../lib/entitlements";
 import { invalidateOrg } from "../lib/accountState";
 import { track } from "../lib/analytics";
@@ -188,5 +194,85 @@ billingRouter.post("/assign", requireAuth, requireRole("admin"), async (req, res
   } catch (error) {
     console.error("Plan assign error:", error);
     res.status(500).json({ ok: false, error: "Could not change the plan" });
+  }
+});
+
+/**
+ * Redeem a beta access code.
+ *
+ * The workspace admin's half of the bypass: they cannot grant themselves a
+ * plan, only redeem one that a platform operator issued. Everything the grant
+ * depends on — the plan, how long it lasts, how many workspaces may use it —
+ * is decided when the code is created, not here.
+ */
+billingRouter.post("/redeem", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const raw = typeof req.body?.code === "string" ? req.body.code : "";
+    if (!raw.trim()) return res.status(400).json({ ok: false, error: "Enter the code you were given" });
+
+    const code = normalisePlanCode(raw);
+
+    // One transaction, row locked: two admins pasting the same code at once
+    // must not both pass a max_uses check that neither has incremented yet.
+    const outcome = await db.tx(async (client) => {
+      const found = await client.query<PlanCodeRow>(
+        `SELECT id, code, plan, label, grant_days, expires_at, max_uses, used_count, revoked_at
+         FROM plan_codes WHERE code = $1 FOR UPDATE`,
+        [code],
+      );
+
+      const check = checkPlanCode(found.rows[0]);
+      if (!check.ok) return { ok: false as const, status: 404, error: check.reason };
+
+      const row = check.row;
+
+      const already = await client.query(
+        `SELECT id FROM plan_code_redemptions WHERE code_id = $1 AND org_id = $2`,
+        [row.id, req.auth!.orgId],
+      );
+      if (already.rows.length > 0) {
+        return { ok: false as const, status: 409, error: "This workspace has already used that code" };
+      }
+
+      const ts = now();
+      const grantedUntil = grantExpiry(row.grant_days);
+
+      await client.query(
+        `UPDATE organizations
+         SET plan = $1, plan_status = 'active', plan_started_at = $2, plan_expires_at = $3,
+             is_beta = $4, plan_note = $5
+         WHERE id = $6`,
+        [row.plan, ts, grantedUntil, row.plan === "beta", row.label, req.auth!.orgId],
+      );
+
+      await client.query(
+        `INSERT INTO plan_code_redemptions
+           (id, code_id, org_id, redeemed_by, granted_plan, granted_until, redeemed_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [newId("pcuse"), row.id, req.auth!.orgId, req.auth!.sub, row.plan, grantedUntil, ts],
+      );
+
+      await client.query(`UPDATE plan_codes SET used_count = used_count + 1 WHERE id = $1`, [row.id]);
+
+      return { ok: true as const, plan: row.plan, grantedUntil, label: row.label };
+    });
+
+    if (!outcome.ok) return res.status(outcome.status).json({ ok: false, error: outcome.error });
+
+    invalidateOrg(req.auth!.orgId);
+    track({
+      event: "plan_code_redeemed",
+      orgId: req.auth!.orgId,
+      userId: req.auth!.sub,
+      props: { plan: outcome.plan, grantedUntil: outcome.grantedUntil },
+    });
+
+    res.json({
+      ok: true,
+      data: { plan: getPlan(outcome.plan).id, grantedUntil: outcome.grantedUntil, label: outcome.label },
+    });
+  } catch (error) {
+    console.error("Plan code redeem error:", error);
+    res.status(500).json({ ok: false, error: "Could not apply that code" });
   }
 });

@@ -1,5 +1,5 @@
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export type PcmStreamStatus = "idle" | "starting" | "streaming" | "error";
 
@@ -74,6 +74,12 @@ export function usePcmStream({ onFrame }: UsePcmStreamOptions): UsePcmStreamRetu
     queueRef.current = [];
     queuedSamplesRef.current = 0;
   }, []);
+
+  // The microphone belongs to the component that opened it. Without this,
+  // navigating away from the meeting left the tracks live: the browser's
+  // recording indicator and the OS mic light stayed on while the user looked at
+  // a page with no recording UI on it at all.
+  useEffect(() => teardown, [teardown]);
 
   const drainFrames = useCallback(() => {
     const frameSamples = frameSamplesRef.current;

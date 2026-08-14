@@ -64,8 +64,7 @@ export function LoadingState({
   onDone?: () => void;
   persist?: boolean;
 }) {
-  const [shown, setShown]     = useState(false);
-  const [visible, setVisible] = useState(true);
+  const [shown, setShown] = useState(false);
   const { colors } = useTheme();
 
   useEffect(() => {
@@ -73,18 +72,26 @@ export function LoadingState({
     return () => clearTimeout(appearTimer);
   }, []);
 
+  /**
+   * The skeleton never removes itself.
+   *
+   * It used to hide on a timer that knew nothing about whether data had
+   * arrived: on a slow connection the page went blank after one second — no
+   * skeleton, no empty state, because the caller's `loading` branch still held
+   * — and the Docket read "Nothing booked yet" over a request that was still in
+   * flight. A loading state that outlives its own request is a lie about the
+   * data; the caller's flag owns the lifetime.
+   *
+   * `onDone` still fires for callers that use it as a cue, and `delayMs` is
+   * kept in the signature so the call sites that pass it keep compiling.
+   */
   useEffect(() => {
-    if (persist) return;
-
-    const t = setTimeout(() => {
-      setVisible(false);
-      if (onDone) onDone();
-    }, delayMs);
-
+    if (persist || !onDone) return;
+    const t = setTimeout(onDone, delayMs);
     return () => clearTimeout(t);
   }, [delayMs, onDone, persist]);
 
-  if (!visible || !shown) return null;
+  if (!shown) return null;
 
   return (
     <div style={{

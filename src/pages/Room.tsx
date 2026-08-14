@@ -3,7 +3,7 @@ import { Check, Flag } from "lucide-react";
 import { FONT, LETTER_SPACING, RADIUS, SPACE } from "../constants";
 import { useTheme } from "../hooks/useTheme";
 import { BackLink, Button } from "../components/ui";
-import { apiFetch } from "../lib/http";
+import { ApiError, apiFetch } from "../lib/http";
 
 /**
  * The room's side of the checkpoint.
@@ -60,6 +60,8 @@ export default function Room({
   const [decisions, setDecisions] = useState<RoomDecision[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Set once the room is over for good: ended, or the organiser closed it. */
+  const [closed, setClosed] = useState<string | null>(null);
   const [flagging, setFlagging] = useState<string | null>(null);
   const [note, setNote] = useState("");
 
@@ -101,6 +103,13 @@ export default function Room({
       setDecisions(data.decisions ?? []);
       setError(null);
     } catch (err) {
+      // A meeting that has ended, or a room the organiser closed, is a final
+      // answer — not a failed request to retry every ten seconds. Say it once,
+      // keep the decisions already on screen, and stop polling.
+      if (err instanceof ApiError && (err.status === 410 || err.status === 401)) {
+        setClosed(err.message);
+        return;
+      }
       setError(err instanceof Error ? err.message : "Could not load the checkpoint");
     }
   }, []);
@@ -109,11 +118,11 @@ export default function Room({
   // meeting socket, so this polls. Ten seconds is well inside how fast a room
   // moves and nowhere near enough traffic to matter.
   useEffect(() => {
-    if (!session) return;
+    if (!session || closed) return;
     void loadCheckpoint(session);
     const timer = setInterval(() => void loadCheckpoint(session), 10_000);
     return () => clearInterval(timer);
-  }, [session, loadCheckpoint]);
+  }, [session, closed, loadCheckpoint]);
 
   const join = async () => {
     const clean = code.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
@@ -453,9 +462,28 @@ export default function Room({
           ))
         )}
 
+        {/* The footer used to promise live updates for ever, including long
+            after the meeting ended and the polling had started failing. */}
+        {closed ? (
+          <div
+            style={{
+              marginTop: SPACE[2],
+              padding: SPACE[2],
+              borderRadius: RADIUS.md,
+              border: `1px solid ${colors.border}`,
+              background: colors.surfaceMuted,
+              color: colors.textMuted,
+              fontSize: FONT.size.label,
+            }}
+          >
+            {closed} The decisions above are the last version you saw — the
+            facilitator may have changed them since.
+          </div>
+        ) : (
         <p style={{ color: colors.textDim, fontSize: FONT.size.caption, marginTop: SPACE[2] }}>
           Updates every few seconds while the meeting runs.
         </p>
+        )}
       </div>
     </div>
   );

@@ -2,10 +2,11 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { randomBytes } from "node:crypto";
 import type { AdminUserRow, BetaMetrics, FeedbackRecord, Role } from "@shared/types";
-import { requireAuth, requireRole } from "../auth/middleware";
+import { requireAuth, requireRole, requirePlatformAdmin } from "../auth/middleware";
 import { db } from "../db/database";
 import { newId, now } from "../lib/ids";
 import { effectivePlan, getPlan, PLANS } from "../lib/plans";
+import { generatePlanCode, isGrantablePlan, normalisePlanCode } from "../lib/planCodes";
 import { enforceSeatQuota, getUsage } from "../lib/entitlements";
 import {
   invalidateAccount,
@@ -485,8 +486,15 @@ adminRouter.patch("/feedback/:id", async (req, res) => {
  * Publish a release. With forceLogout, every token issued before this instant
  * stops working — which is how a deploy clears clients still running the old
  * bundle instead of letting them talk to an API that moved.
+ *
+ * The cutoff is global — `app_releases` has no org column and `getReleaseCutoff`
+ * reads the newest row for the whole product — so this is an operator action,
+ * not a workspace one. Behind `requireRole("admin")` alone it was reachable by
+ * anyone at all: signup accepts a self-declared role, so thirty seconds of
+ * account creation bought the ability to sign out every user in every
+ * workspace and drop every live meeting's WebSocket, on repeat.
  */
-adminRouter.post("/release", async (req, res) => {
+adminRouter.post("/release", requirePlatformAdmin, async (req, res) => {
   try {
     const version = typeof req.body?.version === "string" ? req.body.version.trim() : "";
     if (!version) return res.status(400).json({ ok: false, error: "version is required" });
@@ -527,5 +535,97 @@ adminRouter.get("/plan-requests", async (req, res) => {
   } catch (error) {
     console.error("Admin plan requests error:", error);
     res.status(500).json({ ok: false, error: "Could not load plan requests" });
+  }
+});
+
+/**
+ * Issue a beta access code.
+ *
+ * Platform operators only. The grant is worth money, and a workspace admin is
+ * whoever ticked "admin" at signup — so issuing and redeeming are deliberately
+ * different powers held by different people.
+ */
+adminRouter.post("/plan-codes", requirePlatformAdmin, async (req, res) => {
+  try {
+    const plan = req.body?.plan;
+    if (!isGrantablePlan(plan)) {
+      return res.status(400).json({ ok: false, error: "A code may grant pro or beta" });
+    }
+
+    const label = typeof req.body?.label === "string" ? req.body.label.trim().slice(0, 80) : null;
+    const grantDays =
+      Number.isFinite(Number(req.body?.grantDays)) && Number(req.body?.grantDays) > 0
+        ? Math.floor(Number(req.body.grantDays))
+        : null;
+    const maxUses =
+      Number.isFinite(Number(req.body?.maxUses)) && Number(req.body?.maxUses) > 0
+        ? Math.floor(Number(req.body.maxUses))
+        : null;
+    const expiresInDays =
+      Number.isFinite(Number(req.body?.expiresInDays)) && Number(req.body?.expiresInDays) > 0
+        ? Math.floor(Number(req.body.expiresInDays))
+        : null;
+
+    const code = generatePlanCode();
+    const id = newId("pcode");
+    const ts = now();
+    const expiresAt = expiresInDays
+      ? new Date(Date.now() + expiresInDays * 86_400_000).toISOString()
+      : null;
+
+    await db.query(
+      `INSERT INTO plan_codes (id, code, plan, label, grant_days, expires_at, max_uses, used_count, created_by, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,0,$8,$9)`,
+      [id, normalisePlanCode(code), plan, label, grantDays, expiresAt, maxUses, req.auth!.sub, ts],
+    );
+
+    // The dashed form is what a human reads out; the stored form is normalised.
+    res.json({ ok: true, data: { id, code, plan, label, grantDays, maxUses, expiresAt } });
+  } catch (error) {
+    console.error("Plan code create error:", error);
+    res.status(500).json({ ok: false, error: "Could not create the code" });
+  }
+});
+
+/** Every code and what it has been used for. Platform operators only. */
+adminRouter.get("/plan-codes", requirePlatformAdmin, async (_req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT c.id, c.code, c.plan, c.label, c.grant_days, c.expires_at, c.max_uses,
+              c.used_count, c.revoked_at, c.created_at,
+              COALESCE(
+                json_agg(
+                  json_build_object('orgId', r.org_id, 'redeemedAt', r.redeemed_at)
+                  ORDER BY r.redeemed_at DESC
+                ) FILTER (WHERE r.id IS NOT NULL),
+                '[]'
+              ) AS redemptions
+       FROM plan_codes c
+       LEFT JOIN plan_code_redemptions r ON r.code_id = c.id
+       GROUP BY c.id
+       ORDER BY c.created_at DESC
+       LIMIT 100`,
+    );
+    res.json({ ok: true, data: { codes: result.rows } });
+  } catch (error) {
+    console.error("Plan code list error:", error);
+    res.status(500).json({ ok: false, error: "Could not load the codes" });
+  }
+});
+
+/** Stop a code being redeemed again. Grants already made are left alone. */
+adminRouter.post("/plan-codes/:id/revoke", requirePlatformAdmin, async (req, res) => {
+  try {
+    const result = await db.query(
+      `UPDATE plan_codes SET revoked_at = $1 WHERE id = $2 AND revoked_at IS NULL RETURNING id`,
+      [now(), req.params.id],
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "No such code, or it is already revoked" });
+    }
+    res.json({ ok: true, data: { id: req.params.id } });
+  } catch (error) {
+    console.error("Plan code revoke error:", error);
+    res.status(500).json({ ok: false, error: "Could not revoke the code" });
   }
 });

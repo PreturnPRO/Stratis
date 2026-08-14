@@ -2,7 +2,10 @@ import { Router, type Request, type Response } from "express";
 import { requireAuth } from "../auth/middleware";
 import { db } from "../db/database";
 import { newId, now } from "../lib/ids";
-import { enforceMeetingQuota } from "../lib/entitlements";
+import { enforceMeetingQuota, projectsExceeded } from "../lib/entitlements";
+import { effectivePlan } from "../lib/plans";
+import { AUTH_ERROR_CODES } from "@shared/types";
+import { attentionCounts, recentDecisions, unresolvedForProject } from "../lib/attention";
 
 export const meetingRouter = Router();
 
@@ -22,6 +25,7 @@ interface MeetingRow {
 }
 
 interface MeetingListRow extends MeetingRow {
+  project_name: string | null;
   active_session_id: string | null;
   active_session_status: SessionStatus | null;
   session_count: number;
@@ -98,7 +102,9 @@ function toDashboardMeeting(row: MeetingListRow) {
     id: row.id,
     title: row.title,
     projectId: row.project_id,
-    project: row.project_id,
+    project: row.project_name ?? row.project_id,
+    projectName: row.project_name ?? row.project_id,
+    goal: row.goal ?? null,
     scheduledAt: row.scheduled_at,
     time: row.scheduled_at,
     participantCount: 0,
@@ -151,7 +157,9 @@ async function listMeetings(req: Request, res: Response) {
         m.id,
         m.org_id,
         m.project_id,
+        COALESCE(p.name, m.project_id) AS project_name,
         m.title,
+        m.goal,
         m.scheduled_at,
         m.created_by,
         m.created_at,
@@ -193,6 +201,7 @@ async function listMeetings(req: Request, res: Response) {
         ) AS session_count
 
       FROM meetings m
+      LEFT JOIN projects p ON p.id = m.project_id
       WHERE ${where.join(" AND ")}
       ORDER BY
         CASE WHEN m.scheduled_at IS NULL THEN 1 ELSE 0 END,
@@ -257,7 +266,9 @@ meetingRouter.get("/dashboard", requireAuth, async (req, res) => {
         m.id,
         m.org_id,
         m.project_id,
+        COALESCE(p.name, m.project_id) AS project_name,
         m.title,
+        m.goal,
         m.scheduled_at,
         m.created_by,
         m.created_at,
@@ -287,6 +298,7 @@ meetingRouter.get("/dashboard", requireAuth, async (req, res) => {
         ) AS session_count
 
       FROM meetings m
+      LEFT JOIN projects p ON p.id = m.project_id
       WHERE ${meetingWhere.join(" AND ")}
       ORDER BY
         CASE WHEN m.scheduled_at IS NULL THEN 1 ELSE 0 END,
@@ -354,9 +366,31 @@ meetingRouter.get("/dashboard", requireAuth, async (req, res) => {
       [req.auth!.orgId, req.auth!.sub, limit]
     );
 
+    // The decision state first — the counts are what the dashboard now opens on.
+    const [attention, decided] = await Promise.all([
+      attentionCounts(req.auth!.orgId, req.auth!.sub),
+      recentDecisions(req.auth!.orgId, req.auth!.sub, 4),
+    ]);
+
+    // The soonest thing on the calendar, or the meeting already running. Its
+    // unresolved count is what makes the card worth reading.
+    const upcomingRows = upcoming.rows.map(toDashboardMeeting);
+    const liveRow = upcomingRows.find((m) => m.activeSession);
+    const nextRow = liveRow ?? upcomingRows.find((m) => m.scheduledAt) ?? upcomingRows[0] ?? null;
+
+    const nextMeeting = nextRow
+      ? {
+          ...nextRow,
+          unresolved: await unresolvedForProject(req.auth!.orgId, nextRow.projectId),
+        }
+      : null;
+
     res.json({
       ok: true,
       data: {
+        attention,
+        nextMeeting,
+        recentDecisions: decided,
         upcomingMeetings: upcoming.rows.map(toDashboardMeeting),
         activeSession: activeSession.rows[0] ?? null,
         recentSummaries: recentSummaries.rows,
@@ -392,6 +426,28 @@ meetingRouter.post("/", requireAuth, enforceMeetingQuota, async (req, res) => {
     );
 
     if (projectCheck.rows.length === 0) {
+      // A new project is the thing the plan counts, so the cap is checked here
+      // rather than on a projects screen — this is where projects are actually
+      // born, from a name typed into the new-meeting dialog.
+      const orgRow = await db.query<{ plan: string | null; plan_status: string | null; plan_expires_at: string | null }>(
+        `SELECT plan, plan_status, plan_expires_at FROM organizations WHERE id = $1`,
+        [req.auth!.orgId],
+      );
+      const plan = effectivePlan(
+        orgRow.rows[0]?.plan ?? null,
+        orgRow.rows[0]?.plan_status ?? null,
+        orgRow.rows[0]?.plan_expires_at ?? null,
+      );
+      const capped = await projectsExceeded(req.auth!.orgId, plan);
+      if (capped) {
+        return res.status(402).json({
+          ok: false,
+          error: capped,
+          code: AUTH_ERROR_CODES.quotaExceeded,
+          data: { limit: plan.limits.projects, plan: plan.id },
+        });
+      }
+
       const projectName = titleFromProjectId(projectId);
       const ts = now();
       await db.query(

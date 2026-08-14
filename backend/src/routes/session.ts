@@ -13,6 +13,9 @@ import {
   type DecisionPatch,
 } from "../lib/decisions";
 import { generateAndSaveSummary } from "../lib/summaryStore";
+import { effectivePlan } from "../lib/plans";
+import { recordedMinutesExceeded } from "../lib/entitlements";
+import { AUTH_ERROR_CODES } from "@shared/types";
 
 export const sessionRouter = Router();
 
@@ -127,12 +130,20 @@ async function requireAccessibleSession(
   };
 }
 
-export async function endSession(sessionId: string): Promise<any> {
+/**
+ * @param endedAt When the meeting actually stopped, if that is not now. The
+ * idle sweeper passes the last moment audio arrived: it runs up to a minute
+ * after a 15-minute idle limit expires, and stamping its own clock billed a
+ * facilitator who closed their laptop for the whole 16 minutes they were not
+ * speaking — a quarter of the free tier's monthly allowance, spent on silence.
+ */
+export async function endSession(sessionId: string, endedAt?: string): Promise<any> {
   const session = await getSession(sessionId);
   if (!session) return undefined;
   if (session.status === "ended") return session;
 
   const timestamp = now();
+  const stoppedAt = endedAt ?? timestamp;
 
   await db.query(
     `
@@ -142,7 +153,7 @@ export async function endSession(sessionId: string): Promise<any> {
         ended_at = COALESCE(ended_at, $2)
     WHERE id = $3
     `,
-    [timestamp, timestamp, session.id],
+    [timestamp, stoppedAt, session.id],
   );
 
   clearProjectDocCache(session.id);
@@ -268,6 +279,29 @@ sessionRouter.post("/", requireAuth, async (req, res) => {
       return res.status(403).json({
         ok: false,
         error: "You cannot create a session for this meeting",
+      });
+    }
+
+    // The trial's real boundary. Checked here rather than at meeting creation
+    // because the cost is listening, not calendar entries — and checked before
+    // the mic opens, since stopping someone mid-sentence is worse than not
+    // starting.
+    const orgRow = await db.query<{ plan: string | null; plan_status: string | null; plan_expires_at: string | null }>(
+      `SELECT plan, plan_status, plan_expires_at FROM organizations WHERE id = $1`,
+      [meeting.org_id],
+    );
+    const plan = effectivePlan(
+      orgRow.rows[0]?.plan ?? null,
+      orgRow.rows[0]?.plan_status ?? null,
+      orgRow.rows[0]?.plan_expires_at ?? null,
+    );
+    const overBudget = await recordedMinutesExceeded(meeting.org_id, plan);
+    if (overBudget) {
+      return res.status(402).json({
+        ok: false,
+        error: overBudget,
+        code: AUTH_ERROR_CODES.quotaExceeded,
+        data: { limit: plan.limits.recordedMinutesPerMonth, plan: plan.id },
       });
     }
 

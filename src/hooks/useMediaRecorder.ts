@@ -1,5 +1,5 @@
 
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 
 export type RecordingStatus =
   | "idle"
@@ -66,6 +66,27 @@ export function useMediaRecorder({
     cleanupStream();
     setStatus("stopped");
   }, [clearSegmentTimer, cleanupStream]);
+
+  // Same contract as usePcmStream: unmounting the meeting screen stops the
+  // capture. The 6-second segment timer kept firing and kept POSTing audio for
+  // a session the user believed they had stepped away from.
+  useEffect(
+    () => () => {
+      runningRef.current = false;
+      clearSegmentTimer();
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== "inactive") {
+        try {
+          recorder.stop();
+        } catch {
+          /* already torn down by the browser */
+        }
+      }
+      mediaRecorderRef.current = null;
+      cleanupStream();
+    },
+    [clearSegmentTimer, cleanupStream],
+  );
 
   const start = useCallback(async () => {
     if (runningRef.current) return;

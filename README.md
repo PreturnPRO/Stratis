@@ -367,15 +367,18 @@ http://localhost:5173
 
 ---
 
-## Demo Login
+## Demo login
 
-After running the backend seed:
+`npm run db:seed` creates three demo accounts — a facilitator, a participant and
+an admin — against whatever database `DATABASE_URL` points at.
 
-```txt
-facilitator@stratis.dev / password123
-participant@stratis.dev / password123
-admin@stratis.dev       / password123
-```
+The password is in `backend/src/db/seed.ts`. It is not repeated here: this
+repository is public, the seed has been run against a hosted database before,
+and a working password for a live admin account published in a README is a way
+in that needs no exploit at all.
+
+Seed against a local database only, and never leave a seeded admin account
+active on a deployment that real people use.
 
 ---
 
