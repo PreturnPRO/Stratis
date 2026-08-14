@@ -18,20 +18,29 @@ const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 
 /**
  * Facilitator by default, because that is who the meeting screens are for.
- * `?as=admin` switches the mocked role so the Admin panel can be looked at
- * without changing what every other screen demonstrates. Sticks like the mock
- * flag itself, so a reload keeps whichever role you asked for.
+ * `?as=participant` shows the other role. Sticks like the mock flag itself, so
+ * a reload keeps whichever you asked for.
+ *
+ * `?as=admin` is no longer a role — admin is not one. It now mocks the operator
+ * allowlist instead, which is what the Admin console actually checks.
  */
 const ROLE_KEY = "stratis.mock.role";
+const OPERATOR_KEY = "stratis.mock.operator";
 
 function mockRole(): string {
   if (typeof window === "undefined") return "facilitator";
   const asked = new URLSearchParams(window.location.search).get("as");
-  if (asked === "admin" || asked === "facilitator") {
+  if (asked === "admin") window.localStorage.setItem(OPERATOR_KEY, "1");
+  if (asked === "facilitator" || asked === "participant") {
     window.localStorage.setItem(ROLE_KEY, asked);
     return asked;
   }
   return window.localStorage.getItem(ROLE_KEY) ?? "facilitator";
+}
+
+function mockPlatformAdmin(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.localStorage.getItem(OPERATOR_KEY) === "1";
 }
 
 const USER = {
@@ -40,6 +49,9 @@ const USER = {
   email: "dana@demo.local",
   get role() {
     return mockRole();
+  },
+  get platformAdmin() {
+    return mockPlatformAdmin();
   },
   orgId: "org_demo",
 };
@@ -360,6 +372,7 @@ function route(path: string, method: string): Response | null {
     const next = MEETINGS.filter((m) => m.scheduledAt)[0];
     return json({
       attention: { openQuestions: 3, inProgress: 2, followUpsDue: 1 },
+      agenda: { missingDecision: 7, openQuestions: 4, unresolvedAssumptions: 3, drift: 2 },
       nextMeeting: next
         ? { ...next, projectName: next.projectName, unresolved: 2 }
         : null,
@@ -551,7 +564,7 @@ function route(path: string, method: string): Response | null {
   if (path.includes("/api/admin/users")) {
     return json({
       users: [
-        { id: "u_dana", orgId: "org_demo", orgName: "Demo workspace", email: "dana@demo.co", name: "Dana Reviewer", role: "admin", status: "active", authProvider: "password", plan: "beta", createdAt: at(-40 * 24 * 60 * 60_000), lastActiveAt: at(-5 * 60_000), sessionCount: 14 },
+        { id: "u_dana", orgId: "org_demo", orgName: "Demo workspace", email: "dana@demo.co", name: "Dana Reviewer", role: "facilitator", status: "active", authProvider: "password", plan: "beta", createdAt: at(-40 * 24 * 60 * 60_000), lastActiveAt: at(-5 * 60_000), sessionCount: 14 },
         { id: "u_mike", orgId: "org_demo", orgName: "Demo workspace", email: "mike@demo.co", name: "Mike R.", role: "facilitator", status: "active", authProvider: "google", plan: "beta", createdAt: at(-30 * 24 * 60 * 60_000), lastActiveAt: at(-3 * 60 * 60_000), sessionCount: 7 },
         { id: "u_alex", orgId: "org_demo", orgName: "Demo workspace", email: "alex@demo.co", name: "Alex T.", role: "participant", status: "suspended", authProvider: "password", plan: "beta", createdAt: at(-12 * 24 * 60 * 60_000), lastActiveAt: at(-6 * 24 * 60 * 60_000), sessionCount: 0 },
       ],

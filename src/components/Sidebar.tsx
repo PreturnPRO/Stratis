@@ -79,14 +79,14 @@ export default function Sidebar({
   active,
   onNav,
   onLogout,
-  isAdmin = false,
+  isPlatformAdmin = false,
   onFeedback,
 }: {
   active: string;
   onNav: (id: string) => void;
   onLogout?: () => void;
   /** Admin is the only nav entry that is not for everyone. */
-  isAdmin?: boolean;
+  isPlatformAdmin?: boolean;
   onFeedback?: () => void;
 }) {
   const { user } = useAuth();
@@ -113,6 +113,19 @@ export default function Sidebar({
   const displayName = user?.name ?? "Guest";
   const initials    = nameToInitials(displayName);
   const avatarColor = user ? nameToColor(user.name) : colors.textDim;
+
+  /**
+   * The picture the profile has been storing all along.
+   *
+   * `avatarUrl` was saved, returned by the API and re-read on every refresh —
+   * and drawn by nothing, so setting it looked like a save that did not take.
+   * A link that 404s falls back to the initials rather than a broken-image
+   * glyph, and the flag resets when the link changes so a corrected URL is
+   * tried again.
+   */
+  const avatarUrl = user?.avatarUrl?.trim() || null;
+  const [avatarBroken, setAvatarBroken] = useState(false);
+  useEffect(() => setAvatarBroken(false), [avatarUrl]);
 
   const onRailClick = (e: ReactMouseEvent) => {
     if (expanded) return;
@@ -196,7 +209,7 @@ export default function Sidebar({
           is expanded: on the icon rail they would be noise. */}
       {NAV_GROUPS.flatMap((group) =>
         (group.items as { id: string; icon: string; label: string }[])
-          .filter((item) => item.id !== "admin" || isAdmin)
+          .filter((item) => item.id !== "admin" || isPlatformAdmin)
           .map((item, indexInGroup) => ({ group, item, indexInGroup })),
       ).map(({ group, item, indexInGroup }) => {
         const isActive = active === item.id;
@@ -312,14 +325,28 @@ export default function Sidebar({
             transition: "width 0.2s cubic-bezier(.4,0,.2,1)",
           }}
         >
-          <span style={{
-            width: 34, height: 34, borderRadius: "50%", flexShrink: 0,
-            background: avatarColor,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: FONT.size.label, fontWeight: 600, color: "#fff",
-          }}>
-            {initials}
-          </span>
+          {avatarUrl && !avatarBroken ? (
+            <img
+              src={avatarUrl}
+              alt=""
+              width={34}
+              height={34}
+              onError={() => setAvatarBroken(true)}
+              style={{
+                width: 34, height: 34, borderRadius: "50%", flexShrink: 0,
+                objectFit: "cover", background: colors.surfaceHover,
+              }}
+            />
+          ) : (
+            <span style={{
+              width: 34, height: 34, borderRadius: "50%", flexShrink: 0,
+              background: avatarColor,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: FONT.size.label, fontWeight: 600, color: "#fff",
+            }}>
+              {initials}
+            </span>
+          )}
           <span style={{
             fontSize: FONT.size.body, fontWeight: 500, whiteSpace: "nowrap", color: colors.text,
             opacity: expanded ? 1 : 0, transition: "opacity 0.15s",

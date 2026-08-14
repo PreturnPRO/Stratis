@@ -109,35 +109,42 @@ export function requireRole(...roles: Role[]) {
   };
 }
 
-/** Workspace admin only. */
-export const requireAdmin = requireRole("admin");
+/**
+ * The workspace's owner. There is no admin role: the facilitator runs the
+ * meetings and therefore owns the team, the invites and the plan.
+ */
+export const requireFacilitator = requireRole("facilitator");
 
 /**
- * Platform operator — the Stratis team, as opposed to a workspace admin, who is
- * a customer and must never see another workspace's data.
+ * Platform operator — the Stratis team, as opposed to a facilitator, who is a
+ * customer and must never see another workspace's data.
  *
  * The identity comes from the database row behind the token, never from the
  * request. An earlier version of this read the actor's email from an
  * `x-actor-email` header, which any caller can set to whatever it likes.
  */
-export async function requirePlatformAdmin(req: Request, res: Response, next: NextFunction) {
-  if (!req.auth) return res.status(401).json({ ok: false, error: "Not authenticated" });
-
+/**
+ * Read at call time, not at import: the allowlist is an environment variable an
+ * operator can change on the host without a redeploy.
+ * An empty list means nobody is an operator — never everybody.
+ */
+export function isPlatformOperator(email: string | null | undefined): boolean {
+  if (!email) return false;
   const allowlist = (process.env.PLATFORM_ADMIN_EMAILS ?? "")
     .split(",")
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
+  return allowlist.includes(email.toLowerCase());
+}
 
-  if (allowlist.length === 0) {
-    return res.status(403).json({ ok: false, error: "Platform operators only" });
-  }
+export async function requirePlatformAdmin(req: Request, res: Response, next: NextFunction) {
+  if (!req.auth) return res.status(401).json({ ok: false, error: "Not authenticated" });
 
   try {
     const result = await db.query<{ email: string }>(`SELECT email FROM users WHERE id = $1`, [
       req.auth.sub,
     ]);
-    const email = result.rows[0]?.email?.toLowerCase();
-    if (!email || !allowlist.includes(email)) {
+    if (!isPlatformOperator(result.rows[0]?.email)) {
       return res.status(403).json({ ok: false, error: "Platform operators only" });
     }
     next();

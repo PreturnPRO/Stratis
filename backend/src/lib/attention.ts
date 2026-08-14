@@ -72,6 +72,58 @@ export async function attentionCounts(orgId: string, userId: string): Promise<At
 }
 
 /**
+ * The same backlog, split by what kind of gap it is.
+ *
+ * The three counts above answer "how much is outstanding". This answers "of
+ * what sort", which is the question that decides where you start: a drift alert
+ * and an unchecked assumption need different meetings. The four categories are
+ * the four `live_cards.card_type` values — not a new taxonomy invented for the
+ * dashboard, so a row can never show a number the meeting screen disagrees
+ * with.
+ *
+ * Answered and dismissed cards are excluded: this is what is still open.
+ */
+export interface AgendaBreakdown {
+  missingDecision: number;
+  openQuestions: number;
+  unresolvedAssumptions: number;
+  drift: number;
+}
+
+export async function agendaBreakdown(orgId: string, userId: string): Promise<AgendaBreakdown> {
+  const result = await db.query<{
+    missing_decision: string;
+    open_questions: string;
+    unresolved_assumptions: string;
+    drift: string;
+  }>(
+    `
+    SELECT
+      COUNT(*) FILTER (WHERE c.card_type = 'MISSING_DECISION')       AS missing_decision,
+      COUNT(*) FILTER (WHERE c.card_type = 'QUESTION_SUGGESTION')    AS open_questions,
+      COUNT(*) FILTER (WHERE c.card_type = 'UNRESOLVED_ASSUMPTION')  AS unresolved_assumptions,
+      COUNT(*) FILTER (WHERE c.card_type = 'DRIFT_ALERT')            AS drift
+    FROM live_cards c
+    JOIN sessions s ON s.id = c.session_id
+    JOIN meetings m ON m.id = s.meeting_id
+    WHERE m.org_id = $1
+      AND m.created_by = $2
+      AND c.answered = FALSE
+      AND c.state NOT IN ('DISMISSED', 'ANSWERED')
+    `,
+    [orgId, userId],
+  );
+
+  const row = result.rows[0];
+  return {
+    missingDecision: Number(row?.missing_decision ?? 0),
+    openQuestions: Number(row?.open_questions ?? 0),
+    unresolvedAssumptions: Number(row?.unresolved_assumptions ?? 0),
+    drift: Number(row?.drift ?? 0),
+  };
+}
+
+/**
  * What the team actually settled, newest first.
  *
  * "Recent summaries" answers "what happened"; this answers "what did we

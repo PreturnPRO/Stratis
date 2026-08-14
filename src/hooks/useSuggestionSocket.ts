@@ -47,7 +47,7 @@ export interface SuggestionSocketHandlers {
 
 export interface UseSuggestionSocketReturn {
   cards: UICard[]
-  role: 'facilitator' | 'participant' | 'admin' | null
+  role: 'facilitator' | 'participant' | null
   connected: boolean
   markAnswered: (id: string) => void
   markActive: (id: string) => void

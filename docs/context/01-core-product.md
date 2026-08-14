@@ -61,6 +61,11 @@ Workspace-based subscription — one price for the team, no per-seat maths.
 "monthly/yearly workspace subscription". The plans page is a **wishlist**: Pro is
 not on sale, the button adds interest so the team can email them later.
 
+**Two roles.** A **facilitator** runs meetings and owns the workspace — team,
+invites, plan, beta codes. A **participant** joins meetings; they need no
+workspace of their own. There is no admin role, and the Stratis team's own
+access is an email allowlist, not a role. See `03-engineering.md`.
+
 | Plan | Carries |
 |---|---|
 | **Free** | `live_suggestions`, `checkpoint`, `pm_document`, `session_invites`, `guest_access` |
@@ -75,6 +80,12 @@ The reasoning:
   only makes the room smaller.
 - **Pro sells taking the record out** (`transcript_export`) and cosmetics
   (`custom_theme`).
+- **Light and dark are free on every plan.** `custom_theme` covers the workspace
+  *colour* only — the eight accents and the custom picker. A theme is how a room
+  is lit: a facilitator on a projector needs light, one in an evening meeting
+  needs dark, and charging either of them for being able to read the screen sells
+  nothing and reads as petty. The colour is the part that is decoration, so the
+  colour is the part that is Pro.
 - **Locked ≠ hidden.** Pro features render in full with a lock badge; pressing
   one explains what it is and links to the plans page. A customer has to see the
   product to want it. Use the `ProLock` component.

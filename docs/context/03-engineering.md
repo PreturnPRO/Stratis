@@ -22,13 +22,23 @@ reports the resolved provider names for exactly this reason.
 ## Multi-tenancy — the rule that keeps being broken
 
 **Every query that reads or writes meeting content must be scoped by
-`org_id`, and `role === "admin"` is never a substitute for it.**
+`org_id`, and no role is ever a substitute for it.**
 
-- "admin" is a role *inside one workspace*. Signup lets an account choose it, so
-  an unscoped admin check is an open door for anyone who can register.
-- An admin administers the workspace — accounts, plan, settings. That is **not**
-  entitlement to read someone else's meeting. Transcripts, sessions, documents
-  and summaries are scoped to the facilitator who ran them.
+- **There are two roles: `facilitator` and `participant`.** The workspace-admin
+  role is gone — it was self-declared at signup, so every check written against
+  it was an open door for anyone who could register. The facilitator owns the
+  workspace: team, invites, plan, beta-code redemption.
+- **The Stratis team is not a role.** `PLATFORM_ADMIN_EMAILS` +
+  `requirePlatformAdmin` is the only operator path, it is resolved from the
+  database row behind the token, and it reaches usage and beta codes — never a
+  meeting. `User.platformAdmin` is the client's copy of that answer and decides
+  only what to render.
+- Owning the workspace is **not** entitlement to read someone else's meeting.
+  Transcripts, sessions, documents and summaries are scoped to the facilitator
+  who ran them.
+- `/api/admin` holds both kinds of route, so **no blanket `.use()` role guard**:
+  each route names `requireFacilitator` or `requirePlatformAdmin`, and
+  `adminGuards.test.ts` fails the build if one does not.
 - Two people entitled to write one project document is how it forks.
 - **A route that takes a session id must prove the caller owns it.** Five routes
   in `ai.ts` had `requireAuth` and nothing else, so any account could read

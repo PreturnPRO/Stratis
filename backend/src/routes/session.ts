@@ -13,6 +13,7 @@ import {
   type DecisionPatch,
 } from "../lib/decisions";
 import { generateAndSaveSummary } from "../lib/summaryStore";
+import { writeSessionRollup } from "../lib/rollups";
 import { effectivePlan } from "../lib/plans";
 import { recordedMinutesExceeded } from "../lib/entitlements";
 import { AUTH_ERROR_CODES } from "@shared/types";
@@ -158,6 +159,13 @@ export async function endSession(sessionId: string, endedAt?: string): Promise<a
 
   clearProjectDocCache(session.id);
   forgetSession(session.id);
+
+  // Counted here, once, so the operator console never aggregates live. Failing
+  // to write a rollup must not fail the end of a meeting: the meeting is the
+  // product, the count is a report.
+  void writeSessionRollup(session.id).catch((err) =>
+    console.error(`[session:end] usage rollup failed for ${session.id}:`, err),
+  );
 
   void extractAndSaveDecisions(session.id)
     .catch((err) =>

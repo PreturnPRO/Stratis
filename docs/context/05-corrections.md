@@ -8,6 +8,73 @@ Add an entry only after a fix is approved. Newest first.
 
 ---
 
+## 2026-08-14 — The room may correct its own record
+
+**Decision:** participants holding the meeting code can now edit checkpoint
+items — wording, owner, date, done — and read the transcript, without an
+account. Chosen over "code to view, account to edit" knowing the trade: the
+code is a shared secret, so it is now as sensitive as the record itself.
+Revoking the invite kills every token minted from it, which is the mitigation.
+
+Dismissing an item and setting a decision's status stay with the facilitator.
+Those decide what the record *is*, not what it says.
+
+Usage for the operator console is read from `session_rollups`, written once
+when a meeting ends. Never aggregate live for that screen: on a launch morning
+every operator refresh would otherwise scan every workspace's sessions and
+transcripts on the database that is recording the meetings.
+
+→ `03-engineering.md` (multi-tenancy, guests).
+
+## 2026-08-14 — Admin was a workspace role, and should not have existed
+
+**Correction:** *"the admin however is not for the user — which we tested it and
+found out that instead of Stratis admin it just an organizer admin which is out
+of the scope"*.
+
+Two roles now: `facilitator` and `participant`. The facilitator inherits
+everything the workspace admin could do (team, invites, plan request, beta-code
+redemption) and those screens moved to **Settings → Workspace**. `/admin` is the
+Stratis operator console, shown only to `PLATFORM_ADMIN_EMAILS`.
+
+Two capabilities were deliberately dropped rather than handed to every
+facilitator: seeing the whole workspace's invite links, and revoking someone
+else's. You see and revoke the links you made — widening that to every
+facilitator would have handed each of them the others' live join links.
+
+→ `03-engineering.md` (multi-tenancy), `01-core-product.md` (roles).
+
+## 2026-08-14 — A stored value nothing draws is not saved
+
+**What happened:** the profile picture "would not update". It was saving
+correctly the whole time — `avatar_url` was written, returned by `/api/profile`
+and re-read on every refresh. Nothing in the UI ever rendered it, so the only
+evidence the save existed was the field you had just typed into.
+
+Before calling a write path broken, check that something reads it. Search for
+the field name across `src/` — one hit in the form and none anywhere else is the
+signature.
+
+→ `02-ux-ui.md` already bans half-wired controls; this is the read side of the
+same rule.
+
+## 2026-08-14 — Dark mode is not a paid feature
+
+**Decision:** *"I want to make the theme to be free use on black and white but
+the colors should be pro"*.
+
+The `custom_theme` lock covered light/dark and the accent together, so a Free
+workspace could not turn the lights off. Light and dark are now free on every
+plan; the eight accents and the custom picker stay behind `ProLock`. Free keeps
+the default matcha accent — deliberately not swapped for a neutral grey, so no
+existing workspace changes appearance.
+
+The feature key is still `custom_theme` (it now means the colour), and the
+pricing label changed to match: a plan page that still advertised "Dark mode"
+as Pro would be selling something already given away.
+
+→ `01-core-product.md` (plan gating).
+
 ## 2026-08-12 — Verify against the DOM, not computed style
 
 **Correction:** *"then you should fix that problem"* — after I reported a

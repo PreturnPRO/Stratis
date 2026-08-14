@@ -85,6 +85,17 @@ export const TH: Record<string, string> = {
   "A core assumption no one has tested.":
     "เป็นข้อสมมติสำคัญที่ยังไม่มีใครทดสอบ",
 
+  // --- Room: the participant's own corrections ---
+  "Fix the details": "แก้ไขรายละเอียด",
+  "Who owns it": "ใครรับผิดชอบ",
+  "By when": "ภายในเมื่อไร",
+  "What was decided": "สิ่งที่ตัดสินใจ",
+  "Read the transcript": "อ่านบันทึกการสนทนา",
+  "Hide the transcript": "ซ่อนบันทึกการสนทนา",
+  "Nothing has been transcribed yet.": "ยังไม่มีบันทึกการสนทนา",
+  "That change did not save": "บันทึกการแก้ไขไม่สำเร็จ",
+  "Could not load the transcript": "โหลดบันทึกการสนทนาไม่สำเร็จ",
+
   // --- Room code (participants) ---
   "Join the room": "เข้าร่วมห้องประชุม",
   "Type the code the facilitator read out.": "พิมพ์รหัสที่ผู้ดำเนินการประชุมอ่านให้ฟัง",
@@ -121,12 +132,13 @@ export const TH: Record<string, string> = {
   PRO: "PRO",
   "See what Pro includes →": "ดูว่าแพ็กเกจ Pro มีอะไรบ้าง →",
   "Not now": "ไว้ทีหลัง",
-  "Theme and workspace colour": "ธีมและสีของเวิร์กสเปซ",
-  "Theme and workspace colour is part of Pro": "ธีมและสีของเวิร์กสเปซเป็นฟีเจอร์ของแพ็กเกจ Pro",
+  "Workspace colour": "สีของเวิร์กสเปซ",
+  "Workspace colour is part of Pro": "สีของเวิร์กสเปซเป็นฟีเจอร์ของแพ็กเกจ Pro",
+  "Workspace colour — part of Pro": "สีของเวิร์กสเปซ — ฟีเจอร์ของแพ็กเกจ Pro",
   "Exporting the record": "การส่งออกบันทึกการประชุม",
   "Exporting the record is part of Pro": "การส่งออกบันทึกการประชุมเป็นฟีเจอร์ของแพ็กเกจ Pro",
-  "Dark mode, eight workspace colours, and any custom colour you like.":
-    "โหมดมืด สีเวิร์กสเปซ 8 แบบ และสีที่คุณกำหนดเองได้ตามต้องการ",
+  "Eight workspace colours, and any custom colour you like.":
+    "สีเวิร์กสเปซ 8 แบบ และสีที่คุณกำหนดเองได้ตามต้องการ",
   "Take the summary out of Stratis as a file you can paste into LINE, email or Notion.":
     "นำสรุปออกจาก Stratis เป็นไฟล์ที่วางลงใน LINE อีเมล หรือ Notion ได้",
   "Theme and workspace colour. Applies to this browser.":
@@ -144,8 +156,6 @@ export const TH: Record<string, string> = {
   Light: "สว่าง",
   Dark: "มืด",
   "See Pro →": "ดูแพ็กเกจ Pro →",
-  "Changing the theme is part of Pro. Your current theme stays as it is.":
-    "การเปลี่ยนธีมเป็นฟีเจอร์ของแพ็กเกจ Pro ธีมปัจจุบันของคุณจะยังคงเดิม",
   "Tells you when a project document is updated after a meeting.":
     "แจ้งเตือนเมื่อเอกสารโปรเจกต์ถูกอัปเดตหลังการประชุม",
 
@@ -227,6 +237,16 @@ export const TH: Record<string, string> = {
   "This link no longer works": "ลิงก์นี้ใช้ไม่ได้แล้ว",
   "Stratis records and transcribes the meeting to build the summary. Everyone in the room should know it is running.":
     "Stratis จะบันทึกและถอดเสียงการประชุมเพื่อใช้สร้างสรุป ทุกคนในห้องประชุมควรทราบว่าระบบกำลังทำงาน",
+
+  // --- Dashboard: the agenda panel ---
+  // The four rows are the four live-card types. "สิ่งที่ยังไม่ได้ข้อสรุป" is
+  // deliberately not "มติ" — see i18n-thai-style.md.
+  "Your agenda": "วาระการประชุมของคุณ",
+  "Might not be settled": "สิ่งที่อาจยังไม่ได้ข้อสรุป",
+  "Questions still open": "คำถามที่ยังค้างอยู่",
+  "Assumptions not checked": "ข้อสมมติที่ยังไม่ได้ตรวจสอบ",
+  "Might have gone off track": "ประเด็นที่อาจออกนอกทาง",
+  "Go to the docket": "ไปที่วาระการประชุม",
 
   // --- Dashboard ---
   "Welcome back,": "ยินดีต้อนรับกลับ",
@@ -486,6 +506,9 @@ export const TH: Record<string, string> = {
 
   // --- Pricing ---
   Plans: "แพ็กเกจ",
+  // The rest of FEATURE_LABELS in Pricing.tsx is still English — this one is
+  // here because the plan it describes changed.
+  "Workspace colours, including your own": "สีของเวิร์กสเปซ รวมถึงสีที่คุณกำหนดเอง",
   "Your plan": "แพ็กเกจของคุณ",
   current: "ปัจจุบัน",
   "What happens when you request an upgrade": "เมื่อคุณขออัปเกรดจะเกิดอะไรขึ้น",

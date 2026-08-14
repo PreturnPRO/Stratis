@@ -312,7 +312,7 @@ function SystemNotice({
 }
 
 function AppShell() {
-  const { isAuthed, logout, isAdmin, endedReason, clearEndedReason } = useAuth();
+  const { isAuthed, logout, isPlatformAdmin, endedReason, clearEndedReason } = useAuth();
   const [authPage, setAuthPage] = useState<AuthPage>(() => readAuthPageFromHash() ?? "landing");
   const initialEntry = hashToEntry();
   const [active, setActive] = useState<AppPage>(initialEntry.page);
@@ -664,7 +664,7 @@ function AppShell() {
           logout();
           setAuthPage("landing");
         }}
-        isAdmin={isAdmin}
+        isPlatformAdmin={isPlatformAdmin}
         onFeedback={() => setFeedbackOpen(true)}
       />
 

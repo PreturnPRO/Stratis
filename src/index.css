@@ -382,6 +382,54 @@ body[data-theme="light"] .transcript-scroll:hover {
   }
 }
 
+/* ── Agenda icons ─────────────────────────────────────────────────────────── */
+
+/* Motion belongs to the row you are pointing at, and stops when you leave it.
+   Nothing here animates on its own — see DECISIONS.md §9. Only transform and
+   opacity are touched, so a hovered row composites without laying out or
+   repainting the panel behind it. */
+.agenda-icon * {
+  transition: transform 0.22s cubic-bezier(.34, 1.4, .64, 1), opacity 0.22s ease;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.agenda-row:hover .agenda-icon-dot,
+.agenda-row:focus-visible .agenda-icon-dot {
+  transform: scale(1.35);
+}
+
+/* The loose end pulls a little further out — the thread not tied off. */
+.agenda-row:hover .agenda-icon-tail,
+.agenda-row:focus-visible .agenda-icon-tail {
+  transform: translateX(1.2px);
+  opacity: 0.85;
+}
+
+.agenda-row:hover .agenda-icon-ring,
+.agenda-row:focus-visible .agenda-icon-ring {
+  transform: scale(1.08);
+  opacity: 0.6;
+}
+
+/* The arrow leaves its track by another degree. */
+.agenda-row:hover .agenda-icon-arrow,
+.agenda-row:focus-visible .agenda-icon-arrow {
+  transform: translate(1.4px, -1.4px);
+}
+
+.agenda-row:hover .agenda-icon-draw,
+.agenda-row:focus-visible .agenda-icon-draw {
+  transform: translateY(-0.6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agenda-icon * {
+    transition: none;
+    transform: none !important;
+  }
+}
+
 /* ── Thai sizing ──────────────────────────────────────────────────────────── */
 
 /* Thai reads smaller than Latin at the same pixel size and its vowel and tone
