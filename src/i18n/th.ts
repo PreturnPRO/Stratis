@@ -716,6 +716,8 @@ export const TH: Record<string, string> = {
   "Next meeting": "การประชุมถัดไป",
   "Recent decisions": "การตัดสินใจล่าสุด",
   "Start meeting": "เริ่มการประชุม",
+  Recording: "กำลังบันทึกเสียง",
+  "Recording — back to the meeting": "กำลังบันทึกเสียง — กลับไปที่การประชุม",
   "Rejoin meeting": "กลับเข้าการประชุม",
   "Review what is unresolved": "ดูว่ายังเหลืออะไรที่ต้องตัดสินใจ",
   "No date yet": "ยังไม่ได้กำหนดวัน",

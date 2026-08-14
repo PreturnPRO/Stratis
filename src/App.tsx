@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 // default theme. Every colour in this shell comes from useTheme().
 import { FONT, LETTER_SPACING, RADIUS, SPACE } from "./constants";
 import { AuthProvider, useAuth } from "./context/AuthContext";
+import { RecordingProvider, useRecording } from "./context/RecordingContext";
 import Sidebar from "./components/Sidebar";
 import CurtainTransition, { type CurtainState } from "./components/CurtainTransition";
 import ErrorBoundary from "./components/ErrorBoundary";
@@ -113,7 +114,8 @@ function renderPage(
     case "projects":
       return <Projects onNav={handleNav} />;
     case "meeting":
-      return <Meeting onNav={handleNav} />;
+      // Rendered by the shell instead, in a slot that survives navigation.
+      return null;
     case "dashboard":
       return <Dashboard onNav={handleNav} />;
     case "summary":
@@ -316,6 +318,10 @@ function AppShell() {
   const [active, setActive] = useState<AppPage>(initialEntry.page);
   const [navParams, setNavParams] = useState<Record<string, string>>(initialEntry.params);
   const { theme, colors } = useTheme();
+  // The meeting screen stays mounted while it is on screen OR while it is
+  // recording — so navigating away hides it rather than ending the recording.
+  const { recording } = useRecording();
+  const meetingMounted = active === "meeting" || recording;
   const { chosen: langChosen } = useLang();
 
   const [entryRoute, setEntryRoute] = useState(() => readEntryRoute());
@@ -768,6 +774,42 @@ function AppShell() {
             >
               {PAGE_LABELS[active] ?? active}
             </span>
+
+            {/* A recording that survives navigation must never be a recording
+                you cannot see. This is the only always-visible sign that the
+                microphone is open, and the way back to it. */}
+            {recording && active !== "meeting" && (
+              <button
+                type="button"
+                onClick={() => handleNav("meeting")}
+                title="Recording — back to the meeting"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginLeft: 10,
+                  padding: "3px 9px",
+                  borderRadius: RADIUS.pill,
+                  border: `1px solid ${colors.red}`,
+                  background: "transparent",
+                  color: colors.red,
+                  fontSize: FONT.size.caption,
+                  cursor: "pointer",
+                }}
+              >
+                <span
+                  aria-hidden
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: "50%",
+                    background: colors.red,
+                    animation: "recPulse 1.5s ease-out infinite",
+                  }}
+                />
+                Recording
+              </button>
+            )}
           </div>
 
           <span
@@ -796,6 +838,7 @@ function AppShell() {
               flex: 1,
               overflow: "hidden",
               height: "100%",
+              display: active === "meeting" ? "none" : undefined,
             }}
           >
             <ErrorBoundary key={active} area={active}>
@@ -804,6 +847,30 @@ function AppShell() {
               </Suspense>
             </ErrorBoundary>
           </div>
+
+          {/* The meeting lives in its own slot, outside the keyed container, so
+              navigation cannot unmount it. Stopping a recording because someone
+              clicked Docket to check a date would lose the meeting; leaving the
+              old behaviour alone was worse still — the microphone stayed open
+              with no owner, kept uploading, and coming back mounted a second
+              recorder beside the first. It is hidden when another page is
+              showing, and dropped only once the recording has stopped. */}
+          {meetingMounted && (
+            <div
+              style={{
+                flex: 1,
+                overflow: "hidden",
+                height: "100%",
+                display: active === "meeting" ? undefined : "none",
+              }}
+            >
+              <ErrorBoundary area="meeting">
+                <Suspense fallback={<RouteFallback colors={colors} />}>
+                  <Meeting onNav={handleNav} />
+                </Suspense>
+              </ErrorBoundary>
+            </div>
+          )}
         </main>
       </div>
 
@@ -826,7 +893,9 @@ export default function App() {
       <ThemeProvider>
         <LangProvider>
           <AuthProvider>
+            <RecordingProvider>
             <AppShell />
+            </RecordingProvider>
           </AuthProvider>
         </LangProvider>
       </ThemeProvider>

@@ -19,6 +19,7 @@ import BlockRenderer from "../components/BlockRenderer";
 import { useAiBlocks } from "../hooks/useAiBlocks";
 import { useSuggestionSocket } from "../hooks/useSuggestionSocket";
 import { useAuth } from "../context/AuthContext";
+import { useRecording } from "../context/RecordingContext";
 import { useSessionRecovery } from "../hooks/useSessionRecovery";
 import { useMediaRecorder } from "../hooks/useMediaRecorder";
 import { usePcmStream } from "../hooks/usePcmStream";
@@ -168,6 +169,9 @@ function StatusDot({ color }: { color: string }) {
 export default function Meeting({ onNav }: MeetingProps) {
   const { colors } = useTheme();
   const { token, user } = useAuth();
+  // Tells the shell to keep this screen mounted. Navigation must not be able to
+  // end a recording that is in progress.
+  const { setRecording } = useRecording();
   const recovery = useSessionRecovery({ token });
   const ai = useAiBlocks();
 
@@ -206,6 +210,8 @@ export default function Meeting({ onNav }: MeetingProps) {
   const [liveText] = useState("");
   const [pendingText, setPendingText] = useState("");
   const inFlightChunksRef = useRef(0);
+  /** Consecutive upload failures. Reset by the first chunk that lands. */
+  const chunkFailuresRef = useRef(0);
   const [liveNotes, setLiveNotes] = useState("");
 
   const transcriptScrollRef = useRef<HTMLDivElement>(null);
@@ -411,8 +417,23 @@ export default function Meeting({ onNav }: MeetingProps) {
           ai.append(payload.ai.blocks, payload.ai.provider);
         }
       }
+      chunkFailuresRef.current = 0;
     } catch (err) {
+      // This is the fallback path — it runs when the WebSocket is already
+      // down, which is exactly when things are going wrong. Swallowing it
+      // meant the header showed LIVE and the AI showed "reviewing the
+      // conversation" for forty-five minutes over an empty transcript, and the
+      // facilitator found out at the end that there was no meeting.
+      //
+      // One failed chunk is normal on a flaky connection, so it stays quiet.
+      // Three in a row is not, and by then the transcript is missing minutes.
+      chunkFailuresRef.current += 1;
       console.warn("[speech:audio] Chunk rejected:", err);
+      if (chunkFailuresRef.current >= 3) {
+        setError(
+          "Audio is not reaching Stratis — the last few minutes may be missing from the transcript. Check the connection; recording continues.",
+        );
+      }
     } finally {
       inFlightChunksRef.current -= 1;
       if (inFlightChunksRef.current === 0) {
@@ -457,6 +478,7 @@ export default function Meeting({ onNav }: MeetingProps) {
 
   const startListening = () => {
     setIsRecording(true);
+    setRecording(true);
     if (USE_STREAMING_STT && connected) {
       streamingActiveRef.current = true;
       void pcm
@@ -480,6 +502,7 @@ export default function Meeting({ onNav }: MeetingProps) {
 
   const stopListening = () => {
     setIsRecording(false);
+    setRecording(false);
     if (streamingActiveRef.current) {
       streamingActiveRef.current = false;
       pcm.stop();
