@@ -216,7 +216,6 @@ export default function Meeting({ onNav }: MeetingProps) {
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [lastSpeechMs, setLastSpeechMs] = useState<number | null>(null);
 
-  const [liveText] = useState("");
   const [pendingText, setPendingText] = useState("");
   const inFlightChunksRef = useRef(0);
   /** Consecutive upload failures. Reset by the first chunk that lands. */
@@ -744,7 +743,7 @@ useEffect(() => {
     const el = transcriptScrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [transcripts, liveText, pendingText, stickToBottom]);
+  }, [transcripts, pendingText, stickToBottom]);
 
   const handleEndMeeting = async () => {
     if (!token || !sessionId) return;
@@ -1152,7 +1151,7 @@ useEffect(() => {
             >
               {loadingTranscript && transcripts.length === 0 ? (
                 <LoadingState count={3} />
-              ) : transcripts.length === 0 && !liveText && !pendingText ? (
+              ) : transcripts.length === 0 && !pendingText ? (
                 <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center" }}>
                   <EmptyState message="Ready for speech input. Tap 'Record' above to begin capture stream." />
                 </div>
@@ -1160,7 +1159,7 @@ useEffect(() => {
                 <>
                   {transcriptRows}
 
-                  {(pendingText || liveText) && (
+                  {pendingText && (
                     <div style={{ borderLeft: "2px solid transparent", paddingLeft: SPACE[2.5], paddingBottom: SPACE[2.5], opacity: 0.7 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                         <span style={{ fontWeight: 600, fontSize: FONT.size.body, color: colors.textMuted }}>
@@ -1171,7 +1170,7 @@ useEffect(() => {
                         </span>
                       </div>
                       <p style={{ margin: 0, fontSize: FONT.size.body, color: colors.textDim, lineHeight: 1.5, fontStyle: "italic" }}>
-                        {(pendingText + " " + liveText).trim()}{" "}
+                        {pendingText}{" "}
                         <span
                           aria-hidden
                           style={{ color: colors.accent, animation: "pulse 1.2s ease-in-out infinite" }}
