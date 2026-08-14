@@ -18,7 +18,7 @@ const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 
 /**
  * Facilitator by default, because that is who the meeting screens are for.
- * `?as=participant` shows the other role. Sticks like the mock flag itself, so
+ * There is no other role to show. Sticks like the mock flag itself, so
  * a reload keeps whichever you asked for.
  *
  * `?as=admin` is no longer a role — admin is not one. It now mocks the operator
@@ -31,7 +31,7 @@ function mockRole(): string {
   if (typeof window === "undefined") return "facilitator";
   const asked = new URLSearchParams(window.location.search).get("as");
   if (asked === "admin") window.localStorage.setItem(OPERATOR_KEY, "1");
-  if (asked === "facilitator" || asked === "participant") {
+  if (asked === "facilitator") {
     window.localStorage.setItem(ROLE_KEY, asked);
     return asked;
   }

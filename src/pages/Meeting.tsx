@@ -216,7 +216,6 @@ export default function Meeting({ onNav }: MeetingProps) {
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [lastSpeechMs, setLastSpeechMs] = useState<number | null>(null);
 
-  const [liveText] = useState("");
   const [pendingText, setPendingText] = useState("");
   const inFlightChunksRef = useRef(0);
   /** Consecutive upload failures. Reset by the first chunk that lands. */
@@ -358,7 +357,15 @@ export default function Meeting({ onNav }: MeetingProps) {
   const [openingRoom, setOpeningRoom] = useState(false);
   const [reactions, setReactions] = useState<Record<string, DecisionReactions>>({});
 
-  const openRoom = useCallback(async () => {
+  /**
+   * `silent` is for the automatic call on arrival.
+   *
+   * Opening the room is now something the meeting does for you, and a failure
+   * you did not ask for must not paint an error across a page that is otherwise
+   * working — that is the load-versus-action rule in 02-ux-ui. Press the button
+   * and you get told what went wrong; arrive at the screen and you do not.
+   */
+  const openRoom = useCallback(async (silent = false) => {
     if (!sessionId || openingRoom) return;
     setOpeningRoom(true);
     try {
@@ -367,12 +374,12 @@ export default function Meeting({ onNav }: MeetingProps) {
       });
       setRoomCode(data.code);
     } catch (err) {
-      // Joining a room is free; opening one is Pro. A Free workspace pressing
-      // this is being sold to, not failing, so it must not read as a fault.
+      if (silent) return;
+      // The room is on every plan now. A PLAN_REQUIRED here means an older
+      // backend is still serving this client, which is a deploy skew rather
+      // than something to sell the facilitator on mid-meeting.
       if (err instanceof ApiError && err.code === "PLAN_REQUIRED") {
-        setError(
-          "Opening the room to participants is part of Pro. Anyone you invite still joins free — see Settings › Plan to upgrade.",
-        );
+        setError("The room could not be opened on this server version. Reload and try again.");
       } else {
         setError(err instanceof Error ? err.message : "Could not open the room");
       }
@@ -392,7 +399,7 @@ export default function Meeting({ onNav }: MeetingProps) {
    */
   useEffect(() => {
     if (!sessionId || roomCode || openingRoom) return;
-    void openRoom();
+    void openRoom(true);
   }, [sessionId, roomCode, openingRoom, openRoom]);
 
   /** Who is actually in the room. Polled while the meeting is on screen. */
@@ -736,7 +743,7 @@ useEffect(() => {
     const el = transcriptScrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [transcripts, liveText, pendingText, stickToBottom]);
+  }, [transcripts, pendingText, stickToBottom]);
 
   const handleEndMeeting = async () => {
     if (!token || !sessionId) return;
@@ -1144,7 +1151,7 @@ useEffect(() => {
             >
               {loadingTranscript && transcripts.length === 0 ? (
                 <LoadingState count={3} />
-              ) : transcripts.length === 0 && !liveText && !pendingText ? (
+              ) : transcripts.length === 0 && !pendingText ? (
                 <div style={{ display: "flex", height: "100%", alignItems: "center", justifyContent: "center" }}>
                   <EmptyState message="Ready for speech input. Tap 'Record' above to begin capture stream." />
                 </div>
@@ -1152,7 +1159,7 @@ useEffect(() => {
                 <>
                   {transcriptRows}
 
-                  {(pendingText || liveText) && (
+                  {pendingText && (
                     <div style={{ borderLeft: "2px solid transparent", paddingLeft: SPACE[2.5], paddingBottom: SPACE[2.5], opacity: 0.7 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                         <span style={{ fontWeight: 600, fontSize: FONT.size.body, color: colors.textMuted }}>
@@ -1163,7 +1170,7 @@ useEffect(() => {
                         </span>
                       </div>
                       <p style={{ margin: 0, fontSize: FONT.size.body, color: colors.textDim, lineHeight: 1.5, fontStyle: "italic" }}>
-                        {(pendingText + " " + liveText).trim()}{" "}
+                        {pendingText}{" "}
                         <span
                           aria-hidden
                           style={{ color: colors.accent, animation: "pulse 1.2s ease-in-out infinite" }}

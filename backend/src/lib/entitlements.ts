@@ -30,8 +30,6 @@ export async function getUsage(orgId: string): Promise<PlanUsage> {
     meetings_this_month: string;
     sessions_this_month: string;
     recorded_minutes_this_month: string;
-    projects_used: string;
-    seats_used: string;
   }>(
     `SELECT
        (SELECT COUNT(*) FROM meetings
@@ -50,9 +48,8 @@ export async function getUsage(orgId: string): Promise<PlanUsage> {
          WHERE m.org_id = $1
            AND s.started_at IS NOT NULL
            AND s.started_at >= date_trunc('month', NOW())) AS recorded_minutes_this_month,
-       (SELECT COUNT(*) FROM projects WHERE org_id = $1) AS projects_used,
-       (SELECT COUNT(*) FROM users
-         WHERE org_id = $1 AND status = 'active') AS seats_used`,
+       0 AS reserved -- placeholder: the seat and project counts were read by
+                     -- screens that no longer exist`,
     [orgId],
   );
 
@@ -61,8 +58,6 @@ export async function getUsage(orgId: string): Promise<PlanUsage> {
     meetingsThisMonth: Number(row?.meetings_this_month ?? 0),
     sessionsThisMonth: Number(row?.sessions_this_month ?? 0),
     recordedMinutesThisMonth: Number(row?.recorded_minutes_this_month ?? 0),
-    projectsUsed: Number(row?.projects_used ?? 0),
-    seatsUsed: Number(row?.seats_used ?? 0),
   };
 }
 

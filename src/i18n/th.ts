@@ -762,7 +762,9 @@ export const TH: Record<string, string> = {
     "ยังไม่มีการประชุมที่กำลังดำเนินอยู่ เริ่มการประชุมแล้ว Stratis จะติดตามว่ายังเหลืออะไรที่ต้องตัดสินใจ",
 
   // --- Sidebar groups ---
-  Workspace: "เวิร์กสเปซ",
+  // The sidebar group above Projects / Meeting / Document. Not "เวิร์กสเปซ":
+  // there is no workspace, and the group is the person's own work.
+  "Your work": "งานของคุณ",
 
   // --- Docket: carrying questions into a meeting ---
   Clear: "ล้างที่เลือก",

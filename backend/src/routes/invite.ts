@@ -168,7 +168,7 @@ inviteRouter.get("/preview/:token", inviteLimiter, async (req, res) => {
 
     if (!check.ok) {
       const preview: InvitePreview = {
-        kind: "workspace",
+        kind: "session",
         role: "participant",
         orgName: "",
         meetingTitle: null,

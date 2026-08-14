@@ -51,7 +51,7 @@ export default function Join({
     setError(null);
     try {
       const data = await apiFetch<{
-        kind: "workspace" | "session";
+        kind: "session";
         sessionId?: string;
         reauthRequired?: boolean;
       }>(`/api/invite/${encodeURIComponent(token)}/accept`, { method: "POST" });
@@ -156,12 +156,9 @@ export default function Join({
     );
   }
 
-  const heading =
-    preview.kind === "session"
-      ? preview.meetingTitle
-        ? `Join “${preview.meetingTitle}”`
-        : "Join this meeting"
-      : `Join ${preview.orgName}`;
+  // Every link is a link into one meeting now — there is no workspace to be
+  // invited to, so the "Join <workspace>" branch went with it.
+  const heading = preview.meetingTitle ? `Join “${preview.meetingTitle}”` : "Join this meeting";
 
   return frame(
     <>
@@ -170,11 +167,9 @@ export default function Join({
       <Card
         title={heading}
         description={
-          preview.kind === "session"
-            ? preview.sessionStatus === "ended"
-              ? "This meeting has already ended — you can still join to see the summary."
-              : "You have been invited to a meeting on Stratis."
-            : `You have been invited to ${preview.orgName} as a ${preview.role}.`
+          preview.sessionStatus === "ended"
+            ? "This meeting has already ended — you can still join to see the summary."
+            : "You have been invited to a meeting on Stratis."
         }
       >
         {isAuthed ? (

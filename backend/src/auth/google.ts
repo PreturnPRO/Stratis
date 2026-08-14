@@ -8,7 +8,6 @@ import { PUBLIC_USER_COLUMNS, toPublicUser, type PublicUserRow } from "../lib/pu
 import { authLimiter } from "../middleware/rateLimit";
 import { newId, now } from "../lib/ids";
 import { signToken } from "./jwt";
-import { consumeInviteForSignup, peekWorkspaceInvite } from "../lib/invites";
 
 export const googleRouter = Router();
 
@@ -68,9 +67,14 @@ async function verifyGoogleIdToken(idToken: string): Promise<GoogleIdToken> {
 }
 
 /**
- * The `state` parameter, signed. It carries the invite the user arrived with
- * through the round trip to Google and back, and its signature is what makes
- * the callback resistant to a forged request.
+ * The `state` parameter, signed — its signature is what makes the callback
+ * resistant to a forged request.
+ *
+ * It used to carry an invite through the round trip to Google, back when
+ * signing up could join you to somebody's workspace. Nothing joins anything at
+ * signup now: a participant needs no account, and a colleague signs up for
+ * their own Stratis. `invite` is still accepted on the way in and ignored, so
+ * an old link in somebody's inbox signs them in rather than erroring.
  */
 interface OAuthState {
   nonce: string;
@@ -164,7 +168,7 @@ googleRouter.get("/google/callback", async (req, res) => {
     }
 
     const profile = await verifyGoogleIdToken(tokens.id_token);
-    const result = await upsertGoogleUser(profile, state.invite);
+    const result = await upsertGoogleUser(profile);
 
     if ("error" in result) return res.redirect(landing({ error: result.error }));
     return res.redirect(landing({ token: result.token }));
@@ -188,7 +192,6 @@ interface GoogleUpsertOk {
  */
 async function upsertGoogleUser(
   profile: GoogleIdToken,
-  inviteToken?: string,
 ): Promise<GoogleUpsertOk | { error: string }> {
   const email = profile.email.toLowerCase();
   const ts = now();
@@ -257,7 +260,6 @@ async function upsertGoogleUser(
     ],
   );
 
-  if (inviteToken) await consumeInviteForSignup(inviteToken, userId, profile.name ?? email);
 
   return { token: signToken({ sub: userId, orgId, role }), userId };
 }
@@ -276,8 +278,7 @@ googleRouter.post("/google/id-token", authLimiter, async (req, res) => {
     if (!credential) return res.status(400).json({ ok: false, error: "credential is required" });
 
     const profile = await verifyGoogleIdToken(credential);
-    const invite = typeof req.body?.invite === "string" ? req.body.invite : undefined;
-    const result = await upsertGoogleUser(profile, invite);
+    const result = await upsertGoogleUser(profile);
     if ("error" in result) return res.status(403).json({ ok: false, error: result.error });
 
     // Named columns, not `SELECT *`: this response used to carry the row

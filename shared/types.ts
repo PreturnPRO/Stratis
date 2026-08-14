@@ -405,11 +405,9 @@ export interface OrgPlanState {
 
 export interface PlanUsage {
   meetingsThisMonth: number;
-  seatsUsed: number;
   sessionsThisMonth: number;
   /** Minutes recorded this calendar month, running sessions included. */
   recordedMinutesThisMonth: number;
-  projectsUsed: number;
 }
 
 export interface SubscriptionView {
@@ -438,7 +436,7 @@ export interface PlanRequest {
 // INVITES & GUESTS
 // ============================================================
 
-export type InviteKind = "workspace" | "session";
+export type InviteKind = "session";
 
 export interface InviteRecord {
   id: string;
