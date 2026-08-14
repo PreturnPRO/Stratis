@@ -75,3 +75,34 @@ Five of six Settings toggles were writing values nothing read. A control either
 does something or is deleted.
 
 → `02-ux-ui.md` (nothing half-wired), `01-core-product.md` (no email).
+
+## 2026-08-14 — A recording outranks navigation
+
+**Correction:** *"is it occurred when we just navigating or always happening?
+since it listen through browser and we want nothing else to interrupt it"*
+
+An overnight audit found the microphone still live after leaving the meeting
+screen, and the first fix stopped capture on unmount. Wrong trade: a
+facilitator who clicks Docket mid-meeting to check a date would lose the
+recording, and a recording is the one thing here that cannot be redone.
+
+The meeting now lives in a slot outside the keyed page container — mounted
+while it is on screen *or* recording, hidden rather than dropped — with a
+Recording chip in the header as the way back. Nothing may end a capture except
+the person who started it.
+
+→ `02-ux-ui.md` (the meeting outlives navigation).
+
+## 2026-08-14 — Verify the class, not the instance
+
+**What happened:** the overnight audit found four defects that typechecked
+clean and passed every test — a route family with no ownership check, a TEXT
+column compared to a timestamp, an ink token that could not match its own
+fill, and a race that inserted the checkpoint twice.
+
+Each fix ships with a test that reads the *source* rather than exercising it,
+because none of these can be caught at runtime without a database, a model
+call, or a browser: `sessionGuards`, `columnTypes`, `extractionLock`,
+`accentContrast`.
+
+→ `03-engineering.md` (mechanical checks for silent classes).

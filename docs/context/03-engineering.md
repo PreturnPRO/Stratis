@@ -30,14 +30,39 @@ reports the resolved provider names for exactly this reason.
   entitlement to read someone else's meeting. Transcripts, sessions, documents
   and summaries are scoped to the facilitator who ran them.
 - Two people entitled to write one project document is how it forks.
+- **A route that takes a session id must prove the caller owns it.** Five routes
+  in `ai.ts` had `requireAuth` and nothing else, so any account could read
+  another workspace's live cards and push cards onto a stranger's screen
+  mid-meeting. Use `requireSessionAccess()`; `sessionGuards.test.ts` fails the
+  build if a route file reads a session id without one.
+- **Global switches are operator switches.** `POST /admin/release` sets a
+  force-logout cutoff with no org column — behind `requireRole("admin")` that was
+  a product-wide kill switch reachable by anyone who signed up. Anything without
+  an `org_id` belongs behind `requirePlatformAdmin`.
 
 ## Concurrency
 
 Anything that reads a row, computes from it, and writes it back must run in
-`db.tx()` with `SELECT … FOR UPDATE` on the row it read. `db.query` takes a
+`db.tx()` with `SELECT … FOR UPDATE` on the row it read.
+
+**A guard that spans an await is not a guard.** `extractAndSaveDecisions` checked
+"no decisions yet" and then spent 90 seconds in the model before inserting, so
+the wrap-up warm-up and the End button both passed the check and both wrote —
+every decision twice, with fresh ids, which also reset the review state. Work
+that cannot be made atomic in SQL gets a per-key in-flight map, and callers await
+the run already in progress. `db.query` takes a
 connection per call, so a read-then-write built from it is **not atomic** — two
 requests interleave and both act on the same "before" state. This is what
 produced two overlapping PM document versions.
+
+## Types the database actually has
+
+`schema.sql` is the source of truth, and TypeScript cannot see it. `due_date` is
+**TEXT** — the room says "end of month" and we keep the phrase — so
+`due_date <= NOW()` does not return the wrong rows, it fails to *parse*, on zero
+rows, and takes the endpoint down for everyone. Compare only with a guarded cast.
+`columnTypes.test.ts` reads the declared types and fails the build on date
+arithmetic against TEXT.
 
 ## Costs and quotas
 
@@ -47,6 +72,12 @@ produced two overlapping PM document versions.
   limited. In-memory, single-instance scope — if the backend is ever scaled, the
   real limiter moves to the edge.
 - `bcrypt` async, never `*Sync`: the same event loop streams meeting audio.
+- **Bill for what happened, not for when you noticed.** The idle sweeper ends a
+  session at the last moment audio arrived; stamping its own clock charged 16
+  minutes of silence against a 30-minute monthly allowance.
+- **In-memory liveness is empty after a restart**, so every running meeting looks
+  abandoned. The sweeper waits out a grace period before its first pass, or it
+  ends live meetings and the client streams into a closed session.
 
 ## Gates
 
