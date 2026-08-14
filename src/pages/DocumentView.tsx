@@ -54,7 +54,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
   const { colors } = useTheme()
   const styles = useMemo(() => makeStyles(colors), [colors])
   const { user } = useAuth()
-  const isFacilitator = user?.role === 'facilitator' || user?.role === 'admin'
+  const isFacilitator = user?.role === 'facilitator'
 
   const onNavRef = useRef(onNav)
   useEffect(() => { onNavRef.current = onNav }, [onNav])

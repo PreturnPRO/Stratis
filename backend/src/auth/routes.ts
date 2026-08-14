@@ -11,7 +11,7 @@ import type {
 import { db } from "../db/database";
 import { newId, now } from "../lib/ids";
 import { signToken } from "./jwt";
-import { requireAuth } from "./middleware";
+import { isPlatformOperator, requireAuth } from "./middleware";
 import { authLimiter } from "../middleware/rateLimit";
 import { consumeInviteForSignup, peekWorkspaceInvite } from "../lib/invites";
 import { effectivePlan } from "../lib/plans";
@@ -33,9 +33,10 @@ const toUser = (r: UserRow): User => ({
   status: r.status ?? "active",
   authProvider: r.auth_provider ?? "password",
   avatarUrl: r.avatar_url ?? null,
+  platformAdmin: isPlatformOperator(r.email),
 });
 
-const VALID_ROLES: Role[] = ["facilitator", "participant", "admin"];
+const VALID_ROLES: Role[] = ["facilitator", "participant"];
 
 const EMAIL_SHAPE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 

@@ -111,7 +111,7 @@ billingRouter.get("/subscription", requireAuth, async (req, res) => {
  * fulfils it. That keeps demand measurable — and keeps the app from implying a
  * charge it cannot take.
  */
-billingRouter.post("/request", requireAuth, requireRole("admin", "facilitator"), async (req, res) => {
+billingRouter.post("/request", requireAuth, requireRole("facilitator"), async (req, res) => {
   try {
     const toPlan = req.body?.plan;
     if (!isPlanId(toPlan) || PLANS[toPlan].internal) {
@@ -172,7 +172,7 @@ billingRouter.post("/request", requireAuth, requireRole("admin", "facilitator"),
  * Assign a plan directly. Workspace admins can only downgrade themselves —
  * granting a paid tier is an operator action, or anyone could self-upgrade.
  */
-billingRouter.post("/assign", requireAuth, requireRole("admin"), async (req, res) => {
+billingRouter.post("/assign", requireAuth, requireRole("facilitator"), async (req, res) => {
   try {
     const plan = req.body?.plan;
     if (!isPlanId(plan)) return res.status(400).json({ ok: false, error: "Unknown plan" });
@@ -205,7 +205,7 @@ billingRouter.post("/assign", requireAuth, requireRole("admin"), async (req, res
  * depends on — the plan, how long it lasts, how many workspaces may use it —
  * is decided when the code is created, not here.
  */
-billingRouter.post("/redeem", requireAuth, requireRole("admin"), async (req, res) => {
+billingRouter.post("/redeem", requireAuth, requireRole("facilitator"), async (req, res) => {
   try {
     const raw = typeof req.body?.code === "string" ? req.body.code : "";
     if (!raw.trim()) return res.status(400).json({ ok: false, error: "Enter the code you were given" });

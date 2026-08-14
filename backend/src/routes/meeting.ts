@@ -5,7 +5,12 @@ import { newId, now } from "../lib/ids";
 import { enforceMeetingQuota, projectsExceeded } from "../lib/entitlements";
 import { effectivePlan } from "../lib/plans";
 import { AUTH_ERROR_CODES } from "@shared/types";
-import { attentionCounts, recentDecisions, unresolvedForProject } from "../lib/attention";
+import {
+  agendaBreakdown,
+  attentionCounts,
+  recentDecisions,
+  unresolvedForProject,
+} from "../lib/attention";
 
 export const meetingRouter = Router();
 
@@ -84,7 +89,6 @@ async function getMeeting(id: string): Promise<MeetingRow | undefined> {
 function canRead(req: Request, meeting: MeetingRow): boolean {
   if (!req.auth) return false;
   if (meeting.org_id !== req.auth.orgId) return false;
-  if (req.auth.role === "admin") return true;
   if (req.auth.role === "participant") return true;
   return meeting.created_by === req.auth.sub;
 }
@@ -367,8 +371,9 @@ meetingRouter.get("/dashboard", requireAuth, async (req, res) => {
     );
 
     // The decision state first — the counts are what the dashboard now opens on.
-    const [attention, decided] = await Promise.all([
+    const [attention, agenda, decided] = await Promise.all([
       attentionCounts(req.auth!.orgId, req.auth!.sub),
+      agendaBreakdown(req.auth!.orgId, req.auth!.sub),
       recentDecisions(req.auth!.orgId, req.auth!.sub, 4),
     ]);
 
@@ -389,6 +394,7 @@ meetingRouter.get("/dashboard", requireAuth, async (req, res) => {
       ok: true,
       data: {
         attention,
+        agenda,
         nextMeeting,
         recentDecisions: decided,
         upcomingMeetings: upcoming.rows.map(toDashboardMeeting),

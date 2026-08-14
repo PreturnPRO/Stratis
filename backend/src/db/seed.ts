@@ -106,7 +106,7 @@ async function seed() {
       adminId = "usr_admin";
       await db.query(
         `INSERT INTO users (id, org_id, email, name, password_hash, role, created_at)
-         VALUES ($1, $2, 'admin@stratis.dev', 'System Admin', $3, 'admin', $4)`,
+         VALUES ($1, $2, 'admin@stratis.dev', 'System Admin', $3, 'facilitator', $4)`,
         [adminId, orgId, hash, ts]
       );
       console.log("[seed] inserted default admin account");

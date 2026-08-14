@@ -9,7 +9,8 @@ import {
   findInviteByCode,
   redeemInvite,
 } from "../lib/invites";
-import { getDecisions } from "../lib/decisions";
+import { getDecisions, updateDecision, type DecisionPatch } from "../lib/decisions";
+import { track } from "../lib/analytics";
 import { effectivePlan, hasFeature } from "../lib/plans";
 import { inviteLimiter } from "../middleware/rateLimit";
 import { AUTH_ERROR_CODES } from "@shared/types";
@@ -274,6 +275,94 @@ roomRouter.get("/session/:sessionId/checkpoint", requireGuest, async (req, res, 
         })),
       },
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * The transcript, for the people who were in the room.
+ *
+ * A participant who was there already heard every word of this; withholding it
+ * afterwards protects nothing and makes the checkpoint unreadable — you cannot
+ * judge "SMB moves to metered billing" without the two minutes around it. The
+ * guest token is scoped to one session and dies with it, so this reaches
+ * exactly the meeting they joined and no other.
+ */
+roomRouter.get("/session/:sessionId/transcript", requireGuest, async (req, res, next) => {
+  try {
+    const sessionId = req.params.sessionId;
+    if (req.guest!.sessionId !== sessionId) {
+      return res.status(403).json({ ok: false, error: "This link is for a different meeting" });
+    }
+
+    const result = await db.query<{
+      id: string;
+      speaker: string;
+      text: string;
+      timestamp: string;
+    }>(
+      `SELECT id, speaker, text, timestamp FROM transcripts
+       WHERE session_id = $1
+       ORDER BY timestamp ASC
+       LIMIT 2000`,
+      [sessionId],
+    );
+
+    res.json({ ok: true, data: { transcript: result.rows } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * A participant correcting the record.
+ *
+ * The room is where the facts are, not the transcript: the person who owns the
+ * action knows their own name and the date they agreed to, and making them ask
+ * the facilitator to type it is how a checkpoint goes stale before the meeting
+ * is out of the room.
+ *
+ * What a participant may change: the wording, the owner, the date, and whether
+ * it is done. What they may not: dismissing an item or declaring the decision
+ * complete or open. Those decide what the record *is* rather than what it says,
+ * and they stay with the facilitator who ran the meeting.
+ *
+ * Whoever holds the meeting code can do this — that was the explicit choice.
+ * The code is therefore as sensitive as the record: revoke it (`invites`) and
+ * every token minted from it stops working.
+ */
+roomRouter.patch("/session/:sessionId/decisions/:decisionId", requireGuest, async (req, res, next) => {
+  try {
+    const sessionId = req.params.sessionId;
+    if (req.guest!.sessionId !== sessionId) {
+      return res.status(403).json({ ok: false, error: "This link is for a different meeting" });
+    }
+
+    const body = req.body ?? {};
+    const patch: DecisionPatch = {};
+    if ("dueDate" in body) patch.dueDate = typeof body.dueDate === "string" ? body.dueDate : null;
+    if ("owner" in body) patch.owner = typeof body.owner === "string" ? body.owner : null;
+    if (typeof body.text === "string") patch.text = body.text;
+    if (typeof body.done === "boolean") patch.done = body.done;
+
+    if (Object.keys(patch).length === 0) {
+      return res.status(400).json({ ok: false, error: "Nothing to change" });
+    }
+
+    const updated = await updateDecision(sessionId, req.params.decisionId, patch);
+    if (!updated) {
+      return res.status(404).json({ ok: false, error: "That item is not on this meeting's checkpoint" });
+    }
+
+    track({
+      event: "checkpoint_edited_by_participant",
+      sessionId,
+      guestId: req.guest!.sub,
+      props: { fields: Object.keys(patch) },
+    });
+
+    res.json({ ok: true, data: { decision: updated } });
   } catch (err) {
     next(err);
   }

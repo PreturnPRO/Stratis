@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS users (
     email TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     password_hash TEXT NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('facilitator', 'participant', 'admin')),
+    role TEXT NOT NULL CHECK (role IN ('facilitator', 'participant')),
     created_at TIMESTAMPTZ NOT NULL
 );
 
@@ -369,7 +369,7 @@ CREATE TABLE IF NOT EXISTS invites (
     org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     kind TEXT NOT NULL CHECK (kind IN ('workspace', 'session')),
     token_hash TEXT NOT NULL UNIQUE,
-    role TEXT NOT NULL DEFAULT 'participant' CHECK (role IN ('facilitator', 'participant', 'admin')),
+    role TEXT NOT NULL DEFAULT 'participant' CHECK (role IN ('facilitator', 'participant')),
     session_id TEXT REFERENCES sessions(id) ON DELETE CASCADE,
     meeting_id TEXT REFERENCES meetings(id) ON DELETE CASCADE,
     email TEXT,
@@ -611,3 +611,54 @@ CREATE TABLE IF NOT EXISTS plan_code_redemptions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_plan_code_redemptions_org ON plan_code_redemptions(org_id);
+
+-- 28. SESSION ROLLUPS — what the operator console reads
+-- One row per finished meeting, written once when the session ends.
+--
+-- The console could compute all of this live, and during a launch that is
+-- exactly what it must not do: every operator refresh would scan sessions,
+-- transcripts, decisions and live_cards across every workspace, on the same
+-- database serving the meetings being recorded right now. A meeting ends far
+-- less often than an operator hits refresh, so the count is paid once, there,
+-- and the console only ever reads this table.
+--
+-- Nothing here is meeting content — counts and minutes only. The operator can
+-- see that a workspace ran four meetings and decided eleven things; nothing on
+-- this table can reconstruct a word anybody said.
+CREATE TABLE IF NOT EXISTS session_rollups (
+    session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+    org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    facilitator_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    ended_at TIMESTAMPTZ NOT NULL,
+    -- Rounded up: a 40-second meeting is a meeting that happened.
+    recorded_minutes INTEGER NOT NULL DEFAULT 0,
+    transcript_rows INTEGER NOT NULL DEFAULT 0,
+    decisions INTEGER NOT NULL DEFAULT 0,
+    cards INTEGER NOT NULL DEFAULT 0,
+    participants INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_rollups_org ON session_rollups(org_id);
+CREATE INDEX IF NOT EXISTS idx_session_rollups_ended ON session_rollups(ended_at);
+
+-- 29. TWO ROLES, NOT THREE
+-- The workspace-admin role is gone: it was self-declared at signup, bought
+-- nothing the facilitator could not have, and read as a Stratis-wide power it
+-- never was. Existing admins become facilitators — that is the role that keeps
+-- every ability they actually used (team, invites, plan).
+--
+-- Run before the constraint swap: rows must satisfy the new CHECK first.
+UPDATE users SET role = 'facilitator' WHERE role = 'admin';
+UPDATE invites SET role = 'participant' WHERE role = 'admin';
+
+-- DROP then ADD rather than ADD alone: a CHECK cannot be narrowed in place, and
+-- IF EXISTS keeps a re-run from failing on the drop. Should the original
+-- constraint carry a non-default name, it simply stays alongside the new one —
+-- both hold, and the narrower wins.
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users ADD CONSTRAINT users_role_check
+    CHECK (role IN ('facilitator', 'participant'));
+
+ALTER TABLE invites DROP CONSTRAINT IF EXISTS invites_role_check;
+ALTER TABLE invites ADD CONSTRAINT invites_role_check
+    CHECK (role IN ('facilitator', 'participant'));

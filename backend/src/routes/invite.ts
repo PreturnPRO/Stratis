@@ -21,27 +21,21 @@ import { track } from "../lib/analytics";
 
 export const inviteRouter = Router();
 
-const VALID_ROLES: Role[] = ["facilitator", "participant", "admin"];
+const VALID_ROLES: Role[] = ["facilitator", "participant"];
 
 /**
  * Create an invite link.
  *
- * Only a facilitator or admin may create one, and only an admin may hand out a
- * role above participant — otherwise any facilitator could mint themselves an
- * admin by inviting a second account.
+ * Facilitators only, and a facilitator may hand out either role. There is no
+ * rank between them to protect any more: both are workspace members, and the
+ * one who can already run every meeting in the workspace gains nothing by
+ * inviting a second of themselves.
  */
-inviteRouter.post("/", requireAuth, requireRole("facilitator", "admin"), async (req, res) => {
+inviteRouter.post("/", requireAuth, requireRole("facilitator"), async (req, res) => {
   try {
     const kind = req.body?.kind === "session" ? "session" : "workspace";
     const requestedRole = typeof req.body?.role === "string" ? (req.body.role as Role) : "participant";
     const role = VALID_ROLES.includes(requestedRole) ? requestedRole : "participant";
-
-    if (role !== "participant" && req.auth!.role !== "admin") {
-      return res.status(403).json({
-        ok: false,
-        error: "Only a workspace admin can invite someone as a facilitator or admin",
-      });
-    }
 
     const plan = req.account!.plan;
     let sessionId: string | null = null;
@@ -123,16 +117,16 @@ inviteRouter.post("/", requireAuth, requireRole("facilitator", "admin"), async (
   }
 });
 
-inviteRouter.get("/", requireAuth, requireRole("facilitator", "admin"), async (req, res) => {
+inviteRouter.get("/", requireAuth, requireRole("facilitator"), async (req, res) => {
   try {
     const params: unknown[] = [req.auth!.orgId];
     let where = "org_id = $1";
 
-    // A facilitator sees the links they made; an admin sees the workspace's.
-    if (req.auth!.role !== "admin") {
-      where += " AND created_by = $2";
-      params.push(req.auth!.sub);
-    }
+    // You see the links you made. Nobody sees the whole workspace's any more:
+    // that was the admin's view, and widening it to every facilitator would
+    // hand each of them the others' live join links.
+    where += " AND created_by = $2";
+    params.push(req.auth!.sub);
     if (typeof req.query.sessionId === "string") {
       params.push(req.query.sessionId);
       where += ` AND session_id = $${params.length}`;
@@ -149,14 +143,14 @@ inviteRouter.get("/", requireAuth, requireRole("facilitator", "admin"), async (r
   }
 });
 
-inviteRouter.post("/:id/revoke", requireAuth, requireRole("facilitator", "admin"), async (req, res) => {
+inviteRouter.post("/:id/revoke", requireAuth, requireRole("facilitator"), async (req, res) => {
   try {
     const result = await db.query<InviteRow>(`SELECT * FROM invites WHERE id = $1`, [req.params.id]);
     const row = result.rows[0];
     if (!row || row.org_id !== req.auth!.orgId) {
       return res.status(404).json({ ok: false, error: "Invite not found" });
     }
-    if (req.auth!.role !== "admin" && row.created_by !== req.auth!.sub) {
+    if (row.created_by !== req.auth!.sub) {
       return res.status(403).json({ ok: false, error: "You cannot revoke this invite" });
     }
 

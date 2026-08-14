@@ -90,11 +90,8 @@ function translateText(node: Node): void {
   setText(node, raw.replace(trimmed, hit));
 }
 
-/**
- * ponytail: walks the whole subtree on every batched mutation. Fine at this
- * app's DOM size; if a page ever gets huge, translate only the mutation
- * records' targets instead.
- */
+/** Translates `root` and everything under it. Callers pass the smallest node
+ * that could have changed — see `startDomTranslation`. */
 export function translateTree(root: Node): void {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
     acceptNode(node) {
@@ -145,14 +142,44 @@ export function startDomTranslation(): () => void {
   // background, which would leave a re-render sitting in English until the user
   // came back to the tab.
   let queued = 0;
+
+  /**
+   * Only what React actually touched. A live meeting mutates the DOM several
+   * times a second — the clock, interim speech, the card stack — and walking
+   * every node in the body on each of those was the whole page's translation
+   * cost paid per tick. Everything not in this set is already translated.
+   */
+  const dirty = new Set<Node>();
+
   const flush = () => {
     queued = 0;
+    const roots = [...dirty];
+    dirty.clear();
     // Stays connected while translating: disconnecting would drop anything
     // React renders during the pass. Our own edits trigger one more pass that
     // finds nothing left to translate, so this settles instead of looping.
-    translateTree(document.body);
+    for (const node of roots) {
+      // A text node is translated through its parent: a phrase split across
+      // sibling text nodes is only matchable from the element that holds them.
+      const root = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+      // A node React has already removed cannot be seen; translating it would
+      // only add an undo entry for a value nobody reads.
+      if (root && root.isConnected) translateTree(root);
+    }
   };
-  const observer = new MutationObserver(() => {
+
+  const observer = new MutationObserver((records) => {
+    for (const record of records) {
+      if (record.type === "childList") {
+        for (const added of record.addedNodes) dirty.add(added);
+        // A removal changes what the remaining text children of the target
+        // spell out, so the phrase has to be re-matched from the parent.
+        if (record.removedNodes.length) dirty.add(record.target);
+      } else {
+        // characterData: the text node. attributes: the element.
+        dirty.add(record.target);
+      }
+    }
     if (!queued) queued = window.setTimeout(flush, 0);
   });
 

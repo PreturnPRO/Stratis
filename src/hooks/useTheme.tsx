@@ -1,4 +1,12 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { adaptAccent, inkOn } from "../tokens/accent";
 import { COLORS, LIGHT_COLORS, SHADOW, LIGHT_SHADOW, AMBIENT } from "../tokens/colors";
 
@@ -114,18 +122,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   // Picking a custom colour selects it — otherwise the swatch changes and
   // nothing on screen does.
-  const setCustomAccent = (hex: string) => {
+  const setCustomAccent = useCallback((hex: string) => {
     setCustomAccentState(hex);
     setAccentState("custom");
-  };
+  }, []);
 
-  const value = buildValue(
-    theme,
-    setTheme,
-    accent,
-    setAccentState,
-    customAccent,
-    setCustomAccent,
+  // Rebuilt only when the theme actually changes. Every screen reads its
+  // colours from here, so handing back a fresh object on each render of this
+  // provider re-rendered all of them — and re-ran the accent adaptation — for a
+  // palette that had not moved.
+  const value = useMemo(
+    () => buildValue(theme, setTheme, accent, setAccentState, customAccent, setCustomAccent),
+    [theme, accent, customAccent, setCustomAccent],
   );
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }

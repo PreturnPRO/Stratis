@@ -10,6 +10,7 @@ import { StartMeetingConfirm, type StartTarget } from "../components/StartMeetin
 import { RecoveredTranscripts } from "../components/RecoveredTranscripts";
 import { AttentionRow, type Attention, type NextMeeting } from "../components/AttentionRow";
 import { RecentDecisions, type DecidedItem } from "../components/RecentDecisions";
+import { AgendaPanel, type AgendaCounts } from "../components/AgendaPanel";
 import { useTheme } from "../hooks/useTheme";
 import AmbientBackground from "../components/AmbientBackground";
 
@@ -65,6 +66,8 @@ interface BackendSummary {
 interface DashboardPayload {
   /** The decision state the page now opens on. */
   attention?: Attention;
+  /** The same backlog split by card type — the agenda panel. */
+  agenda?: AgendaCounts;
   nextMeeting?: (DashboardMeeting & { goal?: string | null; unresolved?: number }) | null;
   recentDecisions?: DecidedItem[];
   upcomingMeetings?: DashboardMeeting[];
@@ -271,6 +274,7 @@ function DashboardPanels({
   onStartMeeting,
   onOpenSummary,
   onNav,
+  agenda,
 }: {
   colors: Colors;
   loading: boolean;
@@ -282,6 +286,7 @@ function DashboardPanels({
   onStartMeeting: (m: DashboardMeeting) => void;
   onOpenSummary: (s: DashboardSummary) => void;
   onNav?: (id: string, params?: Record<string, string>) => void;
+  agenda: AgendaCounts | null;
 }) {
   const ordered = useMemo(() => orderMeetings(meetings), [meetings]);
 
@@ -295,7 +300,13 @@ function DashboardPanels({
         gap: 40,
       }}
     >
-      <div>
+      {/* The agenda leads the pair. "Ready to start" is a list of things you
+          could do; this is the list of things still undecided, which is what
+          the product is for and what the next meeting gets its purpose from. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: SPACE[3] }}>
+        <AgendaPanel counts={agenda} loading={loading} onOpenDocket={() => onNav?.("docket")} />
+
+        <div>
         <SectionHeader
           colors={colors}
           label="Ready to start"
@@ -331,10 +342,6 @@ function DashboardPanels({
             ))}
           </div>
         )}
-        <div style={{ marginTop: 18 }}>
-          <Button variant="ghost" size="sm" onClick={() => onNav?.("docket")}>
-            Open the docket
-          </Button>
         </div>
       </div>
 
@@ -422,6 +429,13 @@ export default function Dashboard({ onNav }: DashboardProps) {
   const attention = useMemo<Attention>(
     () =>
       dashboard.data?.attention ?? { openQuestions: 0, inProgress: 0, followUpsDue: 0 },
+    [dashboard.data],
+  );
+
+  // Null until it arrives, so the panel can show "…" rather than four zeroes
+  // it does not know to be true.
+  const agenda = useMemo<AgendaCounts | null>(
+    () => dashboard.data?.agenda ?? null,
     [dashboard.data],
   );
 
@@ -596,6 +610,7 @@ export default function Dashboard({ onNav }: DashboardProps) {
           }}
           onOpenSummary={handleOpenSummary}
           onNav={onNav}
+          agenda={agenda}
         />
 
         {confirming && (

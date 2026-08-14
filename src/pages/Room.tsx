@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Check, Flag } from "lucide-react";
+import { Check, ChevronDown, Flag, Pencil } from "lucide-react";
 import { FONT, LETTER_SPACING, RADIUS, SPACE } from "../constants";
 import { useTheme } from "../hooks/useTheme";
 import { BackLink, Button } from "../components/ui";
@@ -26,6 +26,13 @@ interface RoomDecision {
   dueDate: string | null;
   status: "complete" | "incomplete" | "open";
   reactions: { agree: number; flag: number; mine: "agree" | "flag" | null };
+}
+
+interface TranscriptLine {
+  id: string;
+  speaker: string;
+  text: string;
+  timestamp: string;
 }
 
 interface RoomSession {
@@ -64,6 +71,23 @@ export default function Room({
   const [closed, setClosed] = useState<string | null>(null);
   const [flagging, setFlagging] = useState<string | null>(null);
   const [note, setNote] = useState("");
+
+  /**
+   * The participant's own corrections.
+   *
+   * Flagging tells the facilitator something is wrong and waits for them to fix
+   * it. This is the other half: the person who owns the action knows their own
+   * name and the date they agreed to, so they write it themselves and the
+   * checkpoint leaves the room correct.
+   */
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState({ text: "", owner: "", dueDate: "" });
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  /** Loaded on request, not on arrival: an hour of speech is not a page header. */
+  const [transcript, setTranscript] = useState<TranscriptLine[] | null>(null);
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [transcriptError, setTranscriptError] = useState<string | null>(null);
 
   // Look the code up as soon as there is a whole one, so someone typing sees
   // the meeting name before they commit a name to it.
@@ -141,6 +165,52 @@ export default function Room({
       setError(err instanceof Error ? err.message : "Could not join this meeting");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const openEditor = (d: RoomDecision) => {
+    setEditing(d.id);
+    setDraft({ text: d.text, owner: d.owner ?? "", dueDate: d.dueDate ?? "" });
+  };
+
+  const saveEdit = async (decisionId: string) => {
+    if (!session) return;
+    setSavingEdit(true);
+    setError(null);
+    try {
+      await apiFetch(`/api/room/session/${session.sessionId}/decisions/${decisionId}`, {
+        method: "PATCH",
+        token: session.token,
+        body: {
+          text: draft.text.trim(),
+          owner: draft.owner.trim() || null,
+          dueDate: draft.dueDate.trim() || null,
+        },
+      });
+      setEditing(null);
+      await loadCheckpoint(session);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "That change did not save");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const loadTranscript = async () => {
+    if (!session) return;
+    setTranscriptOpen((open) => !open);
+    if (transcript) return;
+    try {
+      const data = await apiFetch<{ transcript: TranscriptLine[] }>(
+        `/api/room/session/${session.sessionId}/transcript`,
+        { token: session.token },
+      );
+      setTranscript(data.transcript ?? []);
+      setTranscriptError(null);
+    } catch (err) {
+      // Its own error slot: a transcript that will not load must not paint the
+      // checkpoint red, and the checkpoint is the part that matters here.
+      setTranscriptError(err instanceof Error ? err.message : "Could not load the transcript");
     }
   };
 
@@ -421,7 +491,79 @@ export default function Room({
                 >
                   Not quite{d.reactions.flag > 0 ? ` · ${d.reactions.flag}` : ""}
                 </Button>
+                <Button
+                  size="sm"
+                  variant="subtle"
+                  iconLeft={<Pencil size={13} />}
+                  onClick={() => (editing === d.id ? setEditing(null) : openEditor(d))}
+                >
+                  Fix the details
+                </Button>
               </div>
+
+              {editing === d.id && (
+                <div style={{ marginTop: SPACE[1.5], display: "flex", flexDirection: "column", gap: 6 }}>
+                  <textarea
+                    value={draft.text}
+                    onChange={(e) => setDraft({ ...draft, text: e.target.value })}
+                    rows={2}
+                    aria-label="What was decided"
+                    style={{
+                      width: "100%",
+                      padding: 8,
+                      fontSize: FONT.size.label,
+                      background: colors.surfaceMuted,
+                      border: `1px solid ${colors.border}`,
+                      borderRadius: RADIUS.sm,
+                      color: colors.text,
+                      resize: "vertical",
+                    }}
+                  />
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <input
+                      value={draft.owner}
+                      onChange={(e) => setDraft({ ...draft, owner: e.target.value })}
+                      placeholder="Who owns it"
+                      aria-label="Who owns it"
+                      style={{
+                        flex: "1 1 140px",
+                        padding: 8,
+                        fontSize: FONT.size.label,
+                        background: colors.surfaceMuted,
+                        border: `1px solid ${colors.border}`,
+                        borderRadius: RADIUS.sm,
+                        color: colors.text,
+                      }}
+                    />
+                    {/* Free text, not a date picker: the room says "end of month"
+                        and "ก่อนสงกรานต์", and the column is TEXT so the phrase
+                        survives (schema.sql, decisions.due_date). */}
+                    <input
+                      value={draft.dueDate}
+                      onChange={(e) => setDraft({ ...draft, dueDate: e.target.value })}
+                      placeholder="By when"
+                      aria-label="By when"
+                      style={{
+                        flex: "1 1 140px",
+                        padding: 8,
+                        fontSize: FONT.size.label,
+                        background: colors.surfaceMuted,
+                        border: `1px solid ${colors.border}`,
+                        borderRadius: RADIUS.sm,
+                        color: colors.text,
+                      }}
+                    />
+                  </div>
+                  <div style={{ display: "flex", gap: SPACE[1] }}>
+                    <Button size="sm" variant="primary" disabled={savingEdit} onClick={() => void saveEdit(d.id)}>
+                      {savingEdit ? "Saving…" : "Save"}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               {flagging === d.id && (
                 <div style={{ marginTop: SPACE[1.5] }}>
@@ -461,6 +603,62 @@ export default function Room({
             </div>
           ))
         )}
+
+        {/* What was actually said, for the people who were in the room to hear
+            it. Behind a toggle: the checkpoint is the point of this screen, and
+            an hour of speech above it would bury the four lines that matter. */}
+        <div style={{ marginTop: SPACE[2] }}>
+          <Button
+            variant="subtle"
+            size="sm"
+            iconLeft={<ChevronDown size={13} />}
+            onClick={() => void loadTranscript()}
+          >
+            {transcriptOpen ? "Hide the transcript" : "Read the transcript"}
+          </Button>
+
+          {transcriptOpen && (
+            <div
+              style={{
+                marginTop: SPACE[1.5],
+                maxHeight: 360,
+                overflowY: "auto",
+                border: `1px solid ${colors.border}`,
+                borderRadius: RADIUS.md,
+                padding: SPACE[2],
+                background: colors.surface,
+              }}
+            >
+              {transcriptError ? (
+                <div style={{ color: colors.red, fontSize: FONT.size.label }}>{transcriptError}</div>
+              ) : transcript === null ? (
+                <div style={{ color: colors.textDim, fontSize: FONT.size.label }}>Loading…</div>
+              ) : transcript.length === 0 ? (
+                <div style={{ color: colors.textDim, fontSize: FONT.size.label }}>
+                  Nothing has been transcribed yet.
+                </div>
+              ) : (
+                transcript.map((line) => (
+                  <div key={line.id} style={{ marginBottom: SPACE[1.5] }}>
+                    <span
+                      style={{
+                        fontSize: FONT.size.caption,
+                        fontFamily: FONT.mono,
+                        color: colors.textDim,
+                        marginRight: 8,
+                      }}
+                    >
+                      {line.speaker}
+                    </span>
+                    <span style={{ fontSize: FONT.size.label, color: colors.textMuted }}>
+                      {line.text}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
 
         {/* The footer used to promise live updates for ever, including long
             after the meeting ended and the polling had started failing. */}

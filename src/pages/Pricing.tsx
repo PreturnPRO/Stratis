@@ -34,7 +34,8 @@ const FEATURE_LABELS: Record<FeatureKey, string> = {
   session_invites: "Invite links for individual meetings",
   guest_access: "Guests can join without an account",
   analytics_dashboard: "Team usage dashboard",
-  custom_theme: "Dark mode and workspace colours",
+  // Light and dark are free on every plan; the colour is the paid part.
+  custom_theme: "Workspace colours, including your own",
 };
 
 export default function Pricing({ onNav }: { onNav?: (id: string) => void }) {

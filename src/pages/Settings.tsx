@@ -18,6 +18,7 @@ import { useAuth } from "../context/AuthContext";
 import { ACCENTS, adaptAccent, useTheme } from "../hooks/useTheme";
 import { useLang } from "../hooks/useLang";
 import { ProLock } from "../components/ProLock";
+import { InvitesTab, TeamTab, UsageTab } from "./Admin";
 import { useCachedQuery } from "../lib/cache";
 import { ApiError, apiFetch } from "../lib/http";
 import { track } from "../lib/track";
@@ -33,13 +34,14 @@ interface ProfileResponse {
 const TABS = [
   { id: "profile", label: "Profile" },
   { id: "preferences", label: "Preferences" },
+  { id: "workspace", label: "Workspace" },
   { id: "plan", label: "Plan & usage" },
   { id: "security", label: "Security" },
 ];
 
 export default function Settings({ onNav }: { onNav?: (id: string, params?: Record<string, string>) => void }) {
   const { colors } = useTheme();
-  const { user, refreshUser, subscription, refreshSubscription } = useAuth();
+  const { user, role, refreshUser, subscription, refreshSubscription } = useAuth();
   const [tab, setTab] = useState("profile");
 
   // Your own settings are the last thing that should need a round trip to be
@@ -82,10 +84,25 @@ export default function Settings({ onNav }: { onNav?: (id: string, params?: Reco
       {tab === "preferences" && (
         <PreferencesTab
           initial={data?.profile.settings ?? DEFAULT_USER_SETTINGS}
-          canTheme={Boolean(subscription?.features?.includes("custom_theme"))}
+          canAccent={Boolean(subscription?.features?.includes("custom_theme"))}
           onSeePricing={() => onNav?.("pricing")}
         />
       )}
+
+      {/* The workspace belongs to the facilitator who runs its meetings — there
+          is no admin above them to ask. A participant has no team to manage. */}
+      {tab === "workspace" &&
+        (role === "facilitator" ? (
+          <>
+            <UsageTab />
+            <TeamTab />
+            <InvitesTab />
+          </>
+        ) : (
+          <Banner tone="info">
+            Your workspace is managed by the facilitator who invited you.
+          </Banner>
+        ))}
 
       {tab === "plan" && (
         <PlanTab
@@ -257,12 +274,16 @@ function ReadOnlyRow({ label, value }: { label: string; value: string }) {
 
 function PreferencesTab({
   initial,
-  canTheme,
+  canAccent,
   onSeePricing,
 }: {
   initial: UserSettings;
-  /** Whether this workspace's plan includes changing the theme. */
-  canTheme: boolean;
+  /**
+   * Whether this workspace's plan includes choosing the workspace colour.
+   * Light and dark are free: a theme is how a room is lit, and charging for
+   * being readable on a projector sells nothing.
+   */
+  canAccent: boolean;
   onSeePricing: () => void;
 }) {
   const { theme, toggleTheme, colors, accent, setAccent, customAccent, setCustomAccent } =
@@ -345,39 +366,41 @@ function PreferencesTab({
         title="Appearance"
         description="Theme and workspace colour. Applies to this browser."
       >
+        <div style={{ display: "flex", alignItems: "center", gap: SPACE[1.5], flexWrap: "wrap" }}>
+          {(["light", "dark"] as const).map((option) => {
+            const active = theme === option;
+            return (
+              <button
+                key={option}
+                type="button"
+                onClick={() => {
+                  if (active) return;
+                  toggleTheme();
+                }}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 999,
+                  border: `1px solid ${active ? colors.accent : colors.border}`,
+                  background: active ? colors.surfaceHover : "transparent",
+                  color: active ? colors.text : colors.textMuted,
+                  fontSize: FONT.size.label,
+                  cursor: "pointer",
+                }}
+              >
+                {option === "light" ? "Light" : "Dark"}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* The lock starts here: light and dark are free, the colour is what
+            Pro buys. */}
         <ProLock
-          locked={!canTheme}
-          feature="Theme and workspace colour"
-          blurb="Dark mode, eight workspace colours, and any custom colour you like."
+          locked={!canAccent}
+          feature="Workspace colour"
+          blurb="Eight workspace colours, and any custom colour you like."
           onSeePricing={onSeePricing}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: SPACE[1.5], flexWrap: "wrap" }}>
-            {(["light", "dark"] as const).map((option) => {
-              const active = theme === option;
-              return (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => {
-                    if (active) return;
-                    toggleTheme();
-                  }}
-                  style={{
-                    padding: "8px 16px",
-                    borderRadius: 999,
-                    border: `1px solid ${active ? colors.accent : colors.border}`,
-                    background: active ? colors.surfaceHover : "transparent",
-                    color: active ? colors.text : colors.textMuted,
-                    fontSize: FONT.size.label,
-                    cursor: "pointer",
-                  }}
-                >
-                  {option === "light" ? "Light" : "Dark"}
-                </button>
-              );
-            })}
-          </div>
-
           <div
             style={{
               display: "flex",

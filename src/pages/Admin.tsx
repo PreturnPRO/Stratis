@@ -22,6 +22,8 @@ import {
   Toggle,
 } from "../components/panels";
 import { EmptyState, LoadingState } from "../components/states";
+import { PlanCodesTab } from "../components/PlanCodesTab";
+import { OperatorUsageTab } from "../components/OperatorUsageTab";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
 import { apiFetch } from "../lib/http";
@@ -38,46 +40,52 @@ import { localeTag } from "../i18n/locale";
  * is gone from the API, so there is nothing here that opens a meeting someone
  * else is running.
  */
+/**
+ * The operator console — the Stratis team's screen, not a customer's.
+ *
+ * Members and Invites used to live here, which is what made this page read as a
+ * workspace-admin panel. They belong to the facilitator and now sit in
+ * Settings → Workspace; what is left is the two things only the Stratis team
+ * can do, and neither of them reaches inside a meeting.
+ */
 const TABS = [
   { id: "usage", label: "Usage" },
+  { id: "codes", label: "Beta codes" },
   { id: "feedback", label: "Feedback" },
-  { id: "team", label: "Members" },
-  { id: "invites", label: "Invites" },
   { id: "release", label: "Release" },
 ];
 
 export default function Admin() {
-  const { isAdmin } = useAuth();
+  const { isPlatformAdmin } = useAuth();
   const [tab, setTab] = useState("usage");
 
   useEffect(() => {
     track("page_viewed", { page: "admin" }, "admin");
   }, []);
 
-  if (!isAdmin) {
+  if (!isPlatformAdmin) {
     return (
       <PageShell title="Admin">
         <Banner tone="danger">
-          This area is for workspace admins. Ask an admin on your team to change your role if you need
-          access.
+          This is the Stratis operator console. Your team and invite links are in Settings →
+          Workspace.
         </Banner>
       </PageShell>
     );
   }
 
   return (
-    <PageShell title="Admin" subtitle="How the beta is going, what people are reporting, and who is in the workspace. Meeting content stays with whoever ran the meeting.">
+    <PageShell title="Admin" subtitle="How the beta is going and what people are reporting. Meeting content stays with whoever ran the meeting — nothing here can reach inside one.">
       <TabBar tabs={TABS} active={tab} onChange={setTab} />
-      {tab === "team" && <TeamTab />}
-      {tab === "invites" && <InvitesTab />}
-      {tab === "usage" && <UsageTab />}
+      {tab === "usage" && <OperatorUsageTab />}
+      {tab === "codes" && <PlanCodesTab />}
       {tab === "feedback" && <FeedbackTab />}
       {tab === "release" && <ReleaseTab />}
     </PageShell>
   );
 }
 
-function TeamTab() {
+export function TeamTab() {
   const { colors } = useTheme();
   const { user } = useAuth();
   const [users, setUsers] = useState<AdminUserRow[] | null>(null);
@@ -175,7 +183,6 @@ function TeamTab() {
               >
                 <option value="participant">Participant</option>
                 <option value="facilitator">Facilitator</option>
-                <option value="admin">Admin</option>
               </Select>
 
               {member.status === "active" ? (
@@ -340,14 +347,13 @@ function CreateMemberModal({
         <Select value={role} onChange={(e) => setRole(e.target.value as Role)}>
           <option value="participant">Participant</option>
           <option value="facilitator">Facilitator</option>
-          <option value="admin">Admin</option>
-        </Select>
+                  </Select>
       </Field>
     </Modal>
   );
 }
 
-function InvitesTab() {
+export function InvitesTab() {
   const { colors } = useTheme();
   const [invites, setInvites] = useState<InviteRecord[] | null>(null);
   const [role, setRole] = useState<Role>("participant");
@@ -415,7 +421,6 @@ function InvitesTab() {
           <Select value={role} onChange={(e) => setRole(e.target.value as Role)}>
             <option value="participant">Participant</option>
             <option value="facilitator">Facilitator</option>
-            <option value="admin">Admin</option>
           </Select>
         </Field>
         <Field label="Label" hint="For your own reference — e.g. 'Beta team, batch 2'.">
@@ -526,7 +531,7 @@ function InvitesTab() {
   );
 }
 
-function UsageTab() {
+export function UsageTab() {
   const { colors } = useTheme();
   const [metrics, setMetrics] = useState<BetaMetrics | null>(null);
   const [error, setError] = useState<string | null>(null);

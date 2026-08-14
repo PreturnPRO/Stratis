@@ -2,12 +2,13 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { randomBytes } from "node:crypto";
 import type { AdminUserRow, BetaMetrics, FeedbackRecord, Role } from "@shared/types";
-import { requireAuth, requireRole, requirePlatformAdmin } from "../auth/middleware";
+import { requireAuth, requireFacilitator, requirePlatformAdmin } from "../auth/middleware";
 import { db } from "../db/database";
 import { newId, now } from "../lib/ids";
 import { effectivePlan, getPlan, PLANS } from "../lib/plans";
 import { generatePlanCode, isGrantablePlan, normalisePlanCode } from "../lib/planCodes";
 import { enforceSeatQuota, getUsage } from "../lib/entitlements";
+import { operatorUsage } from "../lib/rollups";
 import {
   invalidateAccount,
   invalidateOrg,
@@ -18,14 +19,23 @@ import { track } from "../lib/analytics";
 
 export const adminRouter = Router();
 
-const VALID_ROLES: Role[] = ["facilitator", "participant", "admin"];
+const VALID_ROLES: Role[] = ["facilitator", "participant"];
 
 /**
- * Every route here is workspace-scoped by `req.auth.orgId`. A workspace admin
- * is a customer, not an operator: they administer their own team and must never
- * be able to read or touch another workspace.
+ * This file holds two kinds of route and they must never be confused:
+ *
+ * - **Workspace** (`requireFacilitator`) — scoped by `req.auth.orgId`. The
+ *   facilitator owns their own team, invites and plan, and must never be able
+ *   to read or touch another workspace.
+ * - **Platform** (`requirePlatformAdmin`) — the Stratis team. Crosses
+ *   workspaces, so it is gated on the email allowlist, never on a role.
+ *
+ * There is deliberately no blanket `.use()` guard: a router-wide role check is
+ * what once left `POST /release` — a product-wide logout switch — reachable by
+ * anyone who ticked "admin" at signup. Every route states its own guard, and
+ * `adminGuards.test.ts` fails the build if one does not.
  */
-adminRouter.use(requireAuth, requireRole("admin"));
+adminRouter.use(requireAuth);
 
 interface AdminUserDbRow {
   id: string;
@@ -59,7 +69,7 @@ function toAdminUser(row: AdminUserDbRow): AdminUserRow {
   };
 }
 
-adminRouter.get("/users", async (req, res) => {
+adminRouter.get("/users", requireFacilitator, async (req, res) => {
   try {
     const result = await db.query<AdminUserDbRow>(
       `SELECT u.id, u.org_id, o.name AS org_name, u.email, u.name, u.role, u.status,
@@ -83,7 +93,7 @@ adminRouter.get("/users", async (req, res) => {
  * through an invite. A generated password is returned exactly once — it is
  * never stored in readable form and cannot be retrieved again.
  */
-adminRouter.post("/users", async (req, res) => {
+adminRouter.post("/users", requireFacilitator, async (req, res) => {
   try {
     const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
     const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
@@ -139,7 +149,7 @@ adminRouter.post("/users", async (req, res) => {
   }
 });
 
-adminRouter.patch("/users/:id", async (req, res) => {
+adminRouter.patch("/users/:id", requireFacilitator, async (req, res) => {
   try {
     const target = await db.query<{ id: string; org_id: string; role: Role }>(
       `SELECT id, org_id, role FROM users WHERE id = $1`,
@@ -161,14 +171,16 @@ adminRouter.patch("/users/:id", async (req, res) => {
         return res.status(400).json({ ok: false, error: "Unknown role" });
       }
 
-      // A workspace must keep at least one admin, or nobody can undo this.
-      if (user.role === "admin" && role !== "admin") {
-        const admins = await db.query<{ count: string }>(
-          `SELECT COUNT(*) AS count FROM users WHERE org_id = $1 AND role = 'admin' AND status = 'active'`,
+      // A workspace must keep at least one facilitator, or nobody can undo this
+      // — or run a meeting, or manage the plan. Demoting the last one locks the
+      // workspace out of itself.
+      if (user.role === "facilitator" && role !== "facilitator") {
+        const facilitators = await db.query<{ count: string }>(
+          `SELECT COUNT(*) AS count FROM users WHERE org_id = $1 AND role = 'facilitator' AND status = 'active'`,
           [user.org_id],
         );
-        if (Number(admins.rows[0]?.count ?? 0) <= 1) {
-          return res.status(409).json({ ok: false, error: "This workspace needs at least one admin" });
+        if (Number(facilitators.rows[0]?.count ?? 0) <= 1) {
+          return res.status(409).json({ ok: false, error: "This workspace needs at least one facilitator" });
         }
       }
 
@@ -208,7 +220,7 @@ adminRouter.patch("/users/:id", async (req, res) => {
  * decisions stay where they are. What changes is that the next request they
  * make — inside a second, not at token expiry — is refused.
  */
-adminRouter.post("/users/:id/status", async (req, res) => {
+adminRouter.post("/users/:id/status", requireFacilitator, async (req, res) => {
   try {
     const status = req.body?.status;
     if (!["active", "suspended", "revoked"].includes(status)) {
@@ -227,13 +239,16 @@ adminRouter.post("/users/:id/status", async (req, res) => {
       return res.status(409).json({ ok: false, error: "You cannot revoke your own access" });
     }
 
-    if (user.role === "admin" && status !== "active") {
-      const admins = await db.query<{ count: string }>(
-        `SELECT COUNT(*) AS count FROM users WHERE org_id = $1 AND role = 'admin' AND status = 'active'`,
+    if (user.role === "facilitator" && status !== "active") {
+      const facilitators = await db.query<{ count: string }>(
+        `SELECT COUNT(*) AS count FROM users WHERE org_id = $1 AND role = 'facilitator' AND status = 'active'`,
         [user.org_id],
       );
-      if (Number(admins.rows[0]?.count ?? 0) <= 1) {
-        return res.status(409).json({ ok: false, error: "This workspace needs at least one active admin" });
+      if (Number(facilitators.rows[0]?.count ?? 0) <= 1) {
+        return res.status(409).json({
+          ok: false,
+          error: "This workspace needs at least one active facilitator",
+        });
       }
     }
 
@@ -261,7 +276,7 @@ adminRouter.post("/users/:id/status", async (req, res) => {
 });
 
 /** Ends every session a member has open, without changing their permissions. */
-adminRouter.post("/users/:id/sign-out", async (req, res) => {
+adminRouter.post("/users/:id/sign-out", requireFacilitator, async (req, res) => {
   try {
     const target = await db.query<{ id: string; org_id: string }>(
       `SELECT id, org_id FROM users WHERE id = $1`,
@@ -279,7 +294,7 @@ adminRouter.post("/users/:id/sign-out", async (req, res) => {
   }
 });
 
-adminRouter.get("/workspace", async (req, res) => {
+adminRouter.get("/workspace", requireFacilitator, async (req, res) => {
   try {
     const org = await db.query(`SELECT * FROM organizations WHERE id = $1`, [req.auth!.orgId]);
     if (!org.rows[0]) return res.status(404).json({ ok: false, error: "Workspace not found" });
@@ -302,7 +317,7 @@ adminRouter.get("/workspace", async (req, res) => {
   }
 });
 
-adminRouter.patch("/workspace", async (req, res) => {
+adminRouter.patch("/workspace", requireFacilitator, async (req, res) => {
   try {
     if (typeof req.body?.name !== "string" || !req.body.name.trim()) {
       return res.status(400).json({ ok: false, error: "Workspace name is required" });
@@ -320,7 +335,7 @@ adminRouter.patch("/workspace", async (req, res) => {
 });
 
 /** Beta usage, scoped to this workspace. */
-adminRouter.get("/metrics", async (req, res) => {
+adminRouter.get("/metrics", requireFacilitator, async (req, res) => {
   try {
     const orgId = req.auth!.orgId;
 
@@ -424,7 +439,7 @@ adminRouter.get("/metrics", async (req, res) => {
   }
 });
 
-adminRouter.get("/feedback", async (req, res) => {
+adminRouter.get("/feedback", requireFacilitator, async (req, res) => {
   try {
     const status = typeof req.query.status === "string" ? req.query.status : null;
     const params: unknown[] = [req.auth!.orgId];
@@ -464,7 +479,7 @@ adminRouter.get("/feedback", async (req, res) => {
   }
 });
 
-adminRouter.patch("/feedback/:id", async (req, res) => {
+adminRouter.patch("/feedback/:id", requireFacilitator, async (req, res) => {
   try {
     const status = req.body?.status;
     if (!["new", "triaged", "resolved", "wontfix"].includes(status)) {
@@ -523,7 +538,7 @@ adminRouter.post("/release", requirePlatformAdmin, async (req, res) => {
   }
 });
 
-adminRouter.get("/plan-requests", async (req, res) => {
+adminRouter.get("/plan-requests", requireFacilitator, async (req, res) => {
   try {
     const result = await db.query(
       `SELECT pr.*, u.name AS requested_by_name
@@ -595,13 +610,29 @@ adminRouter.get("/plan-codes", requirePlatformAdmin, async (_req, res) => {
               c.used_count, c.revoked_at, c.created_at,
               COALESCE(
                 json_agg(
-                  json_build_object('orgId', r.org_id, 'redeemedAt', r.redeemed_at)
+                  json_build_object(
+                    'orgId', r.org_id,
+                    'orgName', o.name,
+                    -- Who typed the code in. The operator needs a person to
+                    -- write to when a beta grant is ending, and an org id is
+                    -- not somebody you can email.
+                    'email', u.email,
+                    'name', u.name,
+                    'redeemedAt', r.redeemed_at,
+                    'grantedUntil', r.granted_until,
+                    -- Whether the grant is still standing, as opposed to
+                    -- whether the code is still redeemable. Two different
+                    -- things, and the console shows both.
+                    'active', (o.plan <> 'free' AND o.plan_status = 'active')
+                  )
                   ORDER BY r.redeemed_at DESC
                 ) FILTER (WHERE r.id IS NOT NULL),
                 '[]'
               ) AS redemptions
        FROM plan_codes c
        LEFT JOIN plan_code_redemptions r ON r.code_id = c.id
+       LEFT JOIN organizations o ON o.id = r.org_id
+       LEFT JOIN users u ON u.id = r.redeemed_by
        GROUP BY c.id
        ORDER BY c.created_at DESC
        LIMIT 100`,
@@ -610,6 +641,81 @@ adminRouter.get("/plan-codes", requirePlatformAdmin, async (_req, res) => {
   } catch (error) {
     console.error("Plan code list error:", error);
     res.status(500).json({ ok: false, error: "Could not load the codes" });
+  }
+});
+
+/**
+ * Every workspace's usage, for the Stratis team.
+ *
+ * Read entirely from `session_rollups`, which is written once when a meeting
+ * ends. Nothing here queries a session, a transcript or a card, so an operator
+ * refreshing during a launch cannot compete with the meetings being recorded.
+ * It is also why the numbers move when a meeting *finishes*, not while it runs.
+ */
+adminRouter.get("/usage", requirePlatformAdmin, async (req, res) => {
+  try {
+    const asked = Number(req.query.days);
+    const days = Number.isFinite(asked) && asked > 0 && asked <= 365 ? Math.floor(asked) : 30;
+    const workspaces = await operatorUsage(days);
+
+    const totals = workspaces.reduce(
+      (acc, w) => ({
+        meetings: acc.meetings + w.meetings,
+        recordedMinutes: acc.recordedMinutes + w.recordedMinutes,
+        decisions: acc.decisions + w.decisions,
+        activeWorkspaces: acc.activeWorkspaces + (w.meetings > 0 ? 1 : 0),
+      }),
+      { meetings: 0, recordedMinutes: 0, decisions: 0, activeWorkspaces: 0 },
+    );
+
+    res.json({ ok: true, data: { days, totals, workspaces } });
+  } catch (error) {
+    console.error("Operator usage error:", error);
+    res.status(500).json({ ok: false, error: "Could not load usage" });
+  }
+});
+
+/**
+ * Take back a grant a code already made.
+ *
+ * Revoking the *code* stops the next workspace redeeming it; it deliberately
+ * leaves standing grants alone, because withdrawing a plan from a team
+ * mid-meeting is not something a typo should be able to do. This is the
+ * explicit second action: name the workspace, and its plan goes back to free.
+ *
+ * The redemption row stays. It is the audit trail for a plan someone will ask
+ * about later, and deleting it would make the grant look like it never
+ * happened.
+ */
+adminRouter.post("/plan-codes/:id/redemptions/:orgId/revoke", requirePlatformAdmin, async (req, res) => {
+  try {
+    const redemption = await db.query<{ org_id: string }>(
+      `SELECT org_id FROM plan_code_redemptions WHERE code_id = $1 AND org_id = $2`,
+      [req.params.id, req.params.orgId],
+    );
+    if (redemption.rows.length === 0) {
+      return res.status(404).json({ ok: false, error: "That workspace did not redeem this code" });
+    }
+
+    await db.query(
+      `UPDATE organizations
+       SET plan = 'free', plan_status = 'active', plan_expires_at = $1, plan_note = $2
+       WHERE id = $3`,
+      [now(), "Beta grant withdrawn by the Stratis team", req.params.orgId],
+    );
+    invalidateOrg(req.params.orgId);
+
+    track({
+      event: "plan_grant_revoked",
+      orgId: req.params.orgId,
+      userId: req.auth!.sub,
+      props: { codeId: req.params.id },
+    });
+
+    res.json({ ok: true, data: { orgId: req.params.orgId, plan: "free" } });
+  } catch (error) {
+    console.error("Plan grant revoke error:", error);
+    res.status(500).json({ ok: false, error: "Could not withdraw that grant" });
   }
 });
 

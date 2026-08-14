@@ -18,7 +18,12 @@ interface AuthContextValue extends AuthState {
   logout: () => void
   isAuthed: boolean
   role: Role | null
-  isAdmin: boolean
+  /**
+   * Stratis team, not a workspace role — the server derives it from the
+   * operator allowlist. It shows the operator console and nothing else; every
+   * request behind it is checked again server-side.
+   */
+  isPlatformAdmin: boolean
   /** Why the last session ended, if it was ended for us. Cleared on next login. */
   endedReason: SessionEndedDetail | null
   clearEndedReason: () => void
@@ -227,7 +232,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout,
         isAuthed: !!auth.token,
         role: auth.user?.role ?? null,
-        isAdmin: auth.user?.role === 'admin',
+        isPlatformAdmin: auth.user?.platformAdmin === true,
         endedReason,
         clearEndedReason: () => setEndedReason(null),
         subscription,

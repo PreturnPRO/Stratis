@@ -1,6 +1,17 @@
 
 
-export type Role = "facilitator" | "participant" | "admin";
+/**
+ * Two roles, and neither of them is an operator.
+ *
+ * "admin" used to be a third: a workspace administrator, self-declared at
+ * signup. It bought nothing the facilitator could not have — the person who
+ * runs the meetings is the person who owns the workspace — while looking like
+ * a Stratis-wide power it never was. The Stratis team's own access is not a
+ * role at all: it is `PLATFORM_ADMIN_EMAILS`, checked against the database row
+ * behind the token, and it can read usage and issue beta codes but cannot
+ * touch anybody's meeting.
+ */
+export type Role = "facilitator" | "participant";
 
 export type AccountStatus = "active" | "suspended" | "revoked";
 
@@ -22,6 +33,13 @@ export interface User {
   locale?: string;
   settings?: UserSettings;
   lastActiveAt?: string | null;
+  /**
+   * Stratis team, not a role: derived from the `PLATFORM_ADMIN_EMAILS`
+   * allowlist on the server. It unlocks the operator console — usage and beta
+   * codes — and nothing inside anybody's meeting. The client uses it to decide
+   * whether to show that console; the server checks it again on every request.
+   */
+  platformAdmin?: boolean;
 }
 
 /**
