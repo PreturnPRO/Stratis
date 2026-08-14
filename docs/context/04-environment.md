@@ -15,6 +15,32 @@ debugging a failing command — it has probably already been paid for once.
 - **Branches:** `main` is what deploys. `Alpha` is behind it. Check which branch
   is checked out before assuming the working tree matches production.
 
+## Backups
+
+```bash
+npm --prefix backend run db:backup            # writes backend/backups/stratis-<stamp>.ndjson.gz
+npm --prefix backend run db:restore -- <file> # replays it into DATABASE_URL
+```
+
+- Logical export, written by Node, not `pg_dump` — neither the Windows laptop
+  nor the Render container has Postgres client binaries, and a backup that needs
+  someone to install something is a backup that will not exist on the day it is
+  needed.
+- Rows only. `schema.sql` rebuilds structure; `db:restore` applies it first, then
+  replays rows parent-first with `ON CONFLICT DO NOTHING`, so a partial restore
+  can be repeated safely.
+- Keeps the last 7 locally, and **exits non-zero on an empty backup** — a file
+  with no rows is the failure that looks like success.
+- `backups/` is gitignored. These are real customer rows.
+- **This is the copy you can hold, not the copy you cannot lose.** A file on a
+  laptop is one accident away from the accident it protects against. Confirm the
+  hosted database's own point-in-time recovery is on as well; the free Supabase
+  tier does not have it.
+- Verified 2026-08-14 against the live database: 2291 rows across 24 tables,
+  read back with zero unparseable lines. `db:restore` refuses a non-local target
+  unless `I_UNDERSTAND_THIS_WRITES_OVER_DATA=yes`.
+
+
 ## Running it
 
 ```bash

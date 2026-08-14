@@ -31,8 +31,9 @@ test("a revoked code is refused, and does not say it exists", () => {
   // Same wording as an unknown code: distinguishing them confirms a code is
   // real, which is the first half of guessing one.
   assert.equal(result.ok === false && result.reason, "That code is not valid");
+  const unknown = checkPlanCode(undefined);
   assert.equal(
-    checkPlanCode(undefined).ok === false && checkPlanCode(undefined).reason,
+    unknown.ok === false ? unknown.reason : "",
     result.ok === false ? result.reason : "",
   );
 });
