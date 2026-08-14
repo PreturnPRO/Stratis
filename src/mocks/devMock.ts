@@ -434,7 +434,10 @@ function route(path: string, method: string): Response | null {
   /* ── Live meeting ──────────────────────────────────────────────────────── */
 
   if (path.includes("/api/session/recover")) {
-    return json({ recovered: true, session: SESSION });
+    // serverNow is what the meeting clock corrects against. Handing back the
+    // browser's own time means zero skew, which is the honest mock: there is
+    // no server here to disagree with.
+    return json({ recovered: true, session: SESSION, serverNow: new Date().toISOString() });
   }
   if (path.includes("/api/transcript/session/")) {
     return json({ transcripts: TRANSCRIPT });
@@ -474,7 +477,7 @@ function route(path: string, method: string): Response | null {
         },
         usage: { meetingsThisMonth: 12,
       recordedMinutesThisMonth: 18,
-      projectsUsed: 2, sessionsThisMonth: 14, seatsUsed: 6 },
+      sessionsThisMonth: 14 },
         limits: { meetingsPerMonth: null, seats: null, sessionMinutes: 240, retentionDays: null },
         features,
         pendingRequest: null,
@@ -493,44 +496,93 @@ function route(path: string, method: string): Response | null {
           orgId: "org_demo", plan: "free", status: "active", isBeta: false,
           startedAt: at(-40 * DAY), expiresAt: null, note: null,
         },
-        usage: { meetingsThisMonth: 3, sessionsThisMonth: 4, seatsUsed: 3 },
+        usage: { meetingsThisMonth: 3, sessionsThisMonth: 4 },
         limits: { meetingsPerMonth: 5, seats: 3, sessionMinutes: 45, retentionDays: 30 },
         features: ["live_suggestions", "checkpoint", "session_invites", "guest_access", "pm_document"],
       pendingRequest: null,
     });
   }
 
-  // Admin panel. Monitoring only — usage numbers, feedback, members. Nothing
-  // here reaches a transcript or a meeting, which is the point of the panel.
-  if (path.includes("/api/admin/metrics")) {
+  /**
+   * The operator console. Every figure here is invented, which is the whole
+   * difference between this and the real screen — the real one reads
+   * `session_rollups` and cannot show a number no meeting produced.
+   */
+  if (path.includes("/api/admin/whoami")) {
+    return json({ email: USER.email, platformAdmin: mockPlatformAdmin(), allowlistSize: 1 });
+  }
+
+  if (path.includes("/api/admin/usage")) {
+    const byDay = Array.from({ length: 30 }, (_, i) => {
+      const d = new Date(Date.now() - (29 - i) * 86_400_000);
+      // Quiet weekends, a couple of empty days: a chart that never shows zero
+      // is a chart nobody learns to read.
+      const weekend = d.getDay() === 0 || d.getDay() === 6;
+      const meetings = weekend ? 0 : [0, 1, 2, 2, 3, 1, 4][i % 7];
+      return {
+        day: d.toISOString().slice(0, 10),
+        meetings,
+        recordedMinutes: meetings * [0, 22, 31, 45, 18][i % 5],
+      };
+    });
+
+    const workspaces = [
+      { orgId: "org_demo", orgName: "Dana's meetings", plan: "beta", meetings: 14, recordedMinutes: 512, decisions: 39, lastMeetingAt: at(-2 * 60 * 60_000) },
+      { orgId: "org_cm", orgName: "Chiang Mai Digital", plan: "pro", meetings: 6, recordedMinutes: 233, decisions: 17, lastMeetingAt: at(-26 * 60 * 60_000) },
+      { orgId: "org_limbus", orgName: "Limbus company", plan: "free", meetings: 1, recordedMinutes: 28, decisions: 3, lastMeetingAt: at(-9 * 24 * 60 * 60_000) },
+      { orgId: "org_quiet", orgName: "Lobotomy Crop", plan: "free", meetings: 0, recordedMinutes: 0, decisions: 0, lastMeetingAt: null },
+    ];
+
     return json({
-      metrics: {
-        activeUsers: { daily: 3, weekly: 7, monthly: 9 },
-        members: { total: 9 },
-        sessions: { total: 24, last7d: 6, avgMinutes: 38 },
-        meetings: { total: 31, last7d: 8 },
-        // A 0-1 fraction: the admin metric divides, the UI multiplies by 100.
-        checkpoint: { sessionsWithDecisions: 19, decisions: 57, completeRate: 0.68 },
-        feedback: { total: 12, open: 3, avgRating: 4.1 },
-        topEvents: [
-          { event: "meeting_started", count: 31 },
-          { event: "checkpoint_opened", count: 22 },
-          { event: "summary_exported", count: 14 },
-          { event: "room_joined", count: 11 },
-          { event: "upgrade_clicked", count: 4 },
-        ],
-        dailyActive: [
-          { day: "Aug 5", users: 4 },
-          { day: "Aug 6", users: 6 },
-          { day: "Aug 7", users: 5 },
-          { day: "Aug 8", users: 7 },
-          { day: "Aug 9", users: 3 },
-          { day: "Aug 10", users: 6 },
-          { day: "Aug 11", users: 3 },
-        ],
+      days: 30,
+      totals: {
+        meetings: workspaces.reduce((n, w) => n + w.meetings, 0),
+        recordedMinutes: workspaces.reduce((n, w) => n + w.recordedMinutes, 0),
+        decisions: workspaces.reduce((n, w) => n + w.decisions, 0),
+        activeWorkspaces: workspaces.filter((w) => w.meetings > 0).length,
       },
+      workspaces,
+      byDay,
     });
   }
+
+  if (path.includes("/api/admin/plan-codes")) {
+    return json({
+      codes: [
+        {
+          id: "pcode_1", code: "STRATIS-BETA-4K2P", plan: "pro", label: "Chiang Mai Digital",
+          grant_days: 90, expires_at: null, max_uses: 3, used_count: 1, revoked_at: null,
+          created_at: at(-6 * 24 * 60 * 60_000),
+          redemptions: [
+            { orgId: "org_cm", orgName: "Chiang Mai Digital", email: "somchai@cmdigital.co.th", name: "Somchai", redeemedAt: at(-5 * 24 * 60 * 60_000), grantedUntil: at(85 * 24 * 60 * 60_000), active: true },
+          ],
+        },
+        {
+          id: "pcode_2", code: "STRATIS-BETA-9XQ1", plan: "beta", label: "Old pilot",
+          grant_days: 30, expires_at: null, max_uses: 1, used_count: 1,
+          revoked_at: at(-2 * 24 * 60 * 60_000), created_at: at(-40 * 24 * 60 * 60_000),
+          redemptions: [
+            { orgId: "org_limbus", orgName: "Limbus company", email: "dante@lcrop.com", name: "Nyx", redeemedAt: at(-38 * 24 * 60 * 60_000), grantedUntil: at(-8 * 24 * 60 * 60_000), active: false },
+          ],
+        },
+      ],
+    });
+  }
+
+  if (path.includes("/roster")) {
+    return json({
+      present: 3,
+      total: 4,
+      people: [
+        { displayName: "Sarah K.", joinedAt: at(-32 * 60_000), lastSeenAt: at(-20_000), present: true },
+        { displayName: "Mike R.", joinedAt: at(-30 * 60_000), lastSeenAt: at(-45_000), present: true },
+        { displayName: "Alex T.", joinedAt: at(-28 * 60_000), lastSeenAt: at(-15_000), present: true },
+        { displayName: "Priya N.", joinedAt: at(-27 * 60_000), lastSeenAt: at(-9 * 60_000), present: false },
+      ],
+    });
+  }
+
+  
   if (/\/api\/admin\/feedback\/[^/]+$/.test(path)) {
     return json({ updated: true });
   }
@@ -561,18 +613,7 @@ function route(path: string, method: string): Response | null {
       ],
     });
   }
-  if (path.includes("/api/admin/users")) {
-    return json({
-      users: [
-        { id: "u_dana", orgId: "org_demo", orgName: "Demo workspace", email: "dana@demo.co", name: "Dana Reviewer", role: "facilitator", status: "active", authProvider: "password", plan: "beta", createdAt: at(-40 * 24 * 60 * 60_000), lastActiveAt: at(-5 * 60_000), sessionCount: 14 },
-        { id: "u_mike", orgId: "org_demo", orgName: "Demo workspace", email: "mike@demo.co", name: "Mike R.", role: "facilitator", status: "active", authProvider: "google", plan: "beta", createdAt: at(-30 * 24 * 60 * 60_000), lastActiveAt: at(-3 * 60 * 60_000), sessionCount: 7 },
-        { id: "u_alex", orgId: "org_demo", orgName: "Demo workspace", email: "alex@demo.co", name: "Alex T.", role: "participant", status: "suspended", authProvider: "password", plan: "beta", createdAt: at(-12 * 24 * 60 * 60_000), lastActiveAt: at(-6 * 24 * 60 * 60_000), sessionCount: 0 },
-      ],
-    });
-  }
-  if (path.includes("/api/admin/workspace")) {
-    return json({ workspace: { id: "org_demo", name: "Demo workspace", plan: "beta", isBeta: true } });
-  }
+  
 
   // Room code and the room's reactions, so the checkpoint can be reviewed with
   // its collaborative half visible instead of erroring on an absent backend.

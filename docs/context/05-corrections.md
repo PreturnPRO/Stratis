@@ -8,6 +8,35 @@ Add an entry only after a fix is approved. Newest first.
 
 ---
 
+## 2026-08-15 — The workspace was never the product
+
+**Correction:** *"I make this so the facilitator is the only and only user
+hosting the whole meeting with an outsider participant to see the transcript
+and edit — not this kind of work space bullshit"*, and *"like a kahoot system
+for user to easily use the product rather than adding everyone one by one"*.
+
+One role. Members, invite-a-teammate, seats and team analytics are deleted —
+front and back — and Settings is Profile, Preferences, Plan & usage, Security.
+The organisation row stays as an invisible container so `org_id` scoping is not
+rewritten.
+
+The four defects underneath it, each of which had a cause worth keeping:
+
+- **The meeting code was invisible** — minted on demand from inside the
+  checkpoint panel. It is now opened with the session and sits in the header.
+- **The clock restarted on every refresh** — it counted from page load and fell
+  back to `Date.now()`. It is the session's clock now, and the same subtraction
+  the biller does.
+- **A duplicate project name returned "Internal server error"** — and not even
+  the user's own duplicate: `projects.id` is a *global* primary key while the
+  existence check is scoped to the workspace, so a name any other workspace had
+  used broke the insert. The id gets a suffix; the name is left alone.
+- **Nobody could see who joined** — joining by code recorded no presence at all.
+
+Spec: `docs/superpowers/specs/2026-08-15-one-facilitator-design.md`.
+
+→ `01-core-product.md`, `03-engineering.md` (roles, clock, presence).
+
 ## 2026-08-14 — The room may correct its own record
 
 **Decision:** participants holding the meeting code can now edit checkpoint

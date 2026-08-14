@@ -181,6 +181,54 @@ roomRouter.get("/:code", inviteLimiter, async (req, res, next) => {
   }
 });
 
+/**
+ * Who is in the room, for the person running it.
+ *
+ * "Away" rather than "left": a phone that slept has not walked out of the
+ * meeting, and dropping someone off the list the moment their poll is late
+ * would make the count flicker while people are still sitting there. Two
+ * minutes of silence dims them; nothing removes them.
+ */
+roomRouter.get("/session/:sessionId/roster", requireAuth, async (req, res, next) => {
+  try {
+    const session = await sessionForRoom(req.params.sessionId);
+    if (!session) return res.status(404).json({ ok: false, error: "Meeting not found" });
+    if (session.org_id !== req.auth!.orgId || session.facilitator_id !== req.auth!.sub) {
+      return res.status(404).json({ ok: false, error: "Meeting not found" });
+    }
+
+    const result = await db.query<{
+      display_name: string;
+      joined_at: string;
+      last_seen_at: string | null;
+      present: boolean;
+    }>(
+      `SELECT g.display_name,
+              g.created_at AS joined_at,
+              g.last_seen_at,
+              (g.last_seen_at IS NOT NULL AND g.last_seen_at > NOW() - INTERVAL '2 minutes') AS present
+       FROM session_guests g
+       WHERE g.session_id = $1 AND g.revoked_at IS NULL
+       ORDER BY g.created_at ASC`,
+      [req.params.sessionId],
+    );
+
+    const people = result.rows.map((row) => ({
+      displayName: row.display_name,
+      joinedAt: row.joined_at,
+      lastSeenAt: row.last_seen_at,
+      present: row.present,
+    }));
+
+    res.json({
+      ok: true,
+      data: { people, present: people.filter((p) => p.present).length, total: people.length },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 /** Join the room by code. Returns a guest token scoped to this one session. */
 roomRouter.post("/:code/join", inviteLimiter, async (req, res, next) => {
   try {
@@ -209,6 +257,29 @@ roomRouter.post("/:code/join", inviteLimiter, async (req, res, next) => {
     }
 
     const guestId = newId("gst");
+    const joinedAt = now();
+
+    /**
+     * The room's own record of who is in it.
+     *
+     * Joining by code wrote a redemption and a token and nothing else, so the
+     * facilitator could not see that anyone had arrived and the usage rollup
+     * counted an empty meeting. The guest row is what the roster reads and what
+     * `last_seen_at` is refreshed against.
+     */
+    await db.query(
+      `INSERT INTO session_guests (id, session_id, invite_id, display_name, created_at, last_seen_at)
+       VALUES ($1,$2,$3,$4,$5,$5)`,
+      [guestId, sessionId, check.invite.id, name, joinedAt],
+    );
+
+    await db.query(
+      `INSERT INTO session_participants (id, session_id, guest_id, display_name, role, joined_at)
+       VALUES ($1,$2,$3,$4,'participant',$5)
+       ON CONFLICT (session_id, guest_id) WHERE guest_id IS NOT NULL DO NOTHING`,
+      [newId("sp"), sessionId, guestId, name, joinedAt],
+    );
+
     await redeemInvite({
       inviteId: check.invite.id,
       guestId,
@@ -242,6 +313,12 @@ roomRouter.get("/session/:sessionId/checkpoint", requireGuest, async (req, res, 
     if (req.guest!.sessionId !== sessionId) {
       return res.status(403).json({ ok: false, error: "This link is for a different meeting" });
     }
+
+    // This poll is the room's heartbeat. A guest who is reading the checkpoint
+    // is in the meeting, and the roster reads exactly this column.
+    void db
+      .query(`UPDATE session_guests SET last_seen_at = $1 WHERE id = $2`, [now(), req.guest!.sub])
+      .catch(() => {});
 
     const decisions = (await getDecisions(sessionId)).filter((d) => !d.dismissed);
 

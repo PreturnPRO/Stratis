@@ -15,7 +15,6 @@ import { isPlatformOperator, requireAuth } from "./middleware";
 import { authLimiter } from "../middleware/rateLimit";
 import { consumeInviteForSignup, peekWorkspaceInvite } from "../lib/invites";
 import { effectivePlan } from "../lib/plans";
-import { enforceSeatQuota } from "../lib/entitlements";
 import { env } from "../config/env";
 
 export const authRouter = Router();
@@ -35,8 +34,6 @@ const toUser = (r: UserRow): User => ({
   avatarUrl: r.avatar_url ?? null,
   platformAdmin: isPlatformOperator(r.email),
 });
-
-const VALID_ROLES: Role[] = ["facilitator", "participant"];
 
 const EMAIL_SHAPE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -60,7 +57,10 @@ authRouter.get("/providers", (_req, res) => {
 
 authRouter.post("/signup", authLimiter, async (req, res) => {
   try {
-    const { password, name, role, orgName } = (req.body ?? {}) as SignupRequest;
+    // No role and no workspace name are read from the body any more. There is
+    // one role, and the organisation is an invisible container the account
+    // never sees, let alone names.
+    const { password, name } = (req.body ?? {}) as SignupRequest;
     const email = normalizeEmail((req.body ?? {}).email);
     const inviteToken = typeof (req.body ?? {}).invite === "string" ? req.body.invite : "";
 
@@ -81,36 +81,19 @@ authRouter.post("/signup", authLimiter, async (req, res) => {
 
     const ts = now();
 
-    // With an invite, the workspace and the role both come from the link — a
-    // self-declared `role` in the request body must never be able to grant
-    // more than the inviter chose.
-    let orgId: string;
-    let chosenRole: Role;
-    let invitedBy: string | null = null;
-
-    if (inviteToken) {
-      const check = await peekWorkspaceInvite(inviteToken);
-      if (!check.ok) return res.status(410).json({ ok: false, error: check.reason });
-
-      const orgRow = await db.query<{ plan: string | null; plan_status: string | null; plan_expires_at: string | null }>(
-        `SELECT plan, plan_status, plan_expires_at FROM organizations WHERE id = $1`,
-        [check.invite.org_id],
-      );
-      const plan = effectivePlan(orgRow.rows[0]?.plan ?? null, orgRow.rows[0]?.plan_status ?? null, orgRow.rows[0]?.plan_expires_at ?? null);
-      const seatError = await enforceSeatQuota(check.invite.org_id, plan);
-      if (seatError) return res.status(402).json({ ok: false, error: seatError });
-
-      orgId = check.invite.org_id;
-      chosenRole = check.invite.role;
-      invitedBy = check.invite.created_by;
-    } else {
-      chosenRole = role && VALID_ROLES.includes(role) ? role : "facilitator";
-      orgId = newId("org");
-      await db.query(
-        `INSERT INTO organizations (id,name,created_at) VALUES ($1,$2,$3)`,
-        [orgId, orgName?.trim() || `${name}'s workspace`, ts]
-      );
-    }
+    /**
+     * Everyone who signs up gets their own container and the only role there
+     * is. Workspace invites are gone with the workspace screens: a colleague
+     * who wants Stratis signs up for it, and a participant needs no account at
+     * all. The name is only ever seen by an operator reading the usage list.
+     */
+    const chosenRole: Role = "facilitator";
+    const invitedBy: string | null = null;
+    const orgId = newId("org");
+    await db.query(
+      `INSERT INTO organizations (id,name,created_at) VALUES ($1,$2,$3)`,
+      [orgId, `${name}'s meetings`, ts],
+    );
 
     const id = newId("usr");
     // Async, not hashSync: bcrypt at cost 10 blocks the event loop for ~100ms,

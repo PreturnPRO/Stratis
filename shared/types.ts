@@ -1,17 +1,34 @@
 
 
 /**
- * Two roles, and neither of them is an operator.
+ * One role. Every account is a facilitator who runs their own meetings.
  *
- * "admin" used to be a third: a workspace administrator, self-declared at
- * signup. It bought nothing the facilitator could not have — the person who
- * runs the meetings is the person who owns the workspace — while looking like
- * a Stratis-wide power it never was. The Stratis team's own access is not a
- * role at all: it is `PLATFORM_ADMIN_EMAILS`, checked against the database row
- * behind the token, and it can read usage and issue beta codes but cannot
- * touch anybody's meeting.
+ * There is nobody else to be. Participants are not accounts — they arrive with
+ * a code, the way you join a Kahoot, and live in `session_guests`: no org, no
+ * role, and a token that dies with the session. That is what makes the product
+ * usable by a room of people who have never heard of Stratis, and it is why
+ * "add your team one by one" is gone.
+ *
+ * Two roles preceded this ("participant" as an account) and a third before that
+ * ("admin"), both of which existed to manage a workspace that the product does
+ * not have. The Stratis team's own access is not a role either: it is
+ * `PLATFORM_ADMIN_EMAILS`, resolved from the database row behind the token, and
+ * it reaches usage and beta codes — never a meeting.
+ *
+ * Kept as a named type rather than inlined: it is a column with a CHECK
+ * constraint behind it, and `roleSurface.test.ts` fails the build if it grows a
+ * second member without that being a deliberate decision.
  */
-export type Role = "facilitator" | "participant";
+export type Role = "facilitator";
+
+/**
+ * What someone is *inside one meeting*, which is not an account role.
+ *
+ * A guest arrives with a code and is a participant of that session only. The
+ * WebSocket says which side of the meeting a connection is on, and an invite
+ * link records what it hands out — neither is a statement about an account.
+ */
+export type SessionRole = "facilitator" | "participant";
 
 export type AccountStatus = "active" | "suspended" | "revoked";
 
@@ -71,8 +88,6 @@ export interface SignupRequest {
   email: string;
   password: string;
   name: string;
-  role?: Role;
-  orgName?: string;
 }
 
 export interface LoginRequest {
@@ -297,7 +312,7 @@ export interface WsTranscriptRow {
 }
 
 export type WsServerEvent =
-  | { type: "connected"; sessionId: string; role: Role }
+  | { type: "connected"; sessionId: string; role: SessionRole }
   | { type: "suggestion:new"; card: SuggestionCard }
   | { type: "suggestion:answered"; sessionId: string; cardId: string; source: AnsweredSource }
   | { type: "stt:interim"; sessionId: string; text: string }
@@ -334,12 +349,19 @@ export type FeatureKey =
   | "transcript_export"
   | "session_invites"
   | "guest_access"
-  | "analytics_dashboard"
   | "custom_theme";
 
+/**
+ * One number decides what Free is.
+ *
+ * Seats, meetings-per-month and a projects cap were three more levers to
+ * explain and three more enforcement paths to keep honest, for a product with
+ * one user per account. Recorded minutes is the only limit that tracks what a
+ * meeting actually costs — speech-to-text and model calls — and it is counted
+ * from the same clock the meeting screen displays, so the number you watch and
+ * the number you spend cannot disagree.
+ */
 export interface PlanLimits {
-  /** Meetings that may be created per calendar month. null = unlimited. Enforced. */
-  meetingsPerMonth: number | null;
   /**
    * Recorded minutes per calendar month. null = unlimited. Enforced when a
    * session starts: the trial is an amount of listening, not a number of
@@ -347,10 +369,6 @@ export interface PlanLimits {
    * proves nothing.
    */
   recordedMinutesPerMonth: number | null;
-  /** Projects the workspace may hold. null = unlimited. Enforced on create. */
-  projects: number | null;
-  /** Active accounts in the workspace. null = unlimited. Enforced. */
-  seats: number | null;
   /**
    * NOT ENFORCED YET. Intended cap on a single session's recording length —
    * needs a check in the session sweeper before it means anything. Shown on the
@@ -426,7 +444,7 @@ export interface InviteRecord {
   id: string;
   orgId: string;
   kind: InviteKind;
-  role: Role;
+  role: SessionRole;
   sessionId: string | null;
   meetingId: string | null;
   email: string | null;
@@ -449,7 +467,7 @@ export interface InviteWithLink extends InviteRecord {
 /** The unauthenticated preview a link shows before anyone commits to joining. */
 export interface InvitePreview {
   kind: InviteKind;
-  role: Role;
+  role: SessionRole;
   orgName: string;
   meetingTitle: string | null;
   sessionStatus: "created" | "active" | "ended" | null;
@@ -495,32 +513,10 @@ export interface FeedbackRecord {
   createdAt: string;
 }
 
-export interface BetaMetrics {
-  activeUsers: { daily: number; weekly: number; monthly: number };
-  /** Members of this workspace. Admin metrics are workspace-scoped, not global. */
-  members: { total: number };
-  sessions: { total: number; last7d: number; avgMinutes: number | null };
-  meetings: { total: number; last7d: number };
-  checkpoint: { sessionsWithDecisions: number; decisions: number; completeRate: number | null };
-  feedback: { total: number; open: number; avgRating: number | null };
-  topEvents: { event: string; count: number }[];
-  dailyActive: { day: string; users: number }[];
-}
-
-export interface AdminUserRow {
-  id: string;
-  orgId: string;
-  orgName: string;
-  email: string;
-  name: string;
-  role: Role;
-  status: AccountStatus;
-  authProvider: AuthProvider;
-  plan: PlanId;
-  createdAt: string;
-  lastActiveAt: string | null;
-  sessionCount: number;
-}
+/* `BetaMetrics` and `AdminUserRow` lived here: the shapes of the team-analytics
+   and member-management screens. Both screens are gone, and a type nothing
+   constructs is a description of a feature that no longer exists. The operator
+   console's own shapes live next to the components that read them. */
 
 // ============================================================
 // RELEASES / UPDATE SYSTEM

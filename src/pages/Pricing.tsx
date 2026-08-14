@@ -33,7 +33,6 @@ const FEATURE_LABELS: Record<FeatureKey, string> = {
   transcript_export: "Transcript export",
   session_invites: "Invite links for individual meetings",
   guest_access: "Guests can join without an account",
-  analytics_dashboard: "Team usage dashboard",
   // Light and dark are free on every plan; the colour is the paid part.
   custom_theme: "Workspace colours, including your own",
 };
@@ -134,16 +133,6 @@ export default function Pricing({ onNav }: { onNav?: (id: string) => void }) {
                   {plan.limits.recordedMinutesPerMonth === null
                     ? "Unlimited meetings"
                     : `${plan.limits.recordedMinutesPerMonth} recorded minutes a month`}
-                </li>
-                <li style={limitRowStyle(colors)}>
-                  <Minus size={13} style={{ marginTop: 2, color: colors.textDim, flexShrink: 0 }} />
-                  {plan.limits.projects === null
-                    ? "Unlimited projects"
-                    : `Up to ${plan.limits.projects} projects`}
-                </li>
-                <li style={limitRowStyle(colors)}>
-                  <Minus size={13} style={{ marginTop: 2, color: colors.textDim, flexShrink: 0 }} />
-                  {plan.limits.seats === null ? "Unlimited members" : `Up to ${plan.limits.seats} members`}
                 </li>
                 {plan.features.map((feature) => (
                   <li

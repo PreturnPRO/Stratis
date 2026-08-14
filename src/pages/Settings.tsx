@@ -18,7 +18,6 @@ import { useAuth } from "../context/AuthContext";
 import { ACCENTS, adaptAccent, useTheme } from "../hooks/useTheme";
 import { useLang } from "../hooks/useLang";
 import { ProLock } from "../components/ProLock";
-import { InvitesTab, TeamTab, UsageTab } from "./Admin";
 import { useCachedQuery } from "../lib/cache";
 import { ApiError, apiFetch } from "../lib/http";
 import { track } from "../lib/track";
@@ -34,14 +33,13 @@ interface ProfileResponse {
 const TABS = [
   { id: "profile", label: "Profile" },
   { id: "preferences", label: "Preferences" },
-  { id: "workspace", label: "Workspace" },
   { id: "plan", label: "Plan & usage" },
   { id: "security", label: "Security" },
 ];
 
 export default function Settings({ onNav }: { onNav?: (id: string, params?: Record<string, string>) => void }) {
   const { colors } = useTheme();
-  const { user, role, refreshUser, subscription, refreshSubscription } = useAuth();
+  const { user, refreshUser, subscription, refreshSubscription } = useAuth();
   const [tab, setTab] = useState("profile");
 
   // Your own settings are the last thing that should need a round trip to be
@@ -88,21 +86,6 @@ export default function Settings({ onNav }: { onNav?: (id: string, params?: Reco
           onSeePricing={() => onNav?.("pricing")}
         />
       )}
-
-      {/* The workspace belongs to the facilitator who runs its meetings — there
-          is no admin above them to ask. A participant has no team to manage. */}
-      {tab === "workspace" &&
-        (role === "facilitator" ? (
-          <>
-            <UsageTab />
-            <TeamTab />
-            <InvitesTab />
-          </>
-        ) : (
-          <Banner tone="info">
-            Your workspace is managed by the facilitator who invited you.
-          </Banner>
-        ))}
 
       {tab === "plan" && (
         <PlanTab
@@ -514,8 +497,6 @@ function PlanTab({
   }
 
   const { plan, usage, limits, state, pendingRequest } = subscription;
-  const meetingLimit = limits.meetingsPerMonth;
-  const seatLimit = limits.seats;
 
   return (
     <>
@@ -541,22 +522,10 @@ function PlanTab({
                 : `of ${limits.recordedMinutesPerMonth} this month`
             }
           />
-          <StatTile
-            label="Projects"
-            value={usage.projectsUsed}
-            hint={limits.projects === null ? "Unlimited" : `of ${limits.projects}`}
-          />
-          <StatTile
-            label="Meetings this month"
-            value={usage.meetingsThisMonth}
-            hint={meetingLimit === null ? "Unlimited" : `of ${meetingLimit}`}
-          />
-          <StatTile
-            label="Members"
-            value={usage.seatsUsed}
-            hint={seatLimit === null ? "Unlimited" : `of ${seatLimit}`}
-          />
-          <StatTile label="Sessions this month" value={usage.sessionsThisMonth} />
+          {/* Recorded minutes is the whole plan now. Projects, meetings, seats
+              and session counts were four more numbers describing limits that
+              no longer exist. */}
+          <StatTile label="Meetings this month" value={usage.meetingsThisMonth} />
         </div>
       </Card>
 

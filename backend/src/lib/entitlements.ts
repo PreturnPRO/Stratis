@@ -67,47 +67,6 @@ export async function getUsage(orgId: string): Promise<PlanUsage> {
 }
 
 /**
- * Blocks a new meeting once the month's allowance is spent. Runs before the
- * insert, not after, so a rejected request leaves nothing behind.
- */
-export async function enforceMeetingQuota(req: Request, res: Response, next: NextFunction) {
-  const plan = req.account?.plan;
-  const orgId = req.auth?.orgId;
-  if (!plan || !orgId) return res.status(401).json({ ok: false, error: "Not authenticated" });
-
-  const limit = plan.limits.meetingsPerMonth;
-  if (limit === null) return next();
-
-  try {
-    const usage = await getUsage(orgId);
-    if (usage.meetingsThisMonth >= limit) {
-      return res.status(402).json({
-        ok: false,
-        error: `The ${plan.name} plan covers ${limit} meetings a month. This workspace has used ${usage.meetingsThisMonth}.`,
-        code: AUTH_ERROR_CODES.quotaExceeded,
-        data: { limit, used: usage.meetingsThisMonth, plan: plan.id },
-      });
-    }
-    next();
-  } catch (error) {
-    // A quota check that cannot read usage must not block real work.
-    console.error("[entitlements] quota check failed, allowing through:", error);
-    next();
-  }
-}
-
-/** Blocks a new account once the workspace is full. */
-export async function enforceSeatQuota(orgId: string, plan: { limits: { seats: number | null }; name: string }) {
-  const limit = plan.limits.seats;
-  if (limit === null) return null;
-  const usage = await getUsage(orgId);
-  if (usage.seatsUsed >= limit) {
-    return `The ${plan.name} plan covers ${limit} members. This workspace has ${usage.seatsUsed}.`;
-  }
-  return null;
-}
-
-/**
  * The trial's real boundary: minutes listened to, checked when a session is
  * about to start rather than when a meeting is booked.
  *
@@ -125,19 +84,5 @@ export async function recordedMinutesExceeded(
   const usage = await getUsage(orgId);
   if (usage.recordedMinutesThisMonth < limit) return null;
 
-  return `The ${plan.name} plan covers ${limit} recorded minutes a month. This workspace has used ${usage.recordedMinutesThisMonth}.`;
-}
-
-/** Projects are capped on every tier that is not internal. */
-export async function projectsExceeded(
-  orgId: string,
-  plan: { limits: { projects: number | null }; name: string },
-): Promise<string | null> {
-  const limit = plan.limits.projects;
-  if (limit === null) return null;
-
-  const usage = await getUsage(orgId);
-  if (usage.projectsUsed < limit) return null;
-
-  return `The ${plan.name} plan covers ${limit} projects. This workspace has ${usage.projectsUsed}.`;
+  return `The ${plan.name} plan covers ${limit} recorded minutes a month. You have used ${usage.recordedMinutesThisMonth}.`;
 }
