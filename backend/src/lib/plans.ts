@@ -30,13 +30,17 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
       retentionDays: 30,
     },
     /**
-     * Joining is free; opening the room is not.
+     * The room is the product, so the room is free.
      *
-     * Nobody who walks into a meeting ever pays — a guest needs no account and
-     * no plan, and the join path checks neither. What Pro buys is the other
-     * side of that code: the right to *open* a room to people outside the
-     * workspace. So `session_invites` and `guest_access` are Pro features and
-     * the Free tier deliberately does not carry them.
+     * `session_invites` and `guest_access` were Pro when Stratis had a
+     * workspace and participants were colleagues you added one by one. They are
+     * now the only way anybody but the facilitator gets into a meeting — a code
+     * read out loud, the way a Kahoot starts. Charging for that leaves the Free
+     * tier as a single person talking to themselves, which demonstrates
+     * nothing and converts nobody.
+     *
+     * What Pro sells is minutes, taking the record out (`transcript_export`)
+     * and the workspace colour.
      */
     features: [
       "live_suggestions",
@@ -45,6 +49,8 @@ export const PLANS: Record<PlanId, PlanDefinition> = {
       // the product behind the paywall rather than putting the paywall after
       // it. Taking the record *out* of Stratis is what Pro sells.
       "pm_document",
+      "session_invites",
+      "guest_access",
     ],
   },
   pro: {

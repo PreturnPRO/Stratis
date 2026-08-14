@@ -13,7 +13,6 @@ import { newId, now } from "../lib/ids";
 import { signToken } from "./jwt";
 import { isPlatformOperator, requireAuth } from "./middleware";
 import { authLimiter } from "../middleware/rateLimit";
-import { consumeInviteForSignup, peekWorkspaceInvite } from "../lib/invites";
 import { effectivePlan } from "../lib/plans";
 import { env } from "../config/env";
 
@@ -62,7 +61,6 @@ authRouter.post("/signup", authLimiter, async (req, res) => {
     // never sees, let alone names.
     const { password, name } = (req.body ?? {}) as SignupRequest;
     const email = normalizeEmail((req.body ?? {}).email);
-    const inviteToken = typeof (req.body ?? {}).invite === "string" ? req.body.invite : "";
 
     if (!email || !password || !name) {
       return res.status(400).json({ ok: false, error: "email, password and name are required" });
@@ -106,7 +104,6 @@ authRouter.post("/signup", authLimiter, async (req, res) => {
       [id, orgId, email, name, hash, chosenRole, ts, invitedBy]
     );
 
-    if (inviteToken) await consumeInviteForSignup(inviteToken, id, name);
 
     const user = toUser({
       id, org_id: orgId, email, name, password_hash: hash, role: chosenRole, created_at: ts,

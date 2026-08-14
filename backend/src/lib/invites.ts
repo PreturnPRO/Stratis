@@ -1,5 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { InviteKind, InviteRecord } from "@shared/types";
+import { db } from "../db/database";
+import { generateRoomCode, isRoomCodeShape, normalizeRoomCode } from "./roomCode";
+import { env } from "../config/env";
+import { newId, now } from "./ids";
 
 /**
  * What a link makes you *in one meeting*, which is not an account role.
@@ -9,10 +13,6 @@ import type { InviteKind, InviteRecord } from "@shared/types";
  * as its own type so the two never get confused again.
  */
 export type GuestRole = "participant";
-import { db } from "../db/database";
-import { generateRoomCode, isRoomCodeShape, normalizeRoomCode } from "./roomCode";
-import { env } from "../config/env";
-import { newId, now } from "./ids";
 
 export interface InviteRow {
   id: string;
@@ -107,15 +107,6 @@ export async function peekInvite(token: string): Promise<InviteCheck> {
   return checkInvite(await findInviteByToken(token));
 }
 
-export async function peekWorkspaceInvite(token: string): Promise<InviteCheck> {
-  const check = await peekInvite(token);
-  if (!check.ok) return check;
-  if (check.invite.kind !== "workspace") {
-    return { ok: false, reason: "This link joins a meeting, not a workspace" };
-  }
-  return check;
-}
-
 /**
  * Records a redemption and advances the use count. Written as one statement per
  * table rather than a transaction because an over-count here costs an extra
@@ -140,17 +131,6 @@ export async function redeemInvite(input: {
     ],
   );
   await db.query(`UPDATE invites SET used_count = used_count + 1 WHERE id = $1`, [input.inviteId]);
-}
-
-/** Convenience for the signup paths, which already validated the token. */
-export async function consumeInviteForSignup(
-  token: string,
-  userId: string,
-  displayName: string,
-): Promise<void> {
-  const row = await findInviteByToken(token);
-  if (!row) return;
-  await redeemInvite({ inviteId: row.id, userId, displayName });
 }
 
 /**

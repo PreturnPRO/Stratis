@@ -27,7 +27,9 @@ const NAV_GROUPS: { label: string | null; items: NavItem[] }[] = [
   { label: null, items: [(NAV_ITEMS as NavItem[])[0]] },
   { label: "Decisions", items: (NAV_ITEMS as NavItem[]).filter((i) => i.id === "docket") },
   {
-    label: "Workspace",
+    // "Workspace" was the old model's word. There is no workspace — these are
+    // the person's own projects, meetings and documents.
+    label: "Your work",
     items: (NAV_ITEMS as NavItem[]).filter((i) => ["projects", "meeting", "document"].includes(i.id)),
   },
   {
