@@ -27,6 +27,7 @@ import { mergeTranscripts } from "../lib/mergeTranscripts";
 import { loadSeen, saveSeen, shouldInterruptEnd, unreviewedIds } from "../lib/checkpointReview";
 import { ApiError, apiFetch } from "../lib/http";
 import { localeTag } from "../i18n/locale";
+import { saveLocalTranscript } from "../lib/localTranscript";
 
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 
@@ -692,6 +693,27 @@ useEffect(() => {
         : "listening";
 
   const meetingTitle = recovery.session?.meeting_title?.trim() || "Live meeting";
+
+  /**
+   * Keep a copy of the transcript on this device while the meeting runs.
+   *
+   * The meeting itself is unrepeatable. If the network drops at minute forty,
+   * or the summary fails to generate, or the tab closes before the checkpoint
+   * is written, the words are gone — so they are also written locally, and that
+   * copy is deleted only once the server has confirmed the summary exists.
+   */
+  useEffect(() => {
+    if (!sessionId || transcripts.length === 0) return;
+    saveLocalTranscript(
+      sessionId,
+      transcripts.map((row) => ({
+        speaker: row.speaker,
+        text: row.text,
+        timestamp: row.timestamp,
+      })),
+      { meetingTitle },
+    );
+  }, [sessionId, transcripts, meetingTitle]);
   const sessionShort = sessionId ? `...${sessionId.slice(-6)}` : "";
 
   if (recovery.status === "loading" && !sessionId) {

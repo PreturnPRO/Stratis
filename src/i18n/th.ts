@@ -460,6 +460,9 @@ export const TH: Record<string, string> = {
   "Sign-in method": "วิธีเข้าสู่ระบบ",
   "Member since": "เป็นสมาชิกตั้งแต่",
   "Plan & usage": "แพ็กเกจและการใช้งาน",
+  "An unsaved transcript is still on this device": "ยังมีบทถอดเสียงที่ยังไม่ได้บันทึกอยู่ในเครื่องนี้",
+  "Download the text": "ดาวน์โหลดข้อความ",
+  Discard: "ทิ้ง",
   "Beta access code": "รหัสเข้าร่วมรุ่นเบต้า",
   "If the Stratis team gave you a code, enter it here to unlock your workspace.":
     "ถ้าทีม Stratis ให้รหัสไว้ กรอกที่นี่เพื่อเปิดใช้งานเวิร์กสเปซของคุณ",

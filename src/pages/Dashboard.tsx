@@ -7,6 +7,7 @@ import { useAuth } from "../context/AuthContext";
 import { useCreateMeeting, ACTIVE_SESSION_KEY, projectIdFromTitle } from "../hooks/useCreateMeeting";
 import type { NewMeetingFormValues } from "../components/NewMeetingModal";
 import { StartMeetingConfirm, type StartTarget } from "../components/StartMeetingConfirm";
+import { RecoveredTranscripts } from "../components/RecoveredTranscripts";
 import { AttentionRow, type Attention, type NextMeeting } from "../components/AttentionRow";
 import { RecentDecisions, type DecidedItem } from "../components/RecentDecisions";
 import { useTheme } from "../hooks/useTheme";
@@ -556,6 +557,10 @@ export default function Dashboard({ onNav }: DashboardProps) {
             {error}
           </div>
         )}
+
+        {/* A transcript still held on this device is data the user does not
+            know they have. It is said first, before anything else on the page. */}
+        <RecoveredTranscripts />
 
         <AttentionRow
           attention={attention}
