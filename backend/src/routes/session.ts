@@ -130,12 +130,20 @@ async function requireAccessibleSession(
   };
 }
 
-export async function endSession(sessionId: string): Promise<any> {
+/**
+ * @param endedAt When the meeting actually stopped, if that is not now. The
+ * idle sweeper passes the last moment audio arrived: it runs up to a minute
+ * after a 15-minute idle limit expires, and stamping its own clock billed a
+ * facilitator who closed their laptop for the whole 16 minutes they were not
+ * speaking — a quarter of the free tier's monthly allowance, spent on silence.
+ */
+export async function endSession(sessionId: string, endedAt?: string): Promise<any> {
   const session = await getSession(sessionId);
   if (!session) return undefined;
   if (session.status === "ended") return session;
 
   const timestamp = now();
+  const stoppedAt = endedAt ?? timestamp;
 
   await db.query(
     `
@@ -145,7 +153,7 @@ export async function endSession(sessionId: string): Promise<any> {
         ended_at = COALESCE(ended_at, $2)
     WHERE id = $3
     `,
-    [timestamp, timestamp, session.id],
+    [timestamp, stoppedAt, session.id],
   );
 
   clearProjectDocCache(session.id);

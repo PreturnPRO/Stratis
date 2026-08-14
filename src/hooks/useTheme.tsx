@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { adaptAccent, inkOn } from "../tokens/accent";
 import { COLORS, LIGHT_COLORS, SHADOW, LIGHT_SHADOW, AMBIENT } from "../tokens/colors";
 
 export type Theme = "dark" | "light";
@@ -28,62 +29,7 @@ export const ACCENTS = [
 
 export type AccentId = (typeof ACCENTS)[number]["id"] | "custom";
 
-function hexToHsl(hex: string): { h: number; s: number; l: number } {
-  const clean = hex.replace("#", "");
-  const full = clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean;
-  const r = parseInt(full.slice(0, 2), 16) / 255;
-  const g = parseInt(full.slice(2, 4), 16) / 255;
-  const b = parseInt(full.slice(4, 6), 16) / 255;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const d = max - min;
-  let h = 0;
-  if (d !== 0) {
-    if (max === r) h = ((g - b) / d) % 6;
-    else if (max === g) h = (b - r) / d + 2;
-    else h = (r - g) / d + 4;
-  }
-  h = Math.round(h * 60);
-  if (h < 0) h += 360;
-  const l = (max + min) / 2;
-  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
-  return { h, s, l };
-}
-
-function hslToHex(h: number, s: number, l: number): string {
-  const c = (1 - Math.abs(2 * l - 1)) * s;
-  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
-  const m = l - c / 2;
-  const [r, g, b] =
-    h < 60 ? [c, x, 0]
-    : h < 120 ? [x, c, 0]
-    : h < 180 ? [0, c, x]
-    : h < 240 ? [0, x, c]
-    : h < 300 ? [x, 0, c]
-    : [c, 0, x];
-  const to = (v: number) =>
-    Math.round((v + m) * 255).toString(16).padStart(2, "0");
-  return `#${to(r)}${to(g)}${to(b)}`;
-}
-
-/**
- * Keeps the hue the workspace chose, moves only what has to move.
- *
- * `accent` is used for text as well as fills, so an unconstrained pick — a
- * bright yellow on white, a navy on black — makes labels unreadable. Rather
- * than reject the colour, the lightness is clamped into a band that reads on
- * this theme, and saturation is floored so the result stays a colour rather
- * than a grey.
- */
-export function adaptAccent(hex: string, theme: Theme): string {
-  const { h, s, l } = hexToHsl(hex);
-  const saturation = Math.min(1, Math.max(0.5, s));
-  const lightness =
-    theme === "light"
-      ? Math.min(0.44, Math.max(0.3, l))
-      : Math.min(0.72, Math.max(0.58, l));
-  return hslToHex(h, saturation, lightness);
-}
+export { adaptAccent, inkOn } from "../tokens/accent";
 
 const CUSTOM_KEY = "stratis-accent-custom";
 
@@ -127,7 +73,8 @@ function buildValue(
       : (ACCENTS.find((a) => a.id === accent) ?? ACCENTS[0]).hex;
   // Overridden after the theme spread so the workspace colour wins over the
   // palette default, in both themes.
-  const colors = { ...base, accent: adaptAccent(sourceHex, theme) };
+  const adaptedAccent = adaptAccent(sourceHex, theme);
+  const colors = { ...base, accent: adaptedAccent, onAccent: inkOn(adaptedAccent) };
   const shadow = theme === "light" ? { ...SHADOW, ...LIGHT_SHADOW } : { ...SHADOW };
   const ambient = AMBIENT[theme];
   return {

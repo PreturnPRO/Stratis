@@ -107,7 +107,37 @@ export interface ExtractOptions {
  * re-roll. And when a re-run IS asked for, a row whose text still matches keeps
  * its id — and therefore its review state — instead of being replaced by a twin.
  */
+/**
+ * One extraction per session at a time, per process.
+ *
+ * The read-check-insert below is not atomic: the guard reads "no AI rows yet",
+ * then spends up to 90 seconds in the model before it inserts anything. The
+ * wrap-up warm-up fires that call at T-15, and pressing End twenty seconds
+ * later starts a second one — both saw an empty checkpoint, both insert, and
+ * the facilitator gets every decision twice for the price of two model calls.
+ * The sweeper ending a session while an HTTP end is in flight does the same.
+ *
+ * Callers await the extraction already running rather than starting their own.
+ * In-process is the right scope while the backend is one Render instance; if it
+ * is ever scaled, this needs a row lock or an advisory lock instead.
+ */
+const inFlight = new Map<string, Promise<DecisionRecord[]>>();
+
 export async function extractAndSaveDecisions(
+  sessionId: string,
+  opts: ExtractOptions = {},
+): Promise<DecisionRecord[]> {
+  const running = inFlight.get(sessionId);
+  if (running) return running;
+
+  const attempt = runExtraction(sessionId, opts).finally(() => {
+    inFlight.delete(sessionId);
+  });
+  inFlight.set(sessionId, attempt);
+  return attempt;
+}
+
+async function runExtraction(
   sessionId: string,
   opts: ExtractOptions = {},
 ): Promise<DecisionRecord[]> {

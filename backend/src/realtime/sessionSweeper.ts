@@ -9,6 +9,22 @@ const IDLE_LIMIT_MS = 900_000;
 
 let timer: ReturnType<typeof setInterval> | null = null;
 
+/**
+ * When this process started listening.
+ *
+ * Both liveness signals — connected facilitators and last-audio — live in
+ * memory, so immediately after a restart every running meeting looks abandoned:
+ * no sockets have reconnected yet and no audio has arrived, so the sweeper
+ * falls back to started_at and ends a meeting that has been going for forty
+ * minutes. The client reconnects three seconds later and keeps streaming into a
+ * session the server has already closed, so the rest of the meeting is
+ * transcribed to nowhere and the checkpoint was built from half a conversation.
+ *
+ * So the sweeper stays quiet until clients have had time to come back.
+ */
+const bootedAt = Date.now();
+const GRACE_AFTER_BOOT_MS = Math.max(IDLE_LIMIT_MS, 2 * SWEEP_INTERVAL_MS);
+
 function toMs(value: string | null): number | null {
   if (!value) return null;
   const t = new Date(value).getTime();
@@ -22,6 +38,8 @@ interface ActiveSessionRow {
 }
 
 async function sweepOnce(now: number = Date.now()): Promise<void> {
+  if (now - bootedAt < GRACE_AFTER_BOOT_MS) return;
+
   let rows: ActiveSessionRow[];
   try {
     const result = await db.query<ActiveSessionRow>(
@@ -44,7 +62,12 @@ async function sweepOnce(now: number = Date.now()): Promise<void> {
     if (!stale) continue;
 
     try {
-      await endSession(row.id);
+      // Bill to the last moment audio arrived, not to the moment the sweeper
+      // noticed. The gap between those is the idle limit plus up to a sweep
+      // interval — 16 minutes charged for silence, against a free tier that
+      // only has 30.
+      const lastHeard = lastAudioAt(row.id);
+      await endSession(row.id, lastHeard ? new Date(lastHeard).toISOString() : undefined);
       console.log(`[session:sweeper] Auto-ended idle session ${row.id}`);
     } catch (err) {
       console.error(`[session:sweeper] Failed to auto-end ${row.id}:`, err);
