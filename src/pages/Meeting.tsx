@@ -301,7 +301,16 @@ export default function Meeting({ onNav }: MeetingProps) {
     });
   }, []);
 
-  const { cards, connected, markAnswered, markActive, dismissCard, sendControl, sendAudioFrame } =
+  const {
+    cards,
+    connected,
+    markAnswered,
+    answerInText,
+    markActive,
+    dismissCard,
+    sendControl,
+    sendAudioFrame,
+  } =
     useSuggestionSocket(sessionId, {
       onSttInterim: (text) => {
         setPendingText(text);
@@ -1254,6 +1263,7 @@ useEffect(() => {
                   cards={cards}
                   thinking={isRecording && transcripts.length > 0}
                   onMarkAnswered={markAnswered}
+                  onAnswerInText={answerInText}
                   onMarkActive={markActive}
                   onDismiss={dismissCard}
                 />

@@ -10,7 +10,7 @@ import { pushSuggestion, pushAnswered, pushNotes, registerStreamIngest } from ".
 import { getDocumentRow, rowToDocument, renderDocument } from "../lib/pmDocument";
 import { withRetry } from "../lib/withRetry";
 import { dedupeMemory, shouldReplaceMemory } from "../lib/rollingMemory";
-import { cleanSttText, isSttEcho } from "../lib/sttText";
+import { cleanSttText, isSttEcho, isSttNoise } from "../lib/sttText";
 import { env } from "../config/env";
 
 export const transcriptRouter = Router();
@@ -23,7 +23,7 @@ interface SessionRow {
   org_id: string;
 }
 
-interface TranscriptRow {
+export interface TranscriptRow {
   id: string;
   session_id: string;
   speaker: string;
@@ -364,6 +364,30 @@ function scheduleAiRouting(
   })();
 }
 
+/**
+ * A turn that was typed rather than spoken.
+ *
+ * The facilitator answering a live card in the text box is answering the room;
+ * the AI has to see it or it re-raises the same question thirty seconds later,
+ * and the summary would report a question nobody ever settled. It goes through
+ * the same save-and-route path a spoken line does — the record does not care
+ * which device the words came from.
+ */
+export async function recordTypedTurn(input: {
+  sessionId: string;
+  speaker: string;
+  text: string;
+  role: string;
+}): Promise<TranscriptRow> {
+  const row = await saveTranscriptChunk({
+    sessionId: input.sessionId,
+    speaker: input.speaker,
+    text: input.text,
+  });
+  scheduleAiRouting(input.sessionId, input.text, input.role, row.id);
+  return row;
+}
+
 async function lastTranscriptText(sessionId: string): Promise<string | null> {
   const result = await db.query<{ text: string }>(
     `SELECT text FROM transcripts WHERE session_id = $1 ORDER BY timestamp DESC LIMIT 1`,
@@ -401,6 +425,11 @@ async function flushIngestDeadLetter(sessionId: string, role: string): Promise<v
 registerStreamIngest(async ({ sessionId, speaker, text, role }) => {
   const clean = cleanSttText(text);
   if (!clean) return null;
+
+  if (isSttNoise(clean)) {
+    console.warn(`[stt:ingest] Dropped a final with no content (session ${sessionId})`);
+    return null;
+  }
 
   const session = await getSession(sessionId);
   if (!session || session.status === "ended") return null;

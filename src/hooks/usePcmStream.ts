@@ -1,5 +1,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  NOISE_WINDOW_FRAMES,
+  PRE_ROLL_FRAMES,
+  frameRms,
+  isSpeechFrame,
+  noiseFloorFrom,
+  withinHangover,
+} from "../lib/speechGate";
 
 export type PcmStreamStatus = "idle" | "starting" | "streaming" | "error";
 
@@ -51,6 +59,11 @@ export function usePcmStream({ onFrame }: UsePcmStreamOptions): UsePcmStreamRetu
   const queuedSamplesRef = useRef(0);
   const frameSamplesRef = useRef(TARGET_SAMPLE_RATE * (FRAME_MS / 1000));
 
+  /** Rolling window of frame loudness; the gate's estimate of the room. */
+  const recentRmsRef = useRef<number[]>([]);
+  const lastSpeechAtRef = useRef(0);
+  const preRollRef = useRef<ArrayBuffer[]>([]);
+
   const onFrameRef = useRef(onFrame);
   onFrameRef.current = onFrame;
 
@@ -73,6 +86,9 @@ export function usePcmStream({ onFrame }: UsePcmStreamOptions): UsePcmStreamRetu
     }
     queueRef.current = [];
     queuedSamplesRef.current = 0;
+    recentRmsRef.current = [];
+    lastSpeechAtRef.current = 0;
+    preRollRef.current = [];
   }, []);
 
   // The microphone belongs to the component that opened it. Without this,
@@ -95,6 +111,28 @@ export function usePcmStream({ onFrame }: UsePcmStreamOptions): UsePcmStreamRetu
         filled += take;
       }
       queuedSamplesRef.current -= frameSamples;
+
+      const rms = frameRms(out);
+      // Observed before it is judged: the floor is a minimum, so a loud frame
+      // cannot raise it, and a quiet one has to be able to lower it immediately.
+      recentRmsRef.current.push(rms);
+      if (recentRmsRef.current.length > NOISE_WINDOW_FRAMES) recentRmsRef.current.shift();
+      const speech = isSpeechFrame(rms, noiseFloorFrom(recentRmsRef.current));
+
+      const nowMs = Date.now();
+      if (speech) lastSpeechAtRef.current = nowMs;
+
+      if (!withinHangover(nowMs, lastSpeechAtRef.current)) {
+        // Held, not dropped: this is the audio just before someone starts.
+        preRollRef.current.push(out.buffer);
+        if (preRollRef.current.length > PRE_ROLL_FRAMES) preRollRef.current.shift();
+        continue;
+      }
+
+      if (preRollRef.current.length > 0) {
+        for (const held of preRollRef.current) onFrameRef.current(held);
+        preRollRef.current = [];
+      }
       onFrameRef.current(out.buffer);
     }
   }, []);

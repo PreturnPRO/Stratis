@@ -18,6 +18,7 @@ interface LiveCardRow {
   confidence: number | null;
   answered: boolean;
   answered_by: AnsweredSource | null;
+  answer_text: string | null;
   created_at: string;
 }
 
@@ -31,6 +32,7 @@ function rowToCard(row: LiveCardRow): SuggestionCard {
     createdAt: new Date(row.created_at).toISOString(),
   };
   if (row.answered_by) card.answeredBy = row.answered_by;
+  if (row.answer_text) card.answerText = row.answer_text;
   if (row.card_type) card.cardType = row.card_type;
   if (row.urgency) card.urgency = row.urgency;
   if (typeof row.confidence === "number") card.confidence = row.confidence;
@@ -48,7 +50,7 @@ export async function hydrate(sessionId: string): Promise<void> {
   try {
     const result = await db.query<LiveCardRow>(
       `SELECT id, session_id, title, brief_description, suggested_question,
-              card_type, urgency, confidence, answered, answered_by, created_at
+              card_type, urgency, confidence, answered, answered_by, answer_text, created_at
        FROM live_cards
        WHERE session_id = $1 AND state <> 'DISMISSED'
        ORDER BY created_at ASC`,
@@ -92,13 +94,19 @@ function persistCard(card: SuggestionCard): void {
     .catch((err) => console.error(`[suggestions] persist failed for ${card.id}:`, err));
 }
 
-function persistAnswered(cardId: string, source: AnsweredSource, at: string): void {
+function persistAnswered(
+  cardId: string,
+  source: AnsweredSource,
+  at: string,
+  answerText: string | null,
+): void {
   void db
     .query(
       `UPDATE live_cards
-       SET answered = TRUE, answered_by = $1, answered_at = $2, state = 'ANSWERED'
+       SET answered = TRUE, answered_by = $1, answered_at = $2, state = 'ANSWERED',
+           answer_text = COALESCE($4, answer_text)
        WHERE id = $3`,
-      [source, at, cardId],
+      [source, at, cardId, answerText],
     )
     .catch((err) => console.error(`[suggestions] persist answered failed for ${cardId}:`, err));
 }
@@ -180,16 +188,27 @@ export function allCards(sessionId: string): SuggestionCard[] {
   );
 }
 
+/**
+ * `answerText` is the facilitator typing the answer instead of saying it.
+ *
+ * The stack could only be cleared by speaking into the room, so a facilitator
+ * who wanted to answer the AI had to interrupt whoever was talking. The typed
+ * answer is kept on the card so the record shows what the question was settled
+ * with, not merely that somebody pressed a button.
+ */
 export function markAnswered(
   sessionId: string,
   cardId: string,
-  source: AnsweredSource
+  source: AnsweredSource,
+  answerText?: string | null,
 ): SuggestionCard | null {
   const card = sessionMap(sessionId).get(cardId);
   if (!card || card.answered) return null;
+  const answer = answerText?.trim() || null;
   card.answered = true;
   card.answeredBy = source;
-  persistAnswered(cardId, source, now());
+  if (answer) card.answerText = answer;
+  persistAnswered(cardId, source, now(), answer);
   return card;
 }
 

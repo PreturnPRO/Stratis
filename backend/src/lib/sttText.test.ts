@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cleanSttText, collapseRepeatedRuns, isSttEcho } from "./sttText.ts";
+import { cleanSttText, collapseRepeatedRuns, isSttEcho, isSttNoise } from "./sttText.ts";
 
 test("collapses a looped Thai particle", () => {
   assert.equal(collapseRepeatedRuns("ครับครับครับครับ"), "ครับ");
@@ -55,4 +55,28 @@ test("a different sentence is not an echo", () => {
 
 test("nothing to compare against is not an echo", () => {
   assert.equal(isSttEcho(null, "we ship on the 15th"), false);
+});
+
+test("a lone character is not a transcript line", () => {
+  assert.equal(isSttNoise("ก"), true);
+  assert.equal(isSttNoise("a"), true);
+});
+
+test("punctuation with no word in it is not a transcript line", () => {
+  assert.equal(isSttNoise("..."), true);
+  assert.equal(isSttNoise("— —"), true);
+});
+
+// The whole risk of a noise filter is that it eats the record. A decision
+// meeting is largely numbers and short confirmations, and those must survive.
+test("numbers survive the noise filter", () => {
+  assert.equal(isSttNoise("15"), false);
+  assert.equal(isSttNoise("3.2"), false);
+  assert.equal(isSttNoise("555"), false);
+});
+
+test("short real speech survives the noise filter", () => {
+  assert.equal(isSttNoise("ok"), false);
+  assert.equal(isSttNoise("ครับ"), false);
+  assert.equal(isSttNoise("ใช่"), false);
 });

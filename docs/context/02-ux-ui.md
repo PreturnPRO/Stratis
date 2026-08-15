@@ -96,6 +96,32 @@ one is here because it had to be said more than once.
   pulsing Recording chip whenever capture is running and the meeting is not on
   screen, and it navigates back.
 
+## In the meeting, nothing may require the facilitator to speak
+
+- **Every AI card is answerable in text.** The stack's only action was "Mark
+  answered", so replying to the co-facilitator meant interrupting whoever was
+  talking in order to address a machine — which made it unusable in exactly the
+  half of a meeting where it has most to say. The text box is present on the
+  card, not behind a disclosure: a control you have to go looking for is no use
+  to someone mid-meeting. Enter sends, Shift+Enter breaks the line.
+- A typed answer that fails to send **stays in the box**. Those are the person's
+  words, and clearing them because a request was lost is the product eating what
+  they wrote.
+
+## The room's screen updates itself
+
+- A guest holds **no meeting socket**, so anything live on their screen polls —
+  and everything on it is live. The checkpoint polls every 10s and the open
+  transcript every 5s, incrementally (`?since=`), so a quiet minute costs an
+  empty array rather than an hour of speech. Fetching once and never again is
+  how the transcript panel came to freeze the moment it was opened.
+- A transcript that is following the meeting **scrolls only if the reader is
+  already at the bottom**. Pinning unconditionally yanks the page away from
+  someone re-reading what was said five minutes ago.
+- **Guests vote; they do not edit.** No control on that screen writes to the
+  record — see `03-engineering.md` for why the code cannot be treated as
+  authority.
+
 ## Theme and colour
 
 - **Light is the default**, in the hook *and* as the base `body` rule in

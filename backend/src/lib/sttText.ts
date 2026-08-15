@@ -68,6 +68,27 @@ export function cleanSttText(raw: string): string {
 }
 
 /**
+ * A final with nothing in it worth keeping.
+ *
+ * The real defence against invented transcripts is upstream — the browser does
+ * not stream audio unless someone is speaking (`usePcmStream`) — because once
+ * text exists the fact that the room was silent is unrecoverable. This is only
+ * the residue: a single character, or a fragment with no letter in any script,
+ * which is what the recogniser emits when it is handed the edge of a cough.
+ *
+ * Deliberately narrow. Digits are not filtered: "15", "3.2" and "555" are
+ * things a meeting says, and a rule that dropped numbers would delete the
+ * prices and the dates — the two things a decision record exists to hold.
+ */
+export function isSttNoise(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length <= 1) return true;
+  // Any letter in any script — Latin, Thai, CJK — counts as content. \p{L}
+  // needs the u flag; Node has had it since 10.
+  return !/[\p{L}\p{N}]/u.test(trimmed);
+}
+
+/**
  * True when this final says what the previous line already said. Compared
  * against the immediately preceding line only: a meeting genuinely returns to
  * the same sentence later, and suppressing that would be losing the record.

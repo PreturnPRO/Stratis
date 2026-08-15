@@ -8,6 +8,42 @@ Add an entry only after a fix is approved. Newest first.
 
 ---
 
+## 2026-08-15 — Five defects found in the room, and one decision reversed
+
+Reported together, all five marked critical.
+
+- **The room may not correct its own record after all.** *"the person who joins
+  through code can fix the details of the checkpoint, this could be a major
+  issue instead of just being able to vote if its right or wrong"* — this
+  reverses the decision below dated 2026-08-14. The trade was taken knowingly
+  and it was the wrong one: the meeting code is read out loud in a room and
+  forwarded afterwards, so an edit control on that screen let anyone who
+  overheard six characters rewrite what a meeting decided, under the
+  facilitator's name. The tick and the flag stay; the flag carries a note
+  saying what the room actually decided, and the facilitator applies it. The
+  `PATCH /api/room/session/:id/decisions/:id` route is deleted, not guarded —
+  a route that must never succeed should not exist.
+- **The AI co-facilitator could only be answered out loud.** The card stack's
+  one action was "Mark answered", so replying to it meant interrupting whoever
+  was speaking in order to talk to a machine. Every card now carries a text box;
+  the typed answer is written into the transcript as a facilitator turn, so the
+  live pass stops re-raising the question and the summary can see what settled
+  it.
+- **The recogniser invented transcripts out of silence.** Chirp does not return
+  nothing when it is fed nothing — room tone produced digits and half-sentences
+  that became transcript rows and then AI input. Fixed at the source: the
+  browser does not stream audio unless someone is speaking.
+- **A guest's transcript never updated.** It was fetched once and never again,
+  so the panel froze the moment it opened and a browser refresh was the only way
+  to see another line.
+- **A document was titled with its own primary key.** "Prj 733f4654 9ced 4750
+  A8e2 D773de95c349" instead of "Stratis Review": the heading was derived from
+  the project id because no document payload carried `projects.name`. Every
+  document route returns `projectName` now.
+
+→ `02-ux-ui.md` (the room, answering a card), `03-engineering.md` (guest write
+boundary, the silence gate, ids are not names).
+
 ## 2026-08-15 — The workspace was never the product
 
 **Correction:** *"I make this so the facilitator is the only and only user
@@ -37,16 +73,17 @@ Spec: `docs/superpowers/specs/2026-08-15-one-facilitator-design.md`.
 
 → `01-core-product.md`, `03-engineering.md` (roles, clock, presence).
 
-## 2026-08-14 — The room may correct its own record
+## 2026-08-14 — The room may correct its own record — **reversed 2026-08-15**
 
-**Decision:** participants holding the meeting code can now edit checkpoint
-items — wording, owner, date, done — and read the transcript, without an
-account. Chosen over "code to view, account to edit" knowing the trade: the
-code is a shared secret, so it is now as sensitive as the record itself.
-Revoking the invite kills every token minted from it, which is the mitigation.
+**Decision, since overturned:** participants holding the meeting code could edit
+checkpoint items — wording, owner, date, done — and read the transcript, without
+an account. Chosen over "code to view, account to edit" knowing the trade: the
+code is a shared secret, so the record became as sensitive as the code.
 
-Dismissing an item and setting a decision's status stay with the facilitator.
-Those decide what the record *is*, not what it says.
+That trade did not survive contact with a real room. See the 2026-08-15 entry:
+guests vote and flag, and only the facilitator writes. Reading the transcript
+without an account survives unchanged — a participant who was there already
+heard every word.
 
 Usage for the operator console is read from `session_rollups`, written once
 when a meeting ends. Never aggregate live for that screen: on a launch morning

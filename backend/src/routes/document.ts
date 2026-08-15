@@ -45,6 +45,23 @@ function applyPatches(state: PmDocumentState, patches: DocumentPatchDTO[]): PmDo
   return next;
 }
 
+/**
+ * The project's own name, for whatever renders the document's heading.
+ *
+ * The header was derived from the project *id* — `prj_733f4654-9ced-…`
+ * title-cased into "Prj 733f4654 9ced 4750 A8e2 D773de95c349" — because no
+ * document payload ever carried the name. `projects.name` is the string the
+ * facilitator typed; the id is a key and was never meant to be read aloud.
+ * Every route that returns a document returns this beside it.
+ */
+async function getProjectName(orgId: string, projectId: string): Promise<string | null> {
+  const result = await db.query<{ name: string }>(
+    `SELECT name FROM projects WHERE id = $1 AND org_id = $2`,
+    [projectId, orgId],
+  );
+  return result.rows[0]?.name ?? null;
+}
+
 async function getSessionMeta(sessionId: string): Promise<SessionMetaRow | undefined> {
   const result = await db.query<SessionMetaRow>(
     `
@@ -163,6 +180,7 @@ documentRouter.post("/session/:sessionId/generate", requireAuth, async (req, res
       ok: true,
       data: {
         projectId: meta.project_id,
+        projectName: await getProjectName(meta.org_id, meta.project_id),
         document: { ...currentState, version: baseVersion },
         versions,
         proposed: result.data,
@@ -308,7 +326,15 @@ documentRouter.post("/session/:sessionId/commit", requireAuth, async (req, res, 
     const row = await getDocumentRow(meta.org_id, meta.project_id);
     const versions = await getVersions(documentId);
 
-    res.json({ ok: true, data: { document: rowToDocument(row!), versions }, });
+    res.json({
+      ok: true,
+      data: {
+        document: rowToDocument(row!),
+        versions,
+        projectId: meta.project_id,
+        projectName: await getProjectName(meta.org_id, meta.project_id),
+      },
+    });
   } catch (err) {
     next(err);
   }
@@ -340,7 +366,14 @@ documentRouter.patch("/:projectId/section", requireAuth, async (req, res, next) 
     );
 
     const updated = await getDocumentRow(req.auth!.orgId, req.params.projectId);
-    res.json({ ok: true, data: { document: rowToDocument(updated!) } });
+    res.json({
+      ok: true,
+      data: {
+        document: rowToDocument(updated!),
+        projectId: req.params.projectId,
+        projectName: await getProjectName(req.auth!.orgId, req.params.projectId),
+      },
+    });
   } catch (err) {
     next(err);
   }
@@ -422,7 +455,15 @@ documentRouter.post("/:projectId/restore", requireAuth, async (req, res, next) =
 
     const updated = await getDocumentRow(req.auth!.orgId, req.params.projectId);
     const versions = await getVersions(row.id);
-    res.json({ ok: true, data: { document: rowToDocument(updated!), versions } });
+    res.json({
+      ok: true,
+      data: {
+        document: rowToDocument(updated!),
+        versions,
+        projectId: req.params.projectId,
+        projectName: await getProjectName(req.auth!.orgId, req.params.projectId),
+      },
+    });
   } catch (err) {
     next(err);
   }
@@ -437,7 +478,12 @@ documentRouter.get("/:projectId", requireAuth, async (req, res, next) => {
     
     res.json({
       ok: true,
-      data: { document: rowToDocument(row), versions },
+      data: {
+        document: rowToDocument(row),
+        versions,
+        projectId: req.params.projectId,
+        projectName: await getProjectName(req.auth!.orgId, req.params.projectId),
+      },
     });
   } catch (err) {
     next(err);

@@ -22,6 +22,22 @@ const MAX_CONSECUTIVE_FAILURES = 3;
 const STALL_AFTER_MS = 30_000;
 const OPEN_TIMEOUT_MS = 10_000;
 
+/**
+ * Close the recogniser when the room goes quiet.
+ *
+ * The client now gates on speech and sends nothing during silence, which is
+ * what stops Chirp inventing transcripts out of room tone — but an open
+ * streaming session that receives no audio is a session Google eventually times
+ * out itself, and that arrives here as a gRPC error and a backoff on the next
+ * thing anyone says. Closing it deliberately turns a quiet meeting into no open
+ * stream at all; the next frame opens a fresh one.
+ *
+ * Eight seconds is far inside Google's own audio timeout and far outside the
+ * client's 1.2s speech hangover, so a normal conversation never touches it.
+ */
+const IDLE_CLOSE_MS = 8_000;
+const IDLE_CHECK_MS = 2_000;
+
 interface BidiStream {
   write(chunk: unknown): boolean;
   end(): void;
@@ -48,6 +64,8 @@ function createGoogleStream(opts: SttStreamOptions): SttStreamHandle {
   let nextOpenAllowedAt = 0;
   let openGen = 0;
   let stopped = false;
+  let lastWriteAt = 0;
+  let idleTimer: ReturnType<typeof setInterval> | null = null;
 
   const release = (s: BidiStream) => {
     try {
@@ -162,9 +180,22 @@ function createGoogleStream(opts: SttStreamOptions): SttStreamHandle {
       });
   };
 
+  const startIdleWatch = (): void => {
+    if (idleTimer) return;
+    idleTimer = setInterval(() => {
+      if (stopped || !stream) return;
+      if (Date.now() - lastWriteAt < IDLE_CLOSE_MS) return;
+      console.log(`[stt:stream] Closing idle stream for session ${opts.sessionId}`);
+      closeStream();
+    }, IDLE_CHECK_MS);
+    idleTimer.unref?.();
+  };
+
   const write = (chunk: Buffer): void => {
     if (stopped) return;
     const nowMs = Date.now();
+    lastWriteAt = nowMs;
+    startIdleWatch();
 
     if (
       stream &&
@@ -206,6 +237,8 @@ function createGoogleStream(opts: SttStreamOptions): SttStreamHandle {
     },
     stop() {
       stopped = true;
+      if (idleTimer) clearInterval(idleTimer);
+      idleTimer = null;
       closeStream();
     },
   };

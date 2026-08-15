@@ -85,15 +85,12 @@ export const TH: Record<string, string> = {
   "A core assumption no one has tested.":
     "เป็นข้อสมมติสำคัญที่ยังไม่มีใครทดสอบ",
 
-  // --- Room: the participant's own corrections ---
-  "Fix the details": "แก้ไขรายละเอียด",
-  "Who owns it": "ใครรับผิดชอบ",
-  "By when": "ภายในเมื่อไร",
-  "What was decided": "สิ่งที่ตัดสินใจ",
+  // --- Room: what the participant may do ---
+  // The edit controls ("Fix the details", "Who owns it", "By when") are gone:
+  // holding the meeting code no longer entitles anyone to rewrite the record.
   "Read the transcript": "อ่านบันทึกการสนทนา",
   "Hide the transcript": "ซ่อนบันทึกการสนทนา",
   "Nothing has been transcribed yet.": "ยังไม่มีบันทึกการสนทนา",
-  "That change did not save": "บันทึกการแก้ไขไม่สำเร็จ",
   "Could not load the transcript": "โหลดบันทึกการสนทนาไม่สำเร็จ",
 
   // --- Room code (participants) ---
@@ -325,6 +322,16 @@ export const TH: Record<string, string> = {
   "Reviewing the conversation…": "กำลังตรวจสอบบทสนทนา…",
   "The AI got this one wrong — remove it without recording an answer":
     "AI เข้าใจประเด็นนี้ผิด — ลบออกได้โดยไม่บันทึกคำตอบ",
+
+  // --- Answering a card in text, without speaking ---
+  "Answer without speaking…": "พิมพ์ตอบโดยไม่ต้องพูด…",
+  "Send answer": "ส่งคำตอบ",
+  "Sending…": "กำลังส่ง…",
+  "Answered out loud": "ตอบไปแล้วด้วยการพูด",
+  "The room settled this out loud — clear it without typing anything":
+    "ที่ประชุมตอบเรื่องนี้ด้วยการพูดแล้ว — ปิดได้โดยไม่ต้องพิมพ์",
+  "That did not send. Your answer is still here — try again.":
+    "ส่งไม่สำเร็จ คำตอบยังอยู่ในช่อง — ลองอีกครั้ง",
 
   // --- Checkpoint panel ---
   "Before we close": "ก่อนจบการประชุม",

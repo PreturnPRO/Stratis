@@ -39,6 +39,13 @@ interface Props {
   cards: SuggestionCard[]
   thinking?: boolean
   onMarkAnswered: (id: string) => void
+  /**
+   * Answer without speaking. The only way to clear a card used to be to say the
+   * answer out loud, which means interrupting whoever is talking in order to
+   * reply to a machine — so the AI co-facilitator was unusable in the half of a
+   * meeting where it has most to say.
+   */
+  onAnswerInText: (id: string, answer: string) => Promise<boolean>
   onMarkActive: (id: string) => void
   onDismiss: (id: string) => void
 }
@@ -62,7 +69,7 @@ function formatAge(createdAt: string): string {
   return `${Math.floor(mins / 60)}h`
 }
 
-export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkActive, onDismiss }: Props) {
+export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onAnswerInText, onMarkActive, onDismiss }: Props) {
   const { colors, theme } = useTheme()
   const styles = makeStyles(colors, theme)
   const [answeredOpen, setAnsweredOpen] = useState(false)
@@ -132,6 +139,7 @@ export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkAct
           key={card.id}
           card={card}
           onMarkAnswered={() => onMarkAnswered(card.id)}
+          onAnswerInText={(answer) => onAnswerInText(card.id, answer)}
           onDismiss={() => onDismiss(card.id)}
         />
       ))}
@@ -237,10 +245,12 @@ export function SuggestionCardStack({ cards, thinking, onMarkAnswered, onMarkAct
 function ActiveCard({
   card,
   onMarkAnswered,
+  onAnswerInText,
   onDismiss,
 }: {
   card: SuggestionCard
   onMarkAnswered: () => void
+  onAnswerInText: (answer: string) => Promise<boolean>
   onDismiss: () => void
 }) {
   const { colors, shadow } = useTheme()
@@ -249,6 +259,24 @@ function ActiveCard({
   const meta = card.cardType ? typeMeta(colors)[card.cardType] : null
   const accent = meta?.color ?? colors.accent
   const stale = isStale(card.createdAt)
+
+  const [answer, setAnswer] = useState('')
+  const [sending, setSending] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const boxRef = useRef<HTMLTextAreaElement | null>(null)
+
+  const send = async () => {
+    const text = answer.trim()
+    if (!text || sending) return
+    setSending(true)
+    setFailed(false)
+    const ok = await onAnswerInText(text)
+    setSending(false)
+    // Left in the box on failure. The words are the person's; clearing them
+    // because a request lost would be the product eating what they wrote.
+    if (ok) setAnswer('')
+    else setFailed(true)
+  }
 
   return (
     /* No accent side-stripe and no coloured halo. Four cards each carrying a
@@ -296,9 +324,54 @@ function ActiveCard({
       )}
       <p style={styles.question}>{card.question}</p>
       <p style={styles.reason}>{card.reason}</p>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <Button size="sm" variant="ghost" style={styles.answerBtn} onClick={onMarkAnswered}>
-          Mark answered
+
+      {/* The text box is the primary way to answer, so it is present rather than
+          behind a disclosure: a control you have to find first is no use to
+          someone who is mid-meeting and does not want to speak. */}
+      <textarea
+        ref={boxRef}
+        value={answer}
+        onChange={(e) => { setAnswer(e.target.value); setFailed(false) }}
+        onKeyDown={(e) => {
+          // Enter sends, Shift+Enter breaks the line. This is a reply box, and
+          // the answer is almost always one sentence.
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            void send()
+          }
+        }}
+        rows={2}
+        maxLength={1000}
+        disabled={sending}
+        placeholder="Answer without speaking…"
+        aria-label={`Answer: ${card.question}`}
+        style={styles.answerBox}
+      />
+
+      {failed && (
+        <span style={styles.answerFailed}>
+          That did not send. Your answer is still here — try again.
+        </span>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <Button
+          size="sm"
+          variant="primary"
+          style={styles.sendBtn}
+          onClick={() => void send()}
+          disabled={sending || !answer.trim()}
+        >
+          {sending ? 'Sending…' : 'Send answer'}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          style={styles.answerBtn}
+          onClick={onMarkAnswered}
+          title="The room settled this out loud — clear it without typing anything"
+        >
+          Answered out loud
         </Button>
         <Button
           size="sm"
@@ -472,16 +545,42 @@ function makeStyles(colors: Record<string, string>, theme: 'dark' | 'light' = 'd
     color: colors.textMuted,
     lineHeight: 1.4,
   },
+  answerBox: {
+    width: '100%',
+    boxSizing: 'border-box',
+    padding: '8px 10px',
+    fontSize: FONT.size.label,
+    fontFamily: 'inherit',
+    lineHeight: 1.45,
+    color: colors.textPrimary,
+    background: colors.surfaceMuted,
+    border: `1px solid ${colors.border}`,
+    borderRadius: 8,
+    resize: 'vertical',
+    minHeight: 52,
+  },
+  answerFailed: {
+    fontSize: FONT.size.caption,
+    color: colors.red,
+  },
   /* `background` and `cursor` are deliberately absent: Button's variant owns
      them, and re-declaring them here would win the spread and kill the hover. */
-  answerBtn: {
+  sendBtn: {
     marginTop: 4,
     padding: '4px 10px',
     fontSize: FONT.size.caption,
     fontWeight: 500,
     borderRadius: 6,
-    border: `1px solid ${colors.accent}`,
-    color: colors.accent,
+  },
+  /* Secondary now. Send answer carries the accent, and two outlined buttons
+     beside a filled one on the same card is three things asking to be pressed. */
+  answerBtn: {
+    marginTop: 4,
+    padding: '4px 10px',
+    fontSize: FONT.size.caption,
+    fontWeight: 400,
+    borderRadius: 6,
+    color: colors.textMuted,
   },
   dismissBtn: {
     marginTop: 4,

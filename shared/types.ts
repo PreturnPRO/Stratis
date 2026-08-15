@@ -297,6 +297,8 @@ export interface SuggestionCard {
   reason: string;
   answered: boolean;
   answeredBy?: AnsweredSource;
+  /** What the facilitator typed to settle it, when they answered in text. */
+  answerText?: string;
   createdAt: string;
   cardType?: LiveCardType;
   urgency?: LiveCardUrgency;

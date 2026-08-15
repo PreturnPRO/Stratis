@@ -50,6 +50,8 @@ export interface UseSuggestionSocketReturn {
   role: 'facilitator' | 'participant' | null
   connected: boolean
   markAnswered: (id: string) => void
+  /** Answer in text instead of out loud. Resolves false if the write was rejected. */
+  answerInText: (id: string, answer: string) => Promise<boolean>
   markActive: (id: string) => void
   dismissCard: (id: string) => void
   sendControl: (msg: WsClientEvent) => boolean
@@ -60,7 +62,10 @@ export function useSuggestionSocket(
   sessionId: string | null | undefined,
   handlers?: SuggestionSocketHandlers,
 ): UseSuggestionSocketReturn {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  // Whose turn the typed answer is recorded as — the same name `stt:start`
+  // stamps on spoken lines, so the transcript does not gain a second author.
+  const speakerName = user?.name?.trim() || 'Facilitator';
   const [cards, setCards] = useState<UICard[]>([]);
   const [connected, setConnected] = useState(false);
   const [role, setRole] = useState<UseSuggestionSocketReturn['role']>(null);
@@ -117,6 +122,39 @@ export function useSuggestionSocket(
       void fetchCards();
     }
   }, [validSessionId, token, fetchCards]);
+
+  /**
+   * The typed answer.
+   *
+   * Not optimistic, unlike `markAnswered`: this one carries words the person
+   * wrote, and clearing the card before the server has them would lose the
+   * answer with no way to get it back. The card stays until the write lands.
+   */
+  const answerInText = useCallback(
+    async (id: string, answer: string): Promise<boolean> => {
+      const text = answer.trim();
+      if (!token || !validSessionId || !text) return false;
+      try {
+        await apiFetch('/api/ai/suggest/answer', {
+          method: 'POST',
+          body: {
+            sessionId: validSessionId,
+            cardId: id,
+            answer: text,
+            speaker: speakerName,
+          },
+        });
+        setCards((prev) =>
+          prev.map((c) => (c.id === id ? { ...c, status: 'answered' as const } : c))
+        );
+        return true;
+      } catch (err) {
+        console.warn('[ws:manual] Typed answer rejected:', err);
+        return false;
+      }
+    },
+    [validSessionId, token, speakerName],
+  );
 
   // Wrong card, not an answered one. Marking it answered would record that the
   // room resolved something it never discussed.
@@ -278,6 +316,7 @@ export function useSuggestionSocket(
     role,
     connected,
     markAnswered,
+    answerInText,
     markActive,
     dismissCard,
     sendControl,

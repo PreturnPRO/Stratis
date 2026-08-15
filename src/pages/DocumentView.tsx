@@ -21,6 +21,7 @@ interface DocumentPayload {
   document: { state: PmDocumentState; sections?: PmDocumentState['sections']; version: number }
   versions?: PmDocumentVersion[]
   projectId?: string | null
+  projectName?: string | null
   proposed?: DocumentPatchOutput
 }
 
@@ -45,6 +46,15 @@ function priorityColor(colors: Record<string, string>): Record<string, string> {
   }
 }
 
+/**
+ * Last resort only.
+ *
+ * This used to be the title. A project id is `prj_733f4654-9ced-4750-…`, and
+ * title-casing it produced "Prj 733f4654 9ced 4750 A8e2 D773de95c349" as the
+ * heading of a document the facilitator had named "Stratis Review". The name is
+ * `projects.name` and every document route now returns it as `projectName`;
+ * this runs only when the server did not send one.
+ */
 function humanizeProjectId(id?: string | null): string {
   if (!id) return 'PM Document'
   return id.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
@@ -69,6 +79,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
   const [proposed, setProposed] = useState<DocumentPatchOutput | null>(null)
   const [reviews, setReviews] = useState<PatchReview[]>([])
   const [activeProjectId, setActiveProjectId] = useState<string | null>(projectId ?? null)
+  const [projectName, setProjectName] = useState<string | null>(null)
 
   const [picker, setPicker] = useState<{ id: string; name: string; meetingCount: number }[]>([])
   const browsable = !sessionId && !projectId
@@ -84,15 +95,20 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
   const [showRestore, setShowRestore] = useState<number | null>(null)
   const [restoring, setRestoring] = useState(false)
 
+  // `knownName` is what the picker row already said. A project with no document
+  // yet answers 404, and without it the heading would fall back to the id on the
+  // one screen where the person just clicked the name.
   const loadProject = useCallback(
-    async (pid: string) => {
+    async (pid: string, knownName?: string) => {
       setLoading(true)
       setError(null)
+      setProjectName(knownName ?? null)
       try {
         const data = await apiFetch<DocumentPayload>(`/api/document/${pid}`)
         setDocState(data.document.state)
         setVersion(data.document.version)
         setVersions(data.versions ?? [])
+        setProjectName(data.projectName ?? knownName ?? null)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'No document yet for this project')
         setDocState(null)
@@ -121,6 +137,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
         setVersion(data.document.version ?? 0)
         setVersions(data.versions ?? [])
         setActiveProjectId(data.projectId ?? null)
+        setProjectName(data.projectName ?? null)
         const out = data.proposed
         setProposed(out ?? null)
         setReviews(
@@ -155,6 +172,28 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
     else if (projectId) void loadProject(projectId)
     else void loadPicker()
   }, [sessionId, projectId, generate, loadProject, loadPicker])
+
+  /**
+   * The name, when the document call could not supply it.
+   *
+   * A project with no document yet answers 404, and arriving on this screen by
+   * URL mounts it with only an id — both of which used to leave the heading
+   * reading "Prj 733f4654 9ced 4750 A8e2 D773de95c349". The project list is the
+   * one place the name always exists, so it is asked once, quietly: a failure
+   * here means the heading falls back, not that the page shows an error.
+   */
+  useEffect(() => {
+    if (!activeProjectId || projectName) return
+    let cancelled = false
+    void apiFetch<{ projects?: { id: string; name: string }[] }>('/api/meeting/projects')
+      .then((data) => {
+        if (cancelled) return
+        const match = data?.projects?.find((p) => p.id === activeProjectId)
+        if (match?.name) setProjectName(match.name)
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [activeProjectId, projectName])
 
   const setDecision = (id: string, decision: Decision) =>
     setReviews((rs) => rs.map((r) => (r.patch.client_patch_id === id ? { ...r, decision } : r)))
@@ -241,6 +280,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
       setProposed(null)
       setReviews([])
       setActiveProjectId(null)
+      setProjectName(null)
       if (sessionId) onNavRef.current?.('dashboard')
       else onNavRef.current?.('projects')
     } catch (err) {
@@ -314,7 +354,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
         <div style={styles.pickerList}>
           {picker.length === 0 && !error && <p style={styles.dim}>No projects yet.</p>}
           {picker.map((p) => (
-            <Button key={p.id} variant="subtle" style={styles.pickerRow} onClick={() => void loadProject(p.id)}>
+            <Button key={p.id} variant="subtle" style={styles.pickerRow} onClick={() => void loadProject(p.id, p.name)}>
               <span style={styles.pickerName}>{p.name}</span>
               <span style={styles.dim}>{p.meetingCount} meeting{p.meetingCount === 1 ? '' : 's'}</span>
             </Button>
@@ -324,7 +364,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
     )
   }
 
-  const title = humanizeProjectId(activeProjectId ?? proposed?.project_id)
+  const title = projectName?.trim() || humanizeProjectId(activeProjectId ?? proposed?.project_id)
   const proposedCount = reviews.length
   const isHistorical = viewingVersion != null
   const displayState = isHistorical ? viewState : docState
@@ -339,7 +379,7 @@ export default function DocumentView({ sessionId, projectId, onNav }: Props) {
             style={styles.backBtn}
             onClick={() => {
               if (browsable) {
-                setDocState(null); setVersions([]); setError(null); setActiveProjectId(null); void loadPicker()
+                setDocState(null); setVersions([]); setError(null); setActiveProjectId(null); setProjectName(null); void loadPicker()
               } else {
                 onNavRef.current?.('projects')
               }

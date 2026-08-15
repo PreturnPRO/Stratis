@@ -672,3 +672,10 @@ UPDATE invites SET role = 'participant' WHERE role = 'admin';
 ALTER TABLE invites DROP CONSTRAINT IF EXISTS invites_role_check;
 ALTER TABLE invites ADD CONSTRAINT invites_role_check
     CHECK (role IN ('facilitator', 'participant'));
+
+-- 33. THE FACILITATOR'S TYPED ANSWER
+-- A live card could only be cleared by saying the answer out loud, which meant
+-- the AI co-facilitator could not be answered without interrupting whoever was
+-- speaking. The text they type is kept with the card, so the record shows what
+-- settled the question rather than only that it was settled.
+ALTER TABLE live_cards ADD COLUMN IF NOT EXISTS answer_text TEXT;

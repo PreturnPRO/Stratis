@@ -311,6 +311,15 @@ export function pushSuggestion(card: SuggestionCard): void {
   broadcast(card.sessionId, { type: "suggestion:new", card });
 }
 
+/**
+ * A transcript line that did not come from the recogniser — the facilitator
+ * typing an answer to a live card. Same event as a spoken final, because to
+ * every screen watching the meeting it is the same thing: a new line.
+ */
+export function pushTranscript(sessionId: string, transcript: WsTranscriptRow): void {
+  broadcast(sessionId, { type: "transcript:final", sessionId, transcript });
+}
+
 export function pushNotes(sessionId: string, text: string): void {
   broadcast(sessionId, { type: "notes:update", sessionId, text });
 }

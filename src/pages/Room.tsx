@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { Check, ChevronDown, Flag, Pencil } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, ChevronDown, Flag } from "lucide-react";
 import { FONT, LETTER_SPACING, RADIUS, SPACE } from "../constants";
 import { useTheme } from "../hooks/useTheme";
 import { BackLink, Button } from "../components/ui";
@@ -15,9 +15,20 @@ import { ApiError, apiFetch } from "../lib/http";
  * They cannot edit. The facilitator still owns the record; this is the room
  * telling them where to look, which is the whole reason this needs no
  * conflict resolution and no live merge.
+ *
+ * "Cannot" is literal: a six-character code is read out loud in a room and
+ * forwarded afterwards, so anyone holding one could otherwise rewrite what the
+ * meeting decided under the facilitator's name. A flag with a note carries the
+ * correction; the facilitator applies it.
  */
 
 const GUEST_KEY = "stratis.room.v1";
+
+/** How often the open transcript panel asks for new lines. */
+const TRANSCRIPT_POLL_MS = 5_000;
+
+/** Within this far of the bottom, new lines scroll into view; further up, they do not. */
+const AUTOSCROLL_SLACK_PX = 80;
 
 interface RoomDecision {
   id: string;
@@ -72,22 +83,11 @@ export default function Room({
   const [flagging, setFlagging] = useState<string | null>(null);
   const [note, setNote] = useState("");
 
-  /**
-   * The participant's own corrections.
-   *
-   * Flagging tells the facilitator something is wrong and waits for them to fix
-   * it. This is the other half: the person who owns the action knows their own
-   * name and the date they agreed to, so they write it themselves and the
-   * checkpoint leaves the room correct.
-   */
-  const [editing, setEditing] = useState<string | null>(null);
-  const [draft, setDraft] = useState({ text: "", owner: "", dueDate: "" });
-  const [savingEdit, setSavingEdit] = useState(false);
-
   /** Loaded on request, not on arrival: an hour of speech is not a page header. */
   const [transcript, setTranscript] = useState<TranscriptLine[] | null>(null);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [transcriptError, setTranscriptError] = useState<string | null>(null);
+  const transcriptBoxRef = useRef<HTMLDivElement | null>(null);
 
   // Look the code up as soon as there is a whole one, so someone typing sees
   // the meeting name before they commit a name to it.
@@ -168,51 +168,68 @@ export default function Room({
     }
   };
 
-  const openEditor = (d: RoomDecision) => {
-    setEditing(d.id);
-    setDraft({ text: d.text, owner: d.owner ?? "", dueDate: d.dueDate ?? "" });
-  };
+  /**
+   * Only what is new. `lastSeenAt` is the timestamp of the newest line already
+   * on screen; the server returns what came after it, so a poll during a quiet
+   * minute costs an empty array rather than the whole meeting.
+   */
+  const lastLineAtRef = useRef<string | null>(null);
 
-  const saveEdit = async (decisionId: string) => {
-    if (!session) return;
-    setSavingEdit(true);
-    setError(null);
-    try {
-      await apiFetch(`/api/room/session/${session.sessionId}/decisions/${decisionId}`, {
-        method: "PATCH",
-        token: session.token,
-        body: {
-          text: draft.text.trim(),
-          owner: draft.owner.trim() || null,
-          dueDate: draft.dueDate.trim() || null,
-        },
-      });
-      setEditing(null);
-      await loadCheckpoint(session);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "That change did not save");
-    } finally {
-      setSavingEdit(false);
-    }
-  };
-
-  const loadTranscript = async () => {
-    if (!session) return;
-    setTranscriptOpen((open) => !open);
-    if (transcript) return;
+  const loadTranscript = useCallback(async (active: RoomSession) => {
+    const since = lastLineAtRef.current;
     try {
       const data = await apiFetch<{ transcript: TranscriptLine[] }>(
-        `/api/room/session/${session.sessionId}/transcript`,
-        { token: session.token },
+        `/api/room/session/${active.sessionId}/transcript${
+          since ? `?since=${encodeURIComponent(since)}` : ""
+        }`,
+        { token: active.token },
       );
-      setTranscript(data.transcript ?? []);
+      const incoming = data.transcript ?? [];
+      setTranscript((prev) => {
+        // First read replaces; every later one appends. Deduped by id because a
+        // line written on the same timestamp boundary can arrive twice.
+        const base = since === null ? [] : (prev ?? []);
+        const seen = new Set(base.map((line) => line.id));
+        const merged = [...base, ...incoming.filter((line) => !seen.has(line.id))];
+        const newest = merged[merged.length - 1];
+        if (newest) lastLineAtRef.current = newest.timestamp;
+        return merged;
+      });
       setTranscriptError(null);
     } catch (err) {
       // Its own error slot: a transcript that will not load must not paint the
       // checkpoint red, and the checkpoint is the part that matters here.
       setTranscriptError(err instanceof Error ? err.message : "Could not load the transcript");
     }
-  };
+  }, []);
+
+  /**
+   * The transcript keeps arriving while the panel is open.
+   *
+   * It was fetched exactly once — `if (transcript) return` — so a guest who
+   * opened it two minutes into the meeting read those two minutes and then a
+   * frozen page for the next forty, with a browser refresh as the only way to
+   * see another line. The guest holds no meeting socket, so this polls, and only
+   * while the panel is actually open.
+   */
+  useEffect(() => {
+    if (!session || !transcriptOpen || closed) return;
+    void loadTranscript(session);
+    const timer = setInterval(() => void loadTranscript(session), TRANSCRIPT_POLL_MS);
+    return () => clearInterval(timer);
+  }, [session, transcriptOpen, closed, loadTranscript]);
+
+  /**
+   * Follow the meeting, unless the reader has scrolled up to re-read something.
+   * Pinning to the bottom unconditionally would yank the page out from under
+   * anyone checking what was said five minutes ago.
+   */
+  useEffect(() => {
+    const box = transcriptBoxRef.current;
+    if (!box || !transcriptOpen) return;
+    const distanceFromBottom = box.scrollHeight - box.scrollTop - box.clientHeight;
+    if (distanceFromBottom < AUTOSCROLL_SLACK_PX) box.scrollTop = box.scrollHeight;
+  }, [transcript, transcriptOpen]);
 
   const react = async (decisionId: string, kind: "agree" | "flag" | null, withNote?: string) => {
     if (!session) return;
@@ -248,6 +265,12 @@ export default function Room({
     setDecisions([]);
     setCode("");
     setName("");
+    // Without this the next room joined on this tab would ask for lines "since"
+    // a timestamp from the previous meeting and show nothing.
+    lastLineAtRef.current = null;
+    setTranscript(null);
+    setTranscriptOpen(false);
+    setTranscriptError(null);
   };
 
   const shell: React.CSSProperties = {
@@ -491,79 +514,12 @@ export default function Room({
                 >
                   Not quite{d.reactions.flag > 0 ? ` · ${d.reactions.flag}` : ""}
                 </Button>
-                <Button
-                  size="sm"
-                  variant="subtle"
-                  iconLeft={<Pencil size={13} />}
-                  onClick={() => (editing === d.id ? setEditing(null) : openEditor(d))}
-                >
-                  Fix the details
-                </Button>
               </div>
-
-              {editing === d.id && (
-                <div style={{ marginTop: SPACE[1.5], display: "flex", flexDirection: "column", gap: 6 }}>
-                  <textarea
-                    value={draft.text}
-                    onChange={(e) => setDraft({ ...draft, text: e.target.value })}
-                    rows={2}
-                    aria-label="What was decided"
-                    style={{
-                      width: "100%",
-                      padding: 8,
-                      fontSize: FONT.size.label,
-                      background: colors.surfaceMuted,
-                      border: `1px solid ${colors.border}`,
-                      borderRadius: RADIUS.sm,
-                      color: colors.text,
-                      resize: "vertical",
-                    }}
-                  />
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    <input
-                      value={draft.owner}
-                      onChange={(e) => setDraft({ ...draft, owner: e.target.value })}
-                      placeholder="Who owns it"
-                      aria-label="Who owns it"
-                      style={{
-                        flex: "1 1 140px",
-                        padding: 8,
-                        fontSize: FONT.size.label,
-                        background: colors.surfaceMuted,
-                        border: `1px solid ${colors.border}`,
-                        borderRadius: RADIUS.sm,
-                        color: colors.text,
-                      }}
-                    />
-                    {/* Free text, not a date picker: the room says "end of month"
-                        and "ก่อนสงกรานต์", and the column is TEXT so the phrase
-                        survives (schema.sql, decisions.due_date). */}
-                    <input
-                      value={draft.dueDate}
-                      onChange={(e) => setDraft({ ...draft, dueDate: e.target.value })}
-                      placeholder="By when"
-                      aria-label="By when"
-                      style={{
-                        flex: "1 1 140px",
-                        padding: 8,
-                        fontSize: FONT.size.label,
-                        background: colors.surfaceMuted,
-                        border: `1px solid ${colors.border}`,
-                        borderRadius: RADIUS.sm,
-                        color: colors.text,
-                      }}
-                    />
-                  </div>
-                  <div style={{ display: "flex", gap: SPACE[1] }}>
-                    <Button size="sm" variant="primary" disabled={savingEdit} onClick={() => void saveEdit(d.id)}>
-                      {savingEdit ? "Saving…" : "Save"}
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              )}
+              {/* No editor here on purpose. The code is a shared secret read out
+                  loud, so an edit button on this screen is a licence for anyone
+                  who overheard it to rewrite the meeting's record. "Not quite"
+                  plus a note carries the correction to the facilitator, who
+                  owns the wording. */}
 
               {flagging === d.id && (
                 <div style={{ marginTop: SPACE[1.5] }}>
@@ -612,13 +568,14 @@ export default function Room({
             variant="subtle"
             size="sm"
             iconLeft={<ChevronDown size={13} />}
-            onClick={() => void loadTranscript()}
+            onClick={() => setTranscriptOpen((open) => !open)}
           >
             {transcriptOpen ? "Hide the transcript" : "Read the transcript"}
           </Button>
 
           {transcriptOpen && (
             <div
+              ref={transcriptBoxRef}
               style={{
                 marginTop: SPACE[1.5],
                 maxHeight: 360,

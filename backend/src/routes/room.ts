@@ -9,8 +9,7 @@ import {
   findInviteByCode,
   redeemInvite,
 } from "../lib/invites";
-import { getDecisions, updateDecision, type DecisionPatch } from "../lib/decisions";
-import { track } from "../lib/analytics";
+import { getDecisions } from "../lib/decisions";
 import { effectivePlan, hasFeature } from "../lib/plans";
 import { inviteLimiter } from "../middleware/rateLimit";
 import { AUTH_ERROR_CODES } from "@shared/types";
@@ -23,9 +22,11 @@ import { AUTH_ERROR_CODES } from "@shared/types";
  * at. They can tick the decisions that match what they heard and flag the ones
  * that do not, with a note.
  *
- * What they cannot do is edit. The facilitator still owns every word of the
- * decision record — the room's input arrives as a signal beside it, never as a
- * write to it. That is the whole reason this needs no conflict resolution.
+ * What they cannot do is edit — no route here writes a decision. The
+ * facilitator owns every word of the record; the room's input arrives as a
+ * signal beside it. That is the whole reason this needs no conflict resolution,
+ * and it is what keeps a shouted-out code from being a licence to rewrite what
+ * a meeting decided.
  */
 export const roomRouter = Router();
 
@@ -365,6 +366,11 @@ roomRouter.get("/session/:sessionId/checkpoint", requireGuest, async (req, res, 
  * judge "SMB moves to metered billing" without the two minutes around it. The
  * guest token is scoped to one session and dies with it, so this reaches
  * exactly the meeting they joined and no other.
+ *
+ * `?since=<ISO timestamp>` returns only what was said after that moment. The
+ * room polls this while the panel is open — a guest holds no meeting socket —
+ * and re-sending an hour of speech every few seconds to say "one new line" is
+ * how a live transcript becomes the most expensive thing on the server.
  */
 roomRouter.get("/session/:sessionId/transcript", requireGuest, async (req, res, next) => {
   try {
@@ -372,6 +378,12 @@ roomRouter.get("/session/:sessionId/transcript", requireGuest, async (req, res, 
     if (req.guest!.sessionId !== sessionId) {
       return res.status(403).json({ ok: false, error: "This link is for a different meeting" });
     }
+
+    // Parsed here rather than handed to Postgres: an unparseable string cast to
+    // timestamptz is a query error, which would take the panel down for
+    // everyone rather than falling back to the full read.
+    const rawSince = typeof req.query.since === "string" ? req.query.since : "";
+    const since = rawSince && !Number.isNaN(Date.parse(rawSince)) ? rawSince : null;
 
     const result = await db.query<{
       id: string;
@@ -381,69 +393,33 @@ roomRouter.get("/session/:sessionId/transcript", requireGuest, async (req, res, 
     }>(
       `SELECT id, speaker, text, timestamp FROM transcripts
        WHERE session_id = $1
+         AND ($2::timestamptz IS NULL OR timestamp > $2::timestamptz)
        ORDER BY timestamp ASC
        LIMIT 2000`,
-      [sessionId],
+      [sessionId, since],
     );
 
-    res.json({ ok: true, data: { transcript: result.rows } });
+    res.json({ ok: true, data: { transcript: result.rows, since } });
   } catch (err) {
     next(err);
   }
 });
 
 /**
- * A participant correcting the record.
+ * A participant may not write to the record. There is deliberately no PATCH
+ * here.
  *
- * The room is where the facts are, not the transcript: the person who owns the
- * action knows their own name and the date they agreed to, and making them ask
- * the facilitator to type it is how a checkpoint goes stale before the meeting
- * is out of the room.
+ * Guests briefly could edit an item's wording, owner and date. Anyone holding a
+ * six-character code — which is read out loud in a room, forwarded, and shoulder
+ * -surfaced — could therefore rewrite what a meeting decided, silently, with the
+ * facilitator's name still on the record. The tick and the flag say the same
+ * thing without handing the pen over: "that's right" is a vote, "not quite" is a
+ * vote plus a note saying what the room actually decided, and the facilitator
+ * applies it.
  *
- * What a participant may change: the wording, the owner, the date, and whether
- * it is done. What they may not: dismissing an item or declaring the decision
- * complete or open. Those decide what the record *is* rather than what it says,
- * and they stay with the facilitator who ran the meeting.
- *
- * Whoever holds the meeting code can do this — that was the explicit choice.
- * The code is therefore as sensitive as the record: revoke it (`invites`) and
- * every token minted from it stops working.
+ * A guest sending PATCH now gets 404 from the router, which is the correct
+ * answer: the route does not exist.
  */
-roomRouter.patch("/session/:sessionId/decisions/:decisionId", requireGuest, async (req, res, next) => {
-  try {
-    const sessionId = req.params.sessionId;
-    if (req.guest!.sessionId !== sessionId) {
-      return res.status(403).json({ ok: false, error: "This link is for a different meeting" });
-    }
-
-    const body = req.body ?? {};
-    const patch: DecisionPatch = {};
-    if ("dueDate" in body) patch.dueDate = typeof body.dueDate === "string" ? body.dueDate : null;
-    if ("owner" in body) patch.owner = typeof body.owner === "string" ? body.owner : null;
-    if (typeof body.text === "string") patch.text = body.text;
-    if (typeof body.done === "boolean") patch.done = body.done;
-
-    if (Object.keys(patch).length === 0) {
-      return res.status(400).json({ ok: false, error: "Nothing to change" });
-    }
-
-    const updated = await updateDecision(sessionId, req.params.decisionId, patch);
-    if (!updated) {
-      return res.status(404).json({ ok: false, error: "That item is not on this meeting's checkpoint" });
-    }
-
-    track({
-      event: "checkpoint_edited_by_participant",
-      sessionId,
-      guestId: req.guest!.sub,
-      props: { fields: Object.keys(patch) },
-    });
-
-    res.json({ ok: true, data: { decision: updated } });
-  } catch (err) {
-    next(err);
-  }
-});
 
 /** Tick or flag one decision. One reaction per person per decision. */
 roomRouter.post("/session/:sessionId/reaction", requireGuest, async (req, res, next) => {

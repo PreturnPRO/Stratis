@@ -40,6 +40,14 @@ reports the resolved provider names for exactly this reason.
   database row behind the token, and it reaches usage and beta codes — never a
   meeting. `User.platformAdmin` is the client's copy of that answer and decides
   only what to render.
+- **A guest may vote on the record and never write it.** Holding the meeting
+  code buys reading the checkpoint and the transcript, one tick or flag per
+  decision, and a note attached to a flag. It does not buy an edit: six
+  characters are read out loud in a room and forwarded afterwards, so an edit
+  path there is a licence for anyone who overheard them to rewrite what the
+  meeting decided under the facilitator's name. There is no `PATCH` under
+  `/api/room` — the route is deleted rather than guarded, because a route that
+  must never succeed should not exist to be reasoned about.
 - Owning the workspace is **not** entitlement to read someone else's meeting.
   Transcripts, sessions, documents and summaries are scoped to the facilitator
   who ran them.
@@ -95,6 +103,42 @@ the run already in progress. `db.query` takes a
 connection per call, so a read-then-write built from it is **not atomic** — two
 requests interleave and both act on the same "before" state. This is what
 produced two overlapping PM document versions.
+
+## Silence is not audio, and a recogniser must never be told otherwise
+
+**The browser does not stream audio unless someone is speaking.** Chirp does not
+return nothing when it is fed nothing: room tone, a fan and a pause all produce
+its best guess at what that could have been — digits, "ครับ", half a sentence —
+and each one became a transcript row nobody said, which the AI then reasoned
+over and the summary reported.
+
+This cannot be repaired downstream. By the time text exists, the fact that the
+room was silent is gone, and no filter can tell an invented "fifteen" from a
+real one. `lib/speechGate.ts` holds the decision and `usePcmStream` applies it;
+`sttText.isSttNoise` catches only the residue that carries no word at all.
+
+Two rules for anyone tuning it:
+
+- **The floor is a minimum over a window, never an average.** An averaging
+  estimator only learns the room while it believes nobody is speaking, so a room
+  noisier than its starting guess is heard as speech for ever and it never
+  adapts — the exact case (a café, air conditioning) the gate exists for. This
+  was written that way first and deadlocked open in every noisy room.
+- **The floor is capped** (`MAX_TRACKED_FLOOR`). Someone already mid-sentence
+  when Record is pressed fills the window with speech, and an uncapped estimator
+  would take that for the room and gate the speaker out.
+
+The server closes an idle recogniser after 8s (`IDLE_CLOSE_MS`) rather than
+holding one open with no audio in it, which Google times out itself and reports
+as a gRPC error against the next thing anyone says.
+
+## Ids are keys, not names
+
+**Never render an id.** A project id is `prj_733f4654-9ced-4750-…`, and
+title-casing it produced "Prj 733f4654 9ced 4750 A8e2 D773de95c349" as the
+heading of a document the facilitator had named "Stratis Review". If a payload
+does not carry the name, the fix is to add the name to the payload — every
+document route returns `projectName` — not to prettify the key.
 
 ## Types the database actually has
 
