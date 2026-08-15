@@ -750,8 +750,20 @@ export function NewMeetingModal({
           />
           {selectedKind && !goal.trim() && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {/* The chip inserts what it says, not the English constant behind
+                  it. Translation is DOM-based, so `g` stays English while the
+                  rendered node is Thai — `setGoal(g)` therefore put an English
+                  goal into the field of a Thai meeting, and that string is
+                  saved as the goal and handed to the AI as what the meeting has
+                  to settle. Reading `textContent` takes whatever the translator
+                  actually painted, and falls back to `g` before it has run. */}
               {selectedKind.goals.map((g) => (
-                <button key={g} type="button" onClick={() => setGoal(g)} style={chipStyle(false)}>
+                <button
+                  key={g}
+                  type="button"
+                  onClick={(e) => setGoal(e.currentTarget.textContent?.trim() || g)}
+                  style={chipStyle(false)}
+                >
                   {g}
                 </button>
               ))}

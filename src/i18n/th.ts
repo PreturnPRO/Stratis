@@ -372,6 +372,16 @@ export const TH: Record<string, string> = {
   "Goal — what this meeting has to settle":
     "เป้าหมาย — สิ่งที่ต้องหาข้อสรุปในการประชุมนี้",
   "One line is enough": "เขียนสั้น ๆ แค่บรรทัดเดียวก็พอ",
+  // The goal suggestion chips, two per kind of meeting. These are not only
+  // labels: clicking one writes it into the Goal field, and that text is saved
+  // as the meeting's goal and handed to the AI as what the meeting must settle.
+  // Untranslated, a Thai meeting was aimed in English.
+  "Clear anything that is blocking the team": "เคลียร์สิ่งที่ทำให้ทีมติดขัด",
+  "Agree what happens this week": "ตกลงกันว่าสัปดาห์นี้จะทำอะไร",
+  "Pick one option and write down why": "เลือกหนึ่งตัวเลือก แล้วบันทึกเหตุผล",
+  "Close the questions left open last time": "ปิดคำถามที่ยังค้างอยู่จากครั้งที่แล้ว",
+  "Agree what we are building and why": "ตกลงกันว่าจะสร้างอะไรและเพราะอะไร",
+  "Decide who owns the first pieces": "ตัดสินใจว่าใครรับผิดชอบงานส่วนแรก",
   "Agenda or context": "วาระหรือบริบท",
   "Anything the AI co-facilitator should know before it listens":
     "ข้อมูลที่ AI ผู้ช่วยดำเนินการประชุมควรรู้ก่อนเริ่มฟัง",
