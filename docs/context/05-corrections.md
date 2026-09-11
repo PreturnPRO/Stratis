@@ -8,6 +8,24 @@ Add an entry only after a fix is approved. Newest first.
 
 ---
 
+## 2026-09-11 — The desktop app is a remake, not a wrapper
+
+**Correction:** *"we're going to remake the desktop app, only using similar theme
+and better feature, this is not related to stratis website, that is just an MVP
+so don't need to be react"*.
+
+I had proposed an Electron shell around the website's React build, sharing
+`src/`. The owner wants a separate native product instead: C# .NET + Avalonia in
+its own repo, the Control Room theme carried over as tokens, the backend and
+accounts reused, participants still in the browser. Native audio settled the
+stack — Windows' echo cancellation with the speakers as reference and per-app
+loopback capture are not reachable from a browser engine.
+
+Also decided the same day: the website's audio defects are fixed directly on
+`main`, and speech-to-text stays `chirp_2`.
+
+→ `01-core-product.md` (the website and the desktop app).
+
 ## 2026-08-15 — Five defects found in the room, and one decision reversed
 
 Reported together, all five marked critical.

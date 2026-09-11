@@ -47,6 +47,19 @@ the checkpoint.
    meetings.
 3. **Thai/local fit** — Thai-first STT, Thai-market pricing, built in Chiang Mai.
 
+## The website and the desktop app
+
+The website is the MVP. **Stratis Desktop** is where the product goes: a
+from-scratch Windows app (C# .NET + Avalonia, its own repo `stratis-desktop`)
+with the same Control Room theme and no shared frontend code. It exists for what
+a browser cannot do — hear the online side of a meeting (computer audio,
+labelled apart from the room microphone), keep an encrypted local backup, record
+without internet, and sit over the meeting app as a mini-bar. It uses the same
+backend and accounts; participants still join by code in the browser. This is
+not a Zoom or Meet integration: nothing connects to their APIs.
+
+Spec: `stratis-desktop/docs/specs/2026-09-11-desktop-app-design.md`.
+
 ## Market
 
 Beachhead: SMEs, local startups and public-sector teams in **Northern Thailand**,
