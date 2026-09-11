@@ -1010,7 +1010,7 @@ git commit -m "fix(transcript): a held clip lands where it was said, through the
   - `interface HeldFrame { frame: ArrayBuffer; capturedAt: number }` (`capturedAt` is epoch ms)
   - `frameDurationMs(byteLength: number, sampleRate: number): number`
   - `class AudioBacklog(sampleRate: number)`: `readonly sampleRate: number`, `get isEmpty(): boolean`, `push(frame: ArrayBuffer, capturedAt: number): void`, `takeAll(): { frames: HeldFrame[]; droppedMs: number }`
-  - `encodeWav(frames: ArrayBuffer[], sampleRate: number): Uint8Array`
+  - `encodeWav(frames: ArrayBuffer[], sampleRate: number): Uint8Array<ArrayBuffer>`
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1182,7 +1182,7 @@ export class AudioBacklog {
  * container: raw PCM carries no sample rate. `Int16Array` buffers are
  * little-endian on every platform Stratis runs on, which is what WAV stores.
  */
-export function encodeWav(frames: ArrayBuffer[], sampleRate: number): Uint8Array {
+export function encodeWav(frames: ArrayBuffer[], sampleRate: number): Uint8Array<ArrayBuffer> {
   const dataBytes = frames.reduce((n, f) => n + f.byteLength, 0);
   const out = new Uint8Array(44 + dataBytes);
   const view = new DataView(out.buffer);
