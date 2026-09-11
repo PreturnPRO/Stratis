@@ -768,6 +768,12 @@ export const TH: Record<string, string> = {
   "Recent decisions": "การตัดสินใจล่าสุด",
   "Start meeting": "เริ่มการประชุม",
   Recording: "กำลังบันทึกเสียง",
+  "The connection was down longer than Stratis can hold — part of what was said in that gap is missing from the transcript.":
+    "การเชื่อมต่อหลุดนานเกินกว่าที่ Stratis จะเก็บเสียงไว้ได้ — บางส่วนของสิ่งที่พูดในช่วงนั้นจะไม่อยู่ในบทถอดเสียง",
+  "Audio from the dropped connection could not be sent — that part is missing from the transcript.":
+    "ส่งเสียงช่วงที่การเชื่อมต่อหลุดไม่สำเร็จ — ช่วงนั้นจะไม่อยู่ในบทถอดเสียง",
+  "The meeting ended before audio from the dropped connection could be sent.":
+    "การประชุมจบก่อนที่จะส่งเสียงช่วงที่การเชื่อมต่อหลุดได้",
   "Recording — back to the meeting": "กำลังบันทึกเสียง — กลับไปที่การประชุม",
   "Rejoin meeting": "กลับเข้าการประชุม",
   "Review what is unresolved": "ดูว่ายังเหลืออะไรที่ต้องตัดสินใจ",

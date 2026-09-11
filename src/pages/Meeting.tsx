@@ -28,6 +28,8 @@ import { loadSeen, saveSeen, shouldInterruptEnd, unreviewedIds } from "../lib/ch
 import { ApiError, apiFetch } from "../lib/http";
 import { localeTag } from "../i18n/locale";
 import { saveLocalTranscript } from "../lib/localTranscript";
+import { AudioBacklog, frameDurationMs } from "../lib/audioBacklog";
+import { encodeWav } from "../lib/wav";
 
 const ACTIVE_SESSION_KEY = "stratis.activeSessionId.v1";
 
@@ -44,6 +46,17 @@ const CHUNK_MAX_MS = 6000;
 const USE_STREAMING_STT = (import.meta.env.VITE_STT_STREAMING ?? "1") !== "0";
 
 const FLUSH_SETTLE_MS = 1500;
+
+// Shown when held audio is trimmed or cannot be sent. These are th.ts keys:
+// the translator matches the whole sentence, so no number goes inside them.
+const HELD_AUDIO_TRIMMED =
+  "The connection was down longer than Stratis can hold — part of what was said in that gap is missing from the transcript.";
+const HELD_AUDIO_NOT_SENT =
+  "Audio from the dropped connection could not be sent — that part is missing from the transcript.";
+const HELD_AUDIO_MEETING_ENDED =
+  "The meeting ended before audio from the dropped connection could be sent.";
+/** Waits between upload attempts for held audio; one more attempt than entries. */
+const HELD_AUDIO_RETRY_MS = [1_000, 2_000, 4_000, 8_000];
 
 function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -555,6 +568,65 @@ export default function Meeting({ onNav }: MeetingProps) {
       }
     }
   }, [token, sessionId, user?.name, appendTranscript, ai]);
+
+  const backlogRef = useRef<AudioBacklog | null>(null);
+  /**
+   * True once `stt:start` has gone out on the socket that is open now. The hub
+   * drops binary frames that arrive before it, so until then frames are held.
+   */
+  const streamStartedOnSocketRef = useRef(false);
+  const sendingHeldRef = useRef(false);
+
+  /**
+   * Speech captured while the socket was down, sent as one clip once it is back.
+   *
+   * Not written into the live stream: Google requires streaming audio at about
+   * real time, and thirty seconds at once would be refused and would hold live
+   * speech behind it. The clip carries the time it was captured, so the line
+   * lands where it was said.
+   */
+  const sendHeldAudio = useCallback(async () => {
+    const backlog = backlogRef.current;
+    if (!backlog || backlog.isEmpty || sendingHeldRef.current || !token || !sessionId) return;
+    sendingHeldRef.current = true;
+    const { frames, droppedMs } = backlog.takeAll();
+    if (droppedMs > 0) setError(HELD_AUDIO_TRIMMED);
+
+    try {
+      const wav = encodeWav(frames.map((f) => f.frame), backlog.sampleRate);
+      const body = {
+        sessionId,
+        audioBase64: await blobToBase64(new Blob([wav], { type: "audio/wav" })),
+        mimeType: "audio/wav",
+        speaker: user?.name || "Facilitator",
+        capturedAt: new Date(frames[0].capturedAt).toISOString(),
+      };
+
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          const payload = await apiFetch<AudioChunkResult>("/api/transcript/audio-chunk", {
+            method: "POST",
+            body,
+          });
+          if (payload?.transcript) appendTranscript(payload.transcript);
+          return;
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 409) {
+            setError(HELD_AUDIO_MEETING_ENDED);
+            return;
+          }
+          if (attempt >= HELD_AUDIO_RETRY_MS.length) {
+            console.warn("[speech:held] Upload failed after retries:", err);
+            setError(HELD_AUDIO_NOT_SENT);
+            return;
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, HELD_AUDIO_RETRY_MS[attempt]));
+        }
+      }
+    } finally {
+      sendingHeldRef.current = false;
+    }
+  }, [token, sessionId, user?.name, appendTranscript]);
   
   const {
     error: recError,
@@ -571,7 +643,14 @@ export default function Meeting({ onNav }: MeetingProps) {
 
   const pcm = usePcmStream({
     onFrame: (frame) => {
-      if (streamingActiveRef.current) sendAudioFrame(frame);
+      if (!streamingActiveRef.current) return;
+      if (streamStartedOnSocketRef.current && sendAudioFrame(frame)) return;
+      // The socket is down, or open but not yet told to start a recogniser.
+      streamStartedOnSocketRef.current = false;
+      const backlog = backlogRef.current;
+      if (backlog) {
+        backlog.push(frame, Date.now() - frameDurationMs(frame.byteLength, backlog.sampleRate));
+      }
     },
   });
 
@@ -580,14 +659,20 @@ export default function Meeting({ onNav }: MeetingProps) {
   }, [pcm.error]);
 
   useEffect(() => {
-    if (connected && streamingActiveRef.current && streamSampleRateRef.current) {
-      sendControl({
+    if (!connected) {
+      streamStartedOnSocketRef.current = false;
+      return;
+    }
+    if (streamingActiveRef.current && streamSampleRateRef.current) {
+      streamStartedOnSocketRef.current = sendControl({
         type: "stt:start",
         sampleRate: streamSampleRateRef.current,
         speaker: user?.name || "Facilitator",
       });
     }
-  }, [connected, sendControl, user?.name]);
+    // Runs even if recording has stopped since: what was said is still owed.
+    void sendHeldAudio();
+  }, [connected, sendControl, user?.name, sendHeldAudio]);
 
   const startListening = () => {
     setIsRecording(true);
@@ -597,7 +682,10 @@ export default function Meeting({ onNav }: MeetingProps) {
       void pcm
         .start((sampleRate) => {
           streamSampleRateRef.current = sampleRate;
-          sendControl({
+          if (backlogRef.current?.sampleRate !== sampleRate) {
+            backlogRef.current = new AudioBacklog(sampleRate);
+          }
+          streamStartedOnSocketRef.current = sendControl({
             type: "stt:start",
             sampleRate,
             speaker: user?.name || "Facilitator",
