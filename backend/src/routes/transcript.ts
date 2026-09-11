@@ -11,6 +11,7 @@ import { getDocumentRow, rowToDocument, renderDocument } from "../lib/pmDocument
 import { withRetry } from "../lib/withRetry";
 import { dedupeMemory, shouldReplaceMemory } from "../lib/rollingMemory";
 import { cleanSttText, isSttEcho, isSttNoise } from "../lib/sttText";
+import { clampCapturedAt } from "../lib/capturedAt";
 import { env } from "../config/env";
 
 export const transcriptRouter = Router();
@@ -20,6 +21,7 @@ interface SessionRow {
   id: string;
   facilitator_id: string;
   status: "created" | "active" | "ended";
+  started_at: string | Date | null;
   org_id: string;
 }
 
@@ -33,7 +35,7 @@ export interface TranscriptRow {
 
 async function getSession(sessionId: string): Promise<SessionRow | undefined> {
   const result = await db.query<SessionRow>(
-    `SELECT s.id, s.facilitator_id, s.status, m.org_id
+    `SELECT s.id, s.facilitator_id, s.status, s.started_at, m.org_id
      FROM sessions s
      JOIN meetings m ON m.id = s.meeting_id
      WHERE s.id = $1`,
@@ -637,6 +639,8 @@ transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
     const session = await validateSession(req, res, sessionId);
     if (!session) return;
 
+    const capturedAt = clampCapturedAt(req.body?.capturedAt, session.started_at, Date.now());
+
     const cleanBase64 = audioBase64.includes(",")
       ? (audioBase64.split(",").pop() ?? "")
       : audioBase64;
@@ -715,7 +719,13 @@ transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
 
     const text = cleanSttText(stt.text);
 
-    if (!text) {
+    // The same filters the stream ingest applies. Audio held through a dropped
+    // connection arrives here, and a clip of room tone is exactly what Chirp
+    // turns into words nobody said.
+    const filtered =
+      !text || isSttNoise(text) || isSttEcho(await lastTranscriptText(sessionId), text);
+
+    if (filtered) {
       return res.json({
         ok: true,
         data: {
@@ -734,6 +744,7 @@ transcriptRouter.post("/audio-chunk", requireAuth, async (req, res, next) => {
         sessionId,
         speaker,
         text,
+        timestamp: capturedAt,
       });
     } catch (dbError) {
       console.error("[transcript:audio-chunk] Database insert failed, aborting AI call:", dbError);
