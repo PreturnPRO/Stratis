@@ -132,6 +132,27 @@ The server closes an idle recogniser after 8s (`IDLE_CLOSE_MS`) rather than
 holding one open with no audio in it, which Google times out itself and reports
 as a gRPC error against the next thing anyone says.
 
+## Audio is never dropped on the way to the recogniser
+
+Three places used to throw speech away without a trace. Each now holds it, and
+each rule has a pure module and a test.
+
+- **Before the recogniser is open, audio is queued, not dropped**
+  (`backend/src/lib/pendingAudio.ts`, `sttStreamCore.ts`). A Google stream opens
+  asynchronously, and the 8-second idle close means the first words after every
+  pause arrive during an open. The queue holds 10 seconds, releases a short burst
+  and then real-time pace — Google requires streaming audio at about real time.
+  The idle close never fires over held audio.
+- **While the socket is down, the client keeps up to 30 seconds**
+  (`src/lib/audioBacklog.ts`) and uploads it as one WAV clip with `capturedAt`
+  once the socket is back. It is not written into the live stream. Frames are
+  not sent before `stt:start` on the current socket: the hub drops them.
+  `clampCapturedAt` believes the client's time only inside the session.
+- **LIVE means frames are arriving** (`src/lib/captureHealth.ts`). Five seconds
+  without a worklet frame, an ended track or a suspended context starts a
+  recovery; the header says so. Recovery never ends a recording — a lost
+  microphone shows Try again, and only Stop ends it.
+
 ## Ids are keys, not names
 
 **Never render an id.** A project id is `prj_733f4654-9ced-4750-…`, and

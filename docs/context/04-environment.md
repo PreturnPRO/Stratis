@@ -109,3 +109,9 @@ zero occurrences and the write is skipped. Always assert the count.
 
 **`Edit` after a script rewrote the file** — use instead: `Read` it again first —
 why: the harness tracks file state and refuses an edit against a stale read.
+
+**Running Google STT locally with the `.env` credential path** — use instead:
+`GOOGLE_APPLICATION_CREDENTIALS="$(cd .. && pwd -W)/STT-service.key.json" npx tsx <script>`
+from `backend/` — why: the `.env` value points at a drive that does not exist on
+this laptop, and dotenv never overrides a variable that is already set, so the
+inline value wins. `pwd -W` gives Git Bash a Windows path, which Node needs.
