@@ -1,247 +1,36 @@
 
 import { getGoogleStreamingContext } from "./stt";
 import { env } from "../config/env";
-import { streamAction, isOpenWedged, openBackoffMs } from "./sttStreamPolicy";
+import {
+  createStreamCore,
+  type BidiStream,
+  type SttStreamHandle,
+  type SttStreamOptions,
+} from "./sttStreamCore";
 
-export interface SttStreamOptions {
-  sessionId: string;
-  sampleRateHertz: number;
-  onInterim: (text: string) => void;
-  onFinal: (text: string) => void;
-  onError: (message: string) => void;
-}
+export type { SttStreamHandle, SttStreamOptions };
 
-export interface SttStreamHandle {
-  write(chunk: Buffer): void;
-  flush(): void;
-  stop(): void;
-}
+async function openGoogleStream(opts: SttStreamOptions): Promise<BidiStream | null> {
+  const ctx = await getGoogleStreamingContext();
+  if (!ctx) return null;
 
-const ROTATE_AFTER_MS = 240_000;
-const MAX_CONSECUTIVE_FAILURES = 3;
-const STALL_AFTER_MS = 30_000;
-const OPEN_TIMEOUT_MS = 10_000;
-
-/**
- * Close the recogniser when the room goes quiet.
- *
- * The client now gates on speech and sends nothing during silence, which is
- * what stops Chirp inventing transcripts out of room tone — but an open
- * streaming session that receives no audio is a session Google eventually times
- * out itself, and that arrives here as a gRPC error and a backoff on the next
- * thing anyone says. Closing it deliberately turns a quiet meeting into no open
- * stream at all; the next frame opens a fresh one.
- *
- * Eight seconds is far inside Google's own audio timeout and far outside the
- * client's 1.2s speech hangover, so a normal conversation never touches it.
- */
-const IDLE_CLOSE_MS = 8_000;
-const IDLE_CHECK_MS = 2_000;
-
-interface BidiStream {
-  write(chunk: unknown): boolean;
-  end(): void;
-  destroy(): void;
-  on(event: "data", cb: (resp: StreamingResponse) => void): void;
-  on(event: "error", cb: (err: Error & { code?: number }) => void): void;
-  removeAllListeners(): void;
-}
-
-interface StreamingResponse {
-  results?: Array<{
-    alternatives?: Array<{ transcript?: string }>;
-    isFinal?: boolean;
-  }>;
-}
-
-const RESTARTABLE_GRPC_CODES = new Set([4, 11, 13, 14]);
-
-function createGoogleStream(opts: SttStreamOptions): SttStreamHandle {
-  let stream: BidiStream | null = null;
-  let streamStartedAt = 0;
-  let lastDataAt: number | null = null;
-  let consecutiveFailures = 0;
-  let nextOpenAllowedAt = 0;
-  let openGen = 0;
-  let stopped = false;
-  let lastWriteAt = 0;
-  let idleTimer: ReturnType<typeof setInterval> | null = null;
-
-  const release = (s: BidiStream) => {
-    try {
-      s.end();
-    } catch {
-    }
-    const timer = setTimeout(() => {
-      try {
-        s.removeAllListeners();
-        s.destroy();
-      } catch {
-      }
-    }, 8_000);
-    timer.unref?.();
-  };
-
-  const closeStream = () => {
-    if (!stream) return;
-    const s = stream;
-    stream = null;
-    release(s);
-  };
-
-  const openStream = async (): Promise<BidiStream | null> => {
-    const ctx = await getGoogleStreamingContext();
-    if (!ctx) return null;
-
-    const s = ctx.client._streamingRecognize() as unknown as BidiStream;
-    streamStartedAt = Date.now();
-    lastDataAt = null;
-
-    s.write({
-      recognizer: ctx.recognizer,
-      streamingConfig: {
-        config: {
-          explicitDecodingConfig: {
-            encoding: "LINEAR16",
-            sampleRateHertz: opts.sampleRateHertz,
-            audioChannelCount: 1,
-          },
-          languageCodes: ctx.languageCodes,
-          model: ctx.model,
+  const s = ctx.client._streamingRecognize() as unknown as BidiStream;
+  s.write({
+    recognizer: ctx.recognizer,
+    streamingConfig: {
+      config: {
+        explicitDecodingConfig: {
+          encoding: "LINEAR16",
+          sampleRateHertz: opts.sampleRateHertz,
+          audioChannelCount: 1,
         },
-        streamingFeatures: { interimResults: true },
+        languageCodes: ctx.languageCodes,
+        model: ctx.model,
       },
-    });
-
-    s.on("data", (resp) => {
-      consecutiveFailures = 0;
-      nextOpenAllowedAt = 0;
-      lastDataAt = Date.now();
-      for (const result of resp.results ?? []) {
-        const text = result.alternatives?.[0]?.transcript;
-        if (!text) continue;
-        if (result.isFinal) opts.onFinal(text);
-        else opts.onInterim(text);
-      }
-    });
-
-    s.on("error", (err) => {
-      if (stopped || stream !== s) return;
-      stream = null;
-      consecutiveFailures += 1;
-
-      const quiet =
-        RESTARTABLE_GRPC_CODES.has(err.code ?? -1) &&
-        consecutiveFailures <= MAX_CONSECUTIVE_FAILURES;
-
-      nextOpenAllowedAt = Date.now() + openBackoffMs(consecutiveFailures);
-
-      console[quiet ? "warn" : "error"](
-        `[stt:stream] gRPC error (code ${err.code}, session ${opts.sessionId}, ` +
-          `retrying in ${openBackoffMs(consecutiveFailures)}ms):`,
-        err.message,
-      );
-
-      if (!quiet) {
-        opts.onError(`Streaming STT failed: ${err.message}`);
-      }
-    });
-
-    return s;
-  };
-
-  let opening: Promise<void> | null = null;
-  let openingStartedAt: number | null = null;
-
-  const ensureStream = (): void => {
-    if (stream || opening || stopped) return;
-    if (Date.now() < nextOpenAllowedAt) return;
-    const gen = ++openGen;
-    openingStartedAt = Date.now();
-    opening = openStream()
-      .then((s) => {
-        if (stopped || gen !== openGen) {
-          s?.destroy();
-          return;
-        }
-        if (s) stream = s;
-      })
-      .catch((err) => {
-        if (gen !== openGen) return;
-        consecutiveFailures += 1;
-        nextOpenAllowedAt = Date.now() + openBackoffMs(consecutiveFailures);
-        console.error("[stt:stream] Failed to open streaming session:", err);
-        opts.onError("Could not start streaming STT session");
-      })
-      .finally(() => {
-        if (gen !== openGen) return;
-        opening = null;
-        openingStartedAt = null;
-      });
-  };
-
-  const startIdleWatch = (): void => {
-    if (idleTimer) return;
-    idleTimer = setInterval(() => {
-      if (stopped || !stream) return;
-      if (Date.now() - lastWriteAt < IDLE_CLOSE_MS) return;
-      console.log(`[stt:stream] Closing idle stream for session ${opts.sessionId}`);
-      closeStream();
-    }, IDLE_CHECK_MS);
-    idleTimer.unref?.();
-  };
-
-  const write = (chunk: Buffer): void => {
-    if (stopped) return;
-    const nowMs = Date.now();
-    lastWriteAt = nowMs;
-    startIdleWatch();
-
-    if (
-      stream &&
-      streamAction({
-        now: nowMs,
-        streamStartedAt,
-        lastDataAt,
-        rotateAfterMs: ROTATE_AFTER_MS,
-        stallAfterMs: STALL_AFTER_MS,
-      }) === "rotate"
-    ) {
-      console.log(
-        `[stt:stream] Rotating stream for session ${opts.sessionId} ` +
-          `(${nowMs - streamStartedAt > ROTATE_AFTER_MS ? "age limit" : "stall watchdog"})`,
-      );
-      closeStream();
-    }
-
-    if (isOpenWedged({ now: nowMs, openingStartedAt, timeoutMs: OPEN_TIMEOUT_MS })) {
-      console.warn(
-        `[stt:stream] Open attempt hung >${OPEN_TIMEOUT_MS}ms for session ` +
-          `${opts.sessionId} — abandoning and retrying`,
-      );
-      openGen += 1;
-      opening = null;
-      openingStartedAt = null;
-    }
-
-    ensureStream();
-    stream?.write({ audio: chunk });
-  };
-
-  return {
-    write,
-    flush() {
-      if (stopped || !stream) return;
-      console.log(`[stt:stream] Flushing stream for session ${opts.sessionId}`);
-      closeStream();
+      streamingFeatures: { interimResults: true },
     },
-    stop() {
-      stopped = true;
-      if (idleTimer) clearInterval(idleTimer);
-      idleTimer = null;
-      closeStream();
-    },
-  };
+  });
+  return s;
 }
 
 function createMockStream(opts: SttStreamOptions): SttStreamHandle {
@@ -278,6 +67,8 @@ function createMockStream(opts: SttStreamOptions): SttStreamHandle {
 }
 
 export function createSttStream(opts: SttStreamOptions): SttStreamHandle {
-  if (env.stt.provider === "google") return createGoogleStream(opts);
+  if (env.stt.provider === "google") {
+    return createStreamCore(opts, { open: () => openGoogleStream(opts) });
+  }
   return createMockStream(opts);
 }
