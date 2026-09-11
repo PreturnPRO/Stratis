@@ -95,8 +95,9 @@ batches; the same JS turn sees the pre-update DOM. Combined with the stale
 root as a positional argument; `--root` raises `CACError: Unknown option`.
 
 **`preview_start` finding `.claude/launch.json`** — use instead: create the
-launch file in the **current working directory**, not the project directory —
-why: it resolves relative to cwd, which in this setup is not the Stratis repo.
+launch file in the **session's root folder** (`AI PROJECT\.claude\launch.json`), not the repo —
+why: it reads the folder the session was opened in. `Stratis/.claude/launch.json`
+is ignored even while the working directory is `Stratis` (checked 2026-09-11).
 
 **`mcp__claude-in-chrome__*`** — use instead: the in-app browser
 (`mcp__Claude_Browser__*`) — why: the Chrome extension is not connected in this
