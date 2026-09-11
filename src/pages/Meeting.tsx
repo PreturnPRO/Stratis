@@ -658,6 +658,9 @@ export default function Meeting({ onNav }: MeetingProps) {
     if (pcm.error) setError(pcm.error);
   }, [pcm.error]);
 
+  /** The clip-upload fallback has no health signal; only the PCM stream is watched. */
+  const captureLive = isRecording && (pcm.status !== "streaming" || pcm.health === "live");
+
   useEffect(() => {
     if (!connected) {
       streamStartedOnSocketRef.current = false;
@@ -1004,8 +1007,17 @@ useEffect(() => {
               {meetingTitle}
             </h1>
             <div style={{ display: "flex", alignItems: "center", gap: SPACE[2.5], flexWrap: "wrap" }}>
-              <Chip icon={isRecording ? <RecDot /> : <StatusDot color={colors.textDim} />} mono>
-                {isRecording ? "LIVE" : "STANDBY"}
+              <Chip
+                icon={captureLive ? <RecDot /> : <StatusDot color={isRecording ? colors.red : colors.textDim} />}
+                mono
+              >
+                {!isRecording
+                  ? "STANDBY"
+                  : captureLive
+                    ? "LIVE"
+                    : pcm.health === "recovering"
+                      ? "RECONNECTING"
+                      : "NOT RECORDING"}
               </Chip>
 
               {/* The answer to "what's the code?", without leaving the screen
@@ -1212,6 +1224,33 @@ useEffect(() => {
             }}
           >
             {error}
+          </div>
+        )}
+
+        {isRecording && pcm.status === "streaming" && pcm.health !== "live" && (
+          <div
+            role="status"
+            style={{
+              background: colors.dangerBg,
+              borderBottom: `1px solid ${colors.red}`,
+              padding: "10px 24px",
+              fontSize: FONT.size.label,
+              color: colors.red,
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+            }}
+          >
+            <span>
+              {pcm.health === "recovering"
+                ? "Microphone disconnected — reconnecting"
+                : "Not recording — microphone unavailable"}
+            </span>
+            {pcm.health === "lost" && (
+              <Button size="sm" variant="danger" onClick={pcm.retry}>
+                Try again
+              </Button>
+            )}
           </div>
         )}
 

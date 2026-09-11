@@ -774,6 +774,10 @@ export const TH: Record<string, string> = {
     "ส่งเสียงช่วงที่การเชื่อมต่อหลุดไม่สำเร็จ — ช่วงนั้นจะไม่อยู่ในบทถอดเสียง",
   "The meeting ended before audio from the dropped connection could be sent.":
     "การประชุมจบก่อนที่จะส่งเสียงช่วงที่การเชื่อมต่อหลุดได้",
+  RECONNECTING: "กำลังเชื่อมต่อใหม่",
+  "NOT RECORDING": "ไม่ได้บันทึกเสียง",
+  "Microphone disconnected — reconnecting": "ไมโครโฟนหลุดการเชื่อมต่อ — กำลังเชื่อมต่อใหม่",
+  "Not recording — microphone unavailable": "ไม่ได้บันทึกเสียง — ใช้ไมโครโฟนไม่ได้",
   "Recording — back to the meeting": "กำลังบันทึกเสียง — กลับไปที่การประชุม",
   "Rejoin meeting": "กลับเข้าการประชุม",
   "Review what is unresolved": "ดูว่ายังเหลืออะไรที่ต้องตัดสินใจ",
