@@ -70,8 +70,11 @@ idle close is revisited with that evidence.
 2 seconds — the normal case, one open — is written at once; that is the size of
 burst the pre-roll already sends today. A longer backlog is written at
 real-time pace and catches up during the silences the gate already produces.
-The first plan task confirms Google's reaction to both with the real key, with
-the owner's permission, before anything else is built on it.
+The first plan task tried to measure Google's reaction with the real key and
+could not: with the local configuration (`us-central1`, `th-TH,en-US`) every
+streaming session is rejected before any audio, `INVALID_ARGUMENT` on
+`language_codes`. The owner kept the existing settings (2026-09-11), so the
+2-second allowance ships unmeasured.
 
 **Tests.** `pendingAudio.test.ts`: order kept, cap drops oldest and counts it,
 drain empties, byte cap per sample rate, split at 25 KB. And the defect itself:
@@ -172,6 +175,13 @@ The model stays `chirp_2` (the owner's decision). Google's language table lists
 page's StreamingRecognize language list does not include Thai. The local `.env`
 sets `STT_LOCATION=us-central1`; the Render value is unconfirmed. Recorded so
 the next accuracy complaint starts here.
+
+Measured 2026-09-11 with that local configuration: Google rejects every
+streaming session with `INVALID_ARGUMENT` on `language_codes` — *"Multiple
+language recognition is only available in the following locations: eu, global,
+us."* If Render runs the same two values, live streaming cannot start in
+production, and its logs show `[stt:stream] gRPC error (code 3`. The owner's
+decision is to keep the existing settings; this plan changes none of them.
 
 ---
 
