@@ -808,4 +808,14 @@ export const TH: Record<string, string> = {
   "Email & password": "อีเมลและรหัสผ่าน",
   "Profile picture": "รูปโปรไฟล์",
   "A link to an image — jpg, png or gif.": "ลิงก์รูปภาพ — jpg, png หรือ gif",
+
+  // --- Stratis Desktop sign-in (#/desktop) ---
+  "Open Stratis Desktop?": "เปิด Stratis Desktop ไหม?",
+  "Stratis Desktop will be signed in as": "Stratis Desktop จะเข้าสู่ระบบในชื่อ",
+  "Opening Stratis Desktop…": "กำลังเปิด Stratis Desktop…",
+  "Use another account": "ใช้บัญชีอื่น",
+  "Only continue if you just asked to sign in from Stratis Desktop on this computer.":
+    "กดดำเนินการต่อเฉพาะเมื่อคุณเพิ่งเริ่มเข้าสู่ระบบจาก Stratis Desktop บนคอมพิวเตอร์เครื่องนี้",
+  "You're signed in to Stratis Desktop": "เข้าสู่ระบบ Stratis Desktop แล้ว",
+  "You can close this tab and go back to the app.": "ปิดแท็บนี้แล้วกลับไปที่แอปได้เลย",
 };

@@ -16,6 +16,12 @@ import { installTrackFlush, track } from "./lib/track";
 import { apiFetch } from "./lib/http";
 import type { User } from "@shared/types";
 import { localeTag } from "./i18n/locale";
+import {
+  desktopRequestHash,
+  parseDesktopRequest,
+  rememberDesktopRequest,
+  takeDesktopRequest,
+} from "./lib/desktopHandoff";
 
 const Landing = lazy(() => import("./pages/Landing"));
 const Login = lazy(() => import("./pages/Login"));
@@ -31,6 +37,7 @@ const Admin = lazy(() => import("./pages/Admin"));
 const Pricing = lazy(() => import("./pages/Pricing"));
 const Join = lazy(() => import("./pages/Join"));
 const Room = lazy(() => import("./pages/Room"));
+const DesktopSignIn = lazy(() => import("./pages/DesktopSignIn"));
 const LanguageGate = lazy(() => import("./components/LanguageGate"));
 const FeedbackModal = lazy(() => import("./components/FeedbackModal"));
 
@@ -224,7 +231,9 @@ function hashToEntry(): { page: AppPage; params: Record<string, string> } {
  */
 function readAuthPageFromHash(): AuthPage | null {
   const page = window.location.hash.replace(/^#\/?/, "").split("?")[0];
-  return page === "login" || page === "register" ? page : null;
+  if (page === "login" || page === "register") return page;
+  // Stratis Desktop sends a signed-out browser here: the form comes first.
+  return page === "desktop" ? "login" : null;
 }
 
 function entryToHash(page: AppPage, params: Record<string, string>): string {
@@ -462,6 +471,30 @@ function AppShell() {
     if (window.location.hash !== hash) window.history.pushState(null, "", hash);
   }, [active, navParams, isAuthed]);
 
+  /**
+   * Stratis Desktop signs in through `#/desktop` (desktop spec §6). A signed-out
+   * browser keeps the request for the trip through sign-in — Google's redirect
+   * included, which is why it lives in sessionStorage — and goes to the form.
+   */
+  useEffect(() => {
+    if (isAuthed || entryRoute.page !== "desktop") return;
+    const request = parseDesktopRequest(entryRoute.params);
+    if (request) rememberDesktopRequest(window.sessionStorage, request);
+    window.history.replaceState(null, "", "#/login");
+    setEntryRoute({ page: "", params: {} });
+    setAuthPage("login");
+  }, [isAuthed, entryRoute]);
+
+  // Signed in with a desktop request waiting: back to the page that asks for Continue.
+  // It runs after the effect above that writes the shell's hash, so it has the last word.
+  useEffect(() => {
+    if (!isAuthed || entryRoute.page) return;
+    const request = takeDesktopRequest(window.sessionStorage);
+    if (!request) return;
+    window.history.replaceState(null, "", desktopRequestHash(request));
+    setEntryRoute(readEntryRoute());
+  }, [isAuthed, entryRoute.page]);
+
   useEffect(() => {
     const onPopState = () => {
       const entry = hashToEntry();
@@ -581,6 +614,30 @@ function AppShell() {
         </Suspense>
       </ErrorBoundary>
     );
+  }
+
+  if (entryRoute.page === "desktop" && isAuthed) {
+    const request = parseDesktopRequest(entryRoute.params);
+    if (request) {
+      return (
+        <ErrorBoundary area="desktop">
+          <Suspense fallback={<RouteFallback colors={colors} />}>
+            <div style={{ height: "100dvh", background: colors.bg, color: colors.text }}>
+              <DesktopSignIn
+                request={request}
+                onUseAnotherAccount={() => {
+                  rememberDesktopRequest(window.sessionStorage, request);
+                  logout();
+                  window.history.replaceState(null, "", "#/login");
+                  setEntryRoute({ page: "", params: {} });
+                  setAuthPage("login");
+                }}
+              />
+            </div>
+          </Suspense>
+        </ErrorBoundary>
+      );
+    }
   }
 
   if (!isAuthed) {

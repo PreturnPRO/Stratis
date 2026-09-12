@@ -368,6 +368,9 @@ function route(path: string, method: string): Response | null {
   }
   if (path.includes("/api/auth/me")) return json(USER);
 
+  // Lets the Stratis Desktop page run its Continue step with no backend.
+  if (path.includes("/api/auth/desktop/code")) return json({ code: "mock-desktop-code" });
+
   if (path.includes("/api/meeting/dashboard")) {
     const next = MEETINGS.filter((m) => m.scheduledAt)[0];
     return json({
