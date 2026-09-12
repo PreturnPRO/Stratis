@@ -4,6 +4,7 @@ import cors from "cors";
 import { env } from "./config/env";
 import { authRouter } from "./auth/routes";
 import { googleRouter } from "./auth/google";
+import { desktopRouter } from "./auth/desktop";
 import { apiRouter } from "./routes";
 import { requireAuth } from "./auth/middleware";
 import { errorHandler, notFound } from "./middleware/errorHandler";
@@ -43,6 +44,7 @@ app.get("/api/health", (_req, res) => {
 
 app.use("/api/auth", authRouter);
 app.use("/api/auth", googleRouter);
+app.use("/api/auth", desktopRouter);
 
 app.use("/api", apiRouter);
 

@@ -95,6 +95,22 @@ export interface LoginRequest {
   password: string;
 }
 
+/** Stratis Desktop sign-in, step 4 (desktop spec §6): the signed-in website asks for a one-time code. */
+export interface DesktopCodeRequest {
+  /** BASE64URL(SHA-256(verifier)), 43 characters. */
+  challenge: string;
+}
+
+export interface DesktopCodeResponse {
+  code: string;
+}
+
+/** Step 5: Stratis Desktop redeems the code. The answer is an AuthResponse. */
+export interface DesktopTokenRequest {
+  code: string;
+  verifier: string;
+}
+
 export interface ApiResponse<T> {
   ok: boolean;
   data?: T;
